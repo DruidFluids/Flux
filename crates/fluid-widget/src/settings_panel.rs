@@ -112,12 +112,8 @@ pub fn view<'a>(
 
     let fahrenheit = settings.temperature_unit == TempUnit::Fahrenheit;
     let temp_row: Element<'a, Message> = row![
-        qmark(p, "CPU temperature is read driver-free via WMI / system sensors. It shows \u{2014} when no sensor exposes it."),
-        Space::with_width(4),
         text("CPU temperature").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
-        Space::with_width(6),
-        text("Active").size(11).style(move |_| iced::widget::text::Style { color: Some(iced::Color::from_rgb(0.2, 0.8, 0.4)) }),
-        Space::with_width(8),
+        Space::with_width(Length::Fill),
         seg("\u{00B0}C".into(), !fahrenheit, Message::SetFahrenheit(false)),
         seg("\u{00B0}F".into(), fahrenheit, Message::SetFahrenheit(true)),
     ].align_y(iced::Alignment::Center).spacing(0).into();
@@ -125,22 +121,52 @@ pub fn view<'a>(
     // ── Tile Labels: CPU/GPU with Auto/Custom pills ──
     let cpu_auto = settings.cpu_custom_name.is_empty();
     let gpu_auto = settings.gpu_custom_name.is_empty();
+    // C# LineInput: underline-only text field (transparent, bottom border),
+    // dimmed while "Auto" is selected.
+    let name_input = |value: &str, auto: bool, on_input: fn(String) -> Message| -> Element<'a, Message> {
+        let line = if auto { iced::Color { a: 0.35, ..p.muted } } else { p.muted };
+        column![
+            text_input("auto-detected", value).size(11)
+                .padding(iced::Padding { top: 2.0, right: 2.0, bottom: 3.0, left: 2.0 })
+                .on_input(on_input)
+                .style(move |_t, _s| iced::widget::text_input::Style {
+                    background: iced::Background::Color(iced::Color::TRANSPARENT),
+                    border: Border { radius: 0.0.into(), width: 0.0, color: iced::Color::TRANSPARENT },
+                    icon: p.muted,
+                    placeholder: iced::Color { a: 0.5, ..p.muted },
+                    value: if auto { iced::Color { a: 0.5, ..p.text } } else { p.text },
+                    selection: iced::Color { a: 0.3, ..p.accent },
+                }),
+            container(Space::new(Length::Fill, 1))
+                .style(move |_| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(line)),
+                    ..Default::default()
+                }),
+        ].spacing(0).width(Length::Fill).into()
+    };
+    let label_cell = |t: &str| -> Element<'a, Message> {
+        text(t.to_string()).size(11)
+            .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
+            .width(28).into()
+    };
     let tile_labels = column![
         row![
-            text("CPU").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }).width(28),
-            text_input("auto", &settings.cpu_custom_name).size(11).on_input(Message::SetCpuName).width(Length::Fill),
+            label_cell("CPU"),
+            name_input(&settings.cpu_custom_name, cpu_auto, Message::SetCpuName),
             Space::with_width(8),
             pill("Auto".into(), cpu_auto, Message::SetCpuName(String::new())),
-            pill("Custom".into(), !cpu_auto, Message::SetCpuName("Custom".into())),
-        ].spacing(4).align_y(iced::Alignment::Center),
+            Space::with_width(4),
+            pill("Custom".into(), !cpu_auto, Message::Noop),
+        ].spacing(0).align_y(iced::Alignment::Center),
         row![
-            text("GPU").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }).width(28),
-            text_input("auto", &settings.gpu_custom_name).size(11).on_input(Message::SetGpuName).width(Length::Fill),
+            label_cell("GPU"),
+            name_input(&settings.gpu_custom_name, gpu_auto, Message::SetGpuName),
             Space::with_width(8),
             pill("Auto".into(), gpu_auto, Message::SetGpuName(String::new())),
-            pill("Custom".into(), !gpu_auto, Message::SetGpuName("Custom".into())),
-        ].spacing(4).align_y(iced::Alignment::Center),
-    ].spacing(6);
+            Space::with_width(4),
+            pill("Custom".into(), !gpu_auto, Message::Noop),
+        ].spacing(0).align_y(iced::Alignment::Center),
+    ].spacing(8);
 
     // ── Layout ──
     let layout_pills = row![
