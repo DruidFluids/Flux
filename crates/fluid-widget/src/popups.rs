@@ -1,5 +1,5 @@
 use fluid_core::settings::{AppSettings, SnapPosition, WarnMetric};
-use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, slider, text, text_input, toggler, Space};
+use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, text, text_input, toggler, Space};
 use iced::{window, Border, Color, Element, Length};
 use crate::style::Palette;
 use crate::Message;
@@ -39,7 +39,7 @@ fn label<'a>(t: &str, p: Palette) -> Element<'a, Message> {
 
 fn toggle_row<'a>(label_text: &str, on: bool, msg: fn(bool) -> Message, p: Palette) -> Element<'a, Message> {
     row![
-        toggler(on).size(14).on_toggle(msg),
+        toggler(on).size(14).on_toggle(msg).style(crate::style::toggler_style(p)),
         text(label_text.to_string()).size(11)
             .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
     ].spacing(6).align_y(iced::Alignment::Center).into()
@@ -215,7 +215,7 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
         ].spacing(6).align_y(iced::Alignment::Center),
         // Flash
         row![
-            toggler(w.flash_enabled).size(14).on_toggle(move |on| Message::SetWarnFlash(k3.clone(), on)),
+            toggler(w.flash_enabled).size(14).on_toggle(move |on| Message::SetWarnFlash(k3.clone(), on)).style(crate::style::toggler_style(p)),
             text("Flash".to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
             Space::with_width(Length::Fill),
             text_input("#FFFF3333", &w.flash_color).size(10).width(100)
@@ -224,7 +224,7 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
         ].spacing(6).align_y(iced::Alignment::Center),
         // Gradient
         row![
-            toggler(w.gradient_mode).size(14).on_toggle(move |on| Message::SetWarnGradient(k5.clone(), on)),
+            toggler(w.gradient_mode).size(14).on_toggle(move |on| Message::SetWarnGradient(k5.clone(), on)).style(crate::style::toggler_style(p)),
             text("Gradient mode \u{2014} unit color shifts blue \u{2192} red by temperature".to_string()).size(10)
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
         ].spacing(6).align_y(iced::Alignment::Center),
@@ -240,7 +240,7 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
     let ek = kind.to_string();
     container(column![
         row![
-            toggler(enabled).size(16).on_toggle(move |on| Message::SetWarnEnabled(ek.clone(), on)),
+            toggler(enabled).size(16).on_toggle(move |on| Message::SetWarnEnabled(ek.clone(), on)).style(crate::style::toggler_style(p)),
             text(display).size(13)
                 .font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
@@ -351,7 +351,7 @@ pub fn game_mode_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id
         let on = s.game_mode_tiles.iter().any(|t| t == internal);
         let name = internal.to_string();
         let el: Element<'a, Message> = row![
-            toggler(on).size(14).on_toggle(move |v| Message::ToggleGameModeTile(name.clone(), v)),
+            toggler(on).size(14).on_toggle(move |v| Message::ToggleGameModeTile(name.clone(), v)).style(crate::style::toggler_style(p)),
             text(display.to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
         ].spacing(6).align_y(iced::Alignment::Center).width(Length::FillPortion(1)).into();
         if i < 3 { row0.push(el); } else { row1.push(el); }
@@ -374,7 +374,7 @@ pub fn game_mode_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id
         section_header("APPEARANCE WHEN ACTIVE", p),
         row![label("Opacity", p), Space::with_width(Length::Fill),
             text(format!("{:.0}%", s.game_mode_opacity * 100.0)).size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) })],
-        slider(0.1..=1.0, s.game_mode_opacity, Message::SetGameModeOpacity).step(0.05),
+        crate::settings_panel::marked_slider(0.1, 1.0, s.game_mode_opacity, 0.01, 0.7, p, Message::SetGameModeOpacity),
         Space::with_height(6),
         label("Orientation", p),
         orient_pills,

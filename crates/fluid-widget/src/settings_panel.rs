@@ -102,7 +102,7 @@ pub fn view<'a>(
         let visible = settings.visible_tiles.iter().any(|v| v == internal);
         let name = internal.to_string();
         let t: Element<'a, Message> = row![
-            toggler(visible).size(14).on_toggle(move |on| Message::ToggleTile(name.clone(), on)),
+            toggler(visible).size(14).on_toggle(move |on| Message::ToggleTile(name.clone(), on)).style(crate::style::toggler_style(p)),
             text(display.to_string()).size(11)
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
         ].spacing(6).align_y(iced::Alignment::Center).width(Length::FillPortion(1)).into();
@@ -151,7 +151,7 @@ pub fn view<'a>(
     // ── Behavior: togglers in pairs + hotkey + paired sliders ──
     let sw = |label_text: &str, on: bool, msg: fn(bool)->Message| -> Element<'a, Message> {
         row![
-            toggler(on).size(14).on_toggle(msg),
+            toggler(on).size(14).on_toggle(msg).style(crate::style::toggler_style(p)),
             text(label_text.to_string()).size(11)
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
         ].spacing(6).align_y(iced::Alignment::Center).width(Length::FillPortion(1)).into()
@@ -159,7 +159,7 @@ pub fn view<'a>(
     let sw_tt = |label_text: &str, on: bool, msg: fn(bool)->Message, tip: &'static str| -> Element<'a, Message> {
         tooltip(
             row![
-                toggler(on).size(14).on_toggle(msg),
+                toggler(on).size(14).on_toggle(msg).style(crate::style::toggler_style(p)),
                 text(label_text.to_string()).size(11)
                     .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
             ].spacing(6).align_y(iced::Alignment::Center).width(Length::FillPortion(1)),
@@ -206,13 +206,13 @@ pub fn view<'a>(
         Space::with_height(4),
         // Paired sliders: Opacity + Update interval
         row![
-            pslider("Opacity", format!("{:.0}%", settings.widget_opacity * 100.0), 0.3, 1.0, settings.widget_opacity, 0.9, 0.05, Message::SetOpacity),
+            pslider("Opacity", format!("{:.0}%", settings.widget_opacity * 100.0), 0.3, 1.0, settings.widget_opacity, 0.9, 0.01, Message::SetOpacity),
             Space::with_width(8),
             pslider("Update interval", format!("{} ms", settings.update_interval_ms), 250.0, 5000.0, settings.update_interval_ms as f32, 1500.0, 250.0, Message::SetInterval),
         ],
         // UI scale + Tile width
         row![
-            pslider("UI scale", format!("{:.2}x", settings.ui_scale), 0.75, 1.5, settings.ui_scale, 1.0, 0.05, Message::SetUiScale),
+            pslider("UI scale", format!("{:.2}x", settings.ui_scale), 0.75, 1.5, settings.ui_scale, 1.0, 0.01, Message::SetUiScale),
             Space::with_width(8),
             pslider("Tile width", format!("{:.0}px", settings.tile_width), 110.0, 200.0, settings.tile_width, 130.0, 5.0, Message::SetTileWidth),
         ],
@@ -441,7 +441,7 @@ pub fn view<'a>(
         Space::with_height(4),
         color_editor,
         row![fl("Muted text visibility"), Space::with_width(Length::Fill), vl(format!("{:.2}", settings.muted_contrast))],
-        marked_slider(0.5, 1.6, settings.muted_contrast, 0.05, 1.0, p, Message::SetMutedContrast),
+        marked_slider(0.5, 1.6, settings.muted_contrast, 0.01, 1.0, p, Message::SetMutedContrast),
     ].spacing(3);
 
     // ── Font: sync toggle + font pickers + 3-col size sliders ──
@@ -449,7 +449,7 @@ pub fn view<'a>(
         row![
             tooltip(
                 row![
-                    toggler(settings.sync_fonts).size(14).on_toggle(Message::SetSyncFonts),
+                    toggler(settings.sync_fonts).size(14).on_toggle(Message::SetSyncFonts).style(crate::style::toggler_style(p)),
                     text("Sync fonts").size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
                 ].spacing(6).align_y(iced::Alignment::Center),
                 tip_box("When on, changing Primary font also sets Secondary and Indicator to the same font.", p), TipPos::Top,
@@ -457,7 +457,7 @@ pub fn view<'a>(
             Space::with_width(16),
             tooltip(
                 row![
-                    toggler(settings.randomize_fonts_on_dice).size(14).on_toggle(Message::SetRandomizeFonts),
+                    toggler(settings.randomize_fonts_on_dice).size(14).on_toggle(Message::SetRandomizeFonts).style(crate::style::toggler_style(p)),
                     text("Allow random fonts with \u{1F3B2} button").size(11)
                         .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
                 ].spacing(6).align_y(iced::Alignment::Center),
@@ -511,7 +511,7 @@ pub fn view<'a>(
     let remote = row![
         sh("Remote Monitoring", "Share this machine's sensor data over your local network. Others connect using the key below."),
         Space::with_width(8),
-        toggler(settings.remote_enabled).size(14).on_toggle(Message::SetRemoteEnabled),
+        toggler(settings.remote_enabled).size(14).on_toggle(Message::SetRemoteEnabled).style(crate::style::toggler_style(p)),
     ].align_y(iced::Alignment::Center);
 
     // ── Updates box ──
@@ -650,7 +650,7 @@ fn signed(v: i32) -> String {
 //   * Thumb: 12px accent circle with a 2px background-coloured ring.
 //   * Marker: a thin vertical line at the default value (1.5px muted@0.5),
 //     glowing accent (2px, full opacity) when the value is within 5% of default.
-fn marked_slider<'a>(min: f32, max: f32, val: f32, step: f32, default: f32, p: Palette, on: fn(f32) -> Message) -> Element<'a, Message> {
+pub(crate) fn marked_slider<'a>(min: f32, max: f32, val: f32, step: f32, default: f32, p: Palette, on: fn(f32) -> Message) -> Element<'a, Message> {
     use iced::widget::slider::{Handle, HandleShape, Rail, Style};
     let track_active = p.accent;
     let track_inactive = iced::Color { a: p.muted.a * 0.25, ..p.muted };
@@ -679,12 +679,12 @@ fn marked_slider<'a>(min: f32, max: f32, val: f32, step: f32, default: f32, p: P
     // fades to muted as it moves away.
     let dist = if range > 0.0 { (val - default).abs() / range } else { 1.0 };
     let (mc, mw, mo): (iced::Color, f32, f32) = if dist < 0.05 {
-        (p.accent, 2.0, 1.0)
+        (p.accent, 2.5, 1.0)
     } else if dist < 0.15 {
         let t = (dist - 0.05) / 0.10;
-        (p.accent, 2.0 - t * 0.5, 1.0 - t * 0.4)
+        (p.accent, 2.5 - t * 0.5, 1.0 - t * 0.3)
     } else {
-        (p.muted, 1.5, 0.5)
+        (p.muted, 2.0, 0.7)
     };
     let marker_color = iced::Color { a: mc.a * mo, ..mc };
     // Position the line at the default fraction. The 6px padding on each side
@@ -712,6 +712,10 @@ fn marked_slider<'a>(min: f32, max: f32, val: f32, step: f32, default: f32, p: P
 
     // Marker underneath, slider on top — the slider always receives drag events
     // and the thin marker shows above/below the 2px rail like the C# tick.
+    // Wrap the slider in a mouse_area that forces the Pointer cursor: iced's
+    // slider reports the "Grabbing" interaction while dragging, which winit maps
+    // to the 4-arrow SizeAll cursor on Windows.
+    let sl = mouse_area(sl).interaction(iced::mouse::Interaction::Pointer);
     stack![marker, sl].height(Length::Fixed(18.0)).into()
 }
 

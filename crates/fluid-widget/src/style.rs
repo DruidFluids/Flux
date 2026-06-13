@@ -86,6 +86,27 @@ impl Palette {
     }
 }
 
+/// Theme-aware toggle-switch style: accent track when on, muted track when off,
+/// white knob. Replaces iced's default fixed-blue toggler so it matches the
+/// active theme accent (C# ToggleSwitch behaviour).
+pub fn toggler_style(p: Palette) -> impl Fn(&iced::Theme, iced::widget::toggler::Status) -> iced::widget::toggler::Style + Copy {
+    move |_t, status| {
+        use iced::widget::toggler::{Status, Style};
+        let on = matches!(
+            status,
+            Status::Active { is_toggled: true } | Status::Hovered { is_toggled: true }
+        );
+        Style {
+            background: if on { p.accent } else { Color { a: 0.45, ..p.muted } },
+            background_border_width: 0.0,
+            background_border_color: Color::TRANSPARENT,
+            foreground: Color::WHITE,
+            foreground_border_width: 0.0,
+            foreground_border_color: Color::TRANSPARENT,
+        }
+    }
+}
+
 /// C# warning gradient: dist below threshold -> color.
 /// blue(15) -> purple(10) -> red-purple(4) -> bright red(0)
 pub fn gradient_color(dist: f64) -> Color {

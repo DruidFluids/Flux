@@ -59,17 +59,12 @@ fn work_area() -> Option<(f32, f32, f32, f32)> {
     // coordinates (divided by that monitor's DPI scale) so it matches the
     // logical window positions iced reports. SPI_GETWORKAREA only covered the
     // primary monitor in physical pixels — wrong on scaled/multi-monitor setups.
-    use windows::core::HSTRING;
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
     use windows::Win32::UI::HiDpi::GetDpiForWindow;
-    use windows::Win32::UI::WindowsAndMessaging::FindWindowW;
+    let hwnd = widget_hwnd()?;
     unsafe {
-        let hwnd = match FindWindowW(None, &HSTRING::from(WIDGET_TITLE)) {
-            Ok(h) if !h.0.is_null() => h,
-            _ => return None,
-        };
         let mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
         let mut mi = MONITORINFO {
             cbSize: std::mem::size_of::<MONITORINFO>() as u32,
@@ -105,20 +100,51 @@ fn set_run_at_startup(on: bool) {
 #[cfg(not(target_os = "windows"))]
 fn set_run_at_startup(_: bool) {}
 
-// Toggle WS_EX_TRANSPARENT (click-through) + WS_EX_LAYERED on a window by its
-// title. iced/winit doesn't expose raw HWND access, so we locate the window
-// via FindWindowW against its known title.
+// iced/winit doesn't expose raw HWND access. The daemon title fn runs before the
+// window is registered in our state, so the widget keeps the default
+// "fluidMonitor" title. We resolve the widget HWND once (it's the only such
+// window at startup), rename it to a unique title, and cache the handle so later
+// lookups never depend on the title again.
 #[cfg(target_os = "windows")]
-fn set_click_through(title: &str, on: bool) {
+fn widget_hwnd() -> Option<windows::Win32::Foundation::HWND> {
+    use std::sync::atomic::{AtomicIsize, Ordering};
     use windows::core::HSTRING;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, SetWindowTextW};
+    static CACHED: AtomicIsize = AtomicIsize::new(0);
+    let cached = CACHED.load(Ordering::Relaxed);
+    if cached != 0 {
+        return Some(HWND(cached as *mut _));
+    }
+    unsafe {
+        if let Ok(h) = FindWindowW(None, &HSTRING::from(WIDGET_TITLE)) {
+            if !h.0.is_null() {
+                CACHED.store(h.0 as isize, Ordering::Relaxed);
+                return Some(h);
+            }
+        }
+        if let Ok(h) = FindWindowW(None, &HSTRING::from("fluidMonitor")) {
+            if !h.0.is_null() {
+                let _ = SetWindowTextW(h, &HSTRING::from(WIDGET_TITLE));
+                CACHED.store(h.0 as isize, Ordering::Relaxed);
+                return Some(h);
+            }
+        }
+    }
+    None
+}
+
+// Toggle WS_EX_TRANSPARENT (click-through) + WS_EX_LAYERED on the widget window.
+#[cfg(target_os = "windows")]
+fn set_click_through(_title: &str, on: bool) {
     use windows::Win32::UI::WindowsAndMessaging::{
-        FindWindowW, GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_TRANSPARENT,
+        GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_TRANSPARENT,
+    };
+    let hwnd = match widget_hwnd() {
+        Some(h) => h,
+        None => return,
     };
     unsafe {
-        let hwnd = match FindWindowW(None, &HSTRING::from(title)) {
-            Ok(h) if !h.0.is_null() => h,
-            _ => return,
-        };
         let mut ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         let flags = (WS_EX_TRANSPARENT.0 | WS_EX_LAYERED.0) as isize;
         if on { ex |= flags; } else { ex &= !flags; }
@@ -128,25 +154,30 @@ fn set_click_through(title: &str, on: bool) {
 #[cfg(not(target_os = "windows"))]
 fn set_click_through(_: &str, _: bool) {}
 
+// Resolve + cache the widget HWND (renames the window to a unique title).
+fn rename_widget_window() {
+    #[cfg(target_os = "windows")]
+    { let _ = widget_hwnd(); }
+}
+
 // Current mouse cursor position in logical (DPI-scaled) screen coordinates,
 // matching the coordinate space iced uses for window positioning. iced's
 // right-press event doesn't expose the cursor, so we read it from Win32.
 #[cfg(target_os = "windows")]
 fn cursor_logical_pos() -> Option<(f32, f32)> {
-    use windows::core::HSTRING;
     use windows::Win32::Foundation::POINT;
     use windows::Win32::UI::HiDpi::GetDpiForWindow;
-    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, GetCursorPos};
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
     unsafe {
         let mut pt = POINT::default();
         GetCursorPos(&mut pt).ok()?;
         // Convert physical pixels -> logical points via the widget's DPI.
-        let scale = match FindWindowW(None, &HSTRING::from(WIDGET_TITLE)) {
-            Ok(h) if !h.0.is_null() => {
+        let scale = match widget_hwnd() {
+            Some(h) => {
                 let dpi = GetDpiForWindow(h);
                 if dpi == 0 { 96.0 } else { dpi as f32 }
             }
-            _ => 96.0,
+            None => 96.0,
         } / 96.0;
         Some((pt.x as f32 / scale, pt.y as f32 / scale))
     }
@@ -186,6 +217,10 @@ struct App {
     click_through_applied: bool,
     pending_snap: Option<(window::Id, Point, Instant)>,
     ignore_next_move: bool,
+    // When snapped to the right/bottom edge, resizes keep that edge anchored so
+    // the widget grows away from the corner.
+    snap_right: bool,
+    snap_bottom: bool,
     _tray: TrayIcon,
     settings_id: tray_icon::menu::MenuId,
     show_id: tray_icon::menu::MenuId,
@@ -254,7 +289,7 @@ impl App {
             windows: BTreeMap::new(), warn_state: HashMap::new(),
             flash_on: false, anim_phase: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, game_mode: false,
             click_through_applied: false,
-            pending_snap: None, ignore_next_move: false,
+            pending_snap: None, ignore_next_move: false, snap_right: false, snap_bottom: false,
             _tray: tray, settings_id: sid, show_id: wid, game_id: gid, exit_id: eid,
         };
         let size = app.widget_size();
@@ -332,8 +367,24 @@ impl App {
         let ids: Vec<_> = self.windows.iter().filter(|(_, k)| **k == kind).map(|(id, _)| *id).collect();
         Task::batch(ids.into_iter().map(window::close))
     }
-    fn resize_widget(&self) -> Task<Message> {
-        self.widget_window().map(|id| window::resize(id, self.widget_size())).unwrap_or(Task::none())
+    fn resize_widget(&mut self) -> Task<Message> {
+        let id = match self.widget_window() { Some(i) => i, None => return Task::none() };
+        let sz = self.widget_size();
+        let mut tasks = vec![window::resize(id, sz)];
+        // Keep the snapped corner anchored so the widget grows away from it.
+        if (self.snap_right || self.snap_bottom) && !self.game_mode {
+            if let Some((_, t, r, b)) = work_area() {
+                let x = if self.snap_right { r - sz.width } else { self.settings.window_x as f32 };
+                let y = if self.snap_bottom { b - sz.height } else { self.settings.window_y as f32 };
+                let _ = t;
+                self.settings.window_x = x as f64;
+                self.settings.window_y = y as f64;
+                self.ignore_next_move = true;
+                tasks.push(window::move_to(id, Point::new(x, y)));
+                let _ = self.settings.save();
+            }
+        }
+        Task::batch(tasks)
     }
     fn eval_warnings(&mut self) {
         self.warn_state.clear();
@@ -376,16 +427,23 @@ impl App {
         let mut names: Vec<String> = self.snapshot.network.interfaces.iter().map(|i| i.name.clone()).collect();
         names.sort(); names.dedup(); v.extend(names); v
     }
-    fn snap_position(&self, pos: Point) -> Option<Point> {
+    // Returns the snapped position plus which edges it locked to (right/bottom),
+    // so resizes can keep the snapped corner anchored.
+    fn snap_with_edges(&self, pos: Point) -> Option<(Point, bool, bool)> {
         let (l, t, r, b) = work_area()?;
         let sz = self.widget_size();
         let m = self.settings.snap_distance.max(0.0);
         let mut x = pos.x; let mut y = pos.y;
+        let mut sr = false; let mut sb = false;
         if (x - l).abs() < m { x = l; }
-        if ((x + sz.width) - r).abs() < m { x = r - sz.width; }
+        if ((x + sz.width) - r).abs() < m { x = r - sz.width; sr = true; }
         if (y - t).abs() < m { y = t; }
-        if ((y + sz.height) - b).abs() < m { y = b - sz.height; }
-        if (x - pos.x).abs() > 0.5 || (y - pos.y).abs() > 0.5 { Some(Point::new(x, y)) } else { None }
+        if ((y + sz.height) - b).abs() < m { y = b - sz.height; sb = true; }
+        if (x - pos.x).abs() > 0.5 || (y - pos.y).abs() > 0.5 || sr || sb {
+            Some((Point::new(x, y), sr, sb))
+        } else {
+            None
+        }
     }
     fn game_corner(&self) -> Option<Point> {
         let (l, t, r, b) = work_area()?;
@@ -488,10 +546,14 @@ impl App {
                 if let Some((id, pos, when)) = self.pending_snap {
                     if when.elapsed() > Duration::from_millis(150) {
                         self.pending_snap = None;
-                        if let Some(snapped) = self.snap_position(pos) {
-                            self.ignore_next_move = true;
-                            self.settings.window_x = snapped.x as f64; self.settings.window_y = snapped.y as f64;
-                            let _ = self.settings.save(); tasks.push(window::move_to(id, snapped));
+                        match self.snap_with_edges(pos) {
+                            Some((snapped, sr, sb)) => {
+                                self.snap_right = sr; self.snap_bottom = sb;
+                                self.ignore_next_move = true;
+                                self.settings.window_x = snapped.x as f64; self.settings.window_y = snapped.y as f64;
+                                let _ = self.settings.save(); tasks.push(window::move_to(id, snapped));
+                            }
+                            None => { self.snap_right = false; self.snap_bottom = false; }
                         }
                     }
                 }
@@ -504,12 +566,16 @@ impl App {
                 if self.game_mode || !self.settings.snap_to_edges { return Task::none(); }
                 if let Some(id) = self.widget_window() {
                     let cur = Point::new(self.settings.window_x as f32, self.settings.window_y as f32);
-                    if let Some(snapped) = self.snap_position(cur) {
-                        self.ignore_next_move = true;
-                        self.settings.window_x = snapped.x as f64;
-                        self.settings.window_y = snapped.y as f64;
-                        let _ = self.settings.save();
-                        return window::move_to(id, snapped);
+                    match self.snap_with_edges(cur) {
+                        Some((snapped, sr, sb)) => {
+                            self.snap_right = sr; self.snap_bottom = sb;
+                            self.ignore_next_move = true;
+                            self.settings.window_x = snapped.x as f64;
+                            self.settings.window_y = snapped.y as f64;
+                            let _ = self.settings.save();
+                            return window::move_to(id, snapped);
+                        }
+                        None => { self.snap_right = false; self.snap_bottom = false; }
                     }
                 }
                 Task::none()
@@ -517,8 +583,9 @@ impl App {
             Message::WindowOpened(id, kind) => {
                 self.windows.insert(id, kind);
                 if kind == WindowKind::Widget {
-                    // The daemon title fn gives the widget a unique title, so
-                    // click-through targets it alone. Apply current state.
+                    // Give the widget a unique OS window title (FindWindow target
+                    // for snap + click-through), then apply click-through state.
+                    rename_widget_window();
                     return self.apply_click_through();
                 }
                 Task::none()
@@ -601,6 +668,7 @@ impl App {
                 // Enabling edge-snap turns window-snap on by default (it's a
                 // sub-option that only appears while edge-snap is on).
                 if on { self.settings.snap_to_windows = true; }
+                else { self.snap_right = false; self.snap_bottom = false; }
                 Task::none()
             }
             // (theme accent edited via the colour swatches / hex editor)
