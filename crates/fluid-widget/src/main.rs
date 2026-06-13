@@ -551,7 +551,13 @@ impl App {
             Message::SetOpacity(v) => { self.settings.widget_opacity = v; Task::none() }
             Message::SetOrientation(o) => { self.settings.orientation = o; self.resize_widget() }
             Message::SetFahrenheit(f) => { self.settings.temperature_unit = if f { TempUnit::Fahrenheit } else { TempUnit::Celsius }; Task::none() }
-            Message::SetSnap(on) => { self.settings.snap_to_edges = on; Task::none() }
+            Message::SetSnap(on) => {
+                self.settings.snap_to_edges = on;
+                // Enabling edge-snap turns window-snap on by default (it's a
+                // sub-option that only appears while edge-snap is on).
+                if on { self.settings.snap_to_windows = true; }
+                Task::none()
+            }
             // (theme accent edited via the colour swatches / hex editor)
             Message::ThemePrev => {
                 self.push_appearance_undo();

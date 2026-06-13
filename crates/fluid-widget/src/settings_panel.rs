@@ -18,13 +18,13 @@ pub fn view<'a>(
     editing_color: Option<u8>,
 ) -> Element<'a, Message> {
     // ── Style helpers ──
-    let sh = |label: &str| -> Element<'a, Message> {
+    let sh = |label: &str, tip: &'static str| -> Element<'a, Message> {
         row![
             text(label.to_string()).size(13)
                 .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
                 .style(move |_| iced::widget::text::Style { color: Some(p.accent) }),
             Space::with_width(5),
-            qmark(p),
+            qmark(p, tip),
         ].align_y(iced::Alignment::Center).into()
     };
     let fl = |t: &str| -> Element<'a, Message> {
@@ -112,7 +112,7 @@ pub fn view<'a>(
 
     let fahrenheit = settings.temperature_unit == TempUnit::Fahrenheit;
     let temp_row: Element<'a, Message> = row![
-        qmark(p),
+        qmark(p, "CPU temperature is read driver-free via WMI / system sensors. It shows \u{2014} when no sensor exposes it."),
         Space::with_width(4),
         text("CPU temperature").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         Space::with_width(6),
@@ -156,11 +156,37 @@ pub fn view<'a>(
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
         ].spacing(6).align_y(iced::Alignment::Center).width(Length::FillPortion(1)).into()
     };
+    let sw_tt = |label_text: &str, on: bool, msg: fn(bool)->Message, tip: &'static str| -> Element<'a, Message> {
+        tooltip(
+            row![
+                toggler(on).size(14).on_toggle(msg),
+                text(label_text.to_string()).size(11)
+                    .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+            ].spacing(6).align_y(iced::Alignment::Center).width(Length::FillPortion(1)),
+            tip_box(tip, p), TipPos::Top,
+        ).into()
+    };
+
+    // "Snap to windows" is a sub-option of "Snap to edges" — only shown while
+    // edge-snap is on (enabling edge-snap turns it on by default).
+    let snap_row: Element<'a, Message> = if settings.snap_to_edges {
+        row![
+            sw("Snap to edges", settings.snap_to_edges, Message::SetSnap),
+            sw_tt("Snap to windows", settings.snap_to_windows, Message::SetSnapWindows,
+                "When snapping is on, the widget also docks to the outer edges of other windows."),
+        ].spacing(8).into()
+    } else {
+        row![
+            sw("Snap to edges", settings.snap_to_edges, Message::SetSnap),
+            Space::with_width(Length::FillPortion(1)),
+        ].spacing(8).into()
+    };
 
     let behavior = column![
         row![sw("Always on top", settings.always_on_top, Message::SetAlwaysOnTop), sw("Click-through", settings.click_through, Message::SetClickThrough)].spacing(8),
-        row![sw("Snap to edges", settings.snap_to_edges, Message::SetSnap), sw("Snap to windows", settings.snap_to_windows, Message::SetSnapWindows)].spacing(8),
-        sw("Run at Windows startup", settings.run_at_startup, Message::SetRunAtStartup),
+        snap_row,
+        sw_tt("Run at Windows startup", settings.run_at_startup, Message::SetRunAtStartup,
+            "Launch the widget when you sign in to Windows. Uses your user account only \u{2014} no admin rights needed."),
         Space::with_height(4),
         fl("Click-through hotkey"),
         row![
@@ -196,7 +222,7 @@ pub fn view<'a>(
     let selected_adapter = if adapters.contains(&adapter_value) { Some(adapter_value) } else { Some("All adapters".to_string()) };
     let network = column![
         row![
-            column![fl("Traffic indicator"), cycle_btn(traffic_label, Message::TrafficCycle)].width(Length::FillPortion(1)).spacing(2),
+            column![fl("Traffic indicator"), tooltip(cycle_btn(traffic_label, Message::TrafficCycle), tip_box("Click to cycle: Off > Blink > Fade > Glow", p), TipPos::Top)].width(Length::FillPortion(1)).spacing(2),
             Space::with_width(12),
             pslider("Arrow spacing", format!("{:.0}px", settings.network_arrow_spacing), 8.0, 40.0, settings.network_arrow_spacing, 16.0, 1.0, Message::SetArrowSpacing),
         ],
@@ -213,7 +239,7 @@ pub fn view<'a>(
     let selected_disk = if disks.contains(&settings.selected_disk_mount) { Some(settings.selected_disk_mount.clone()) } else { disks.first().cloned() };
     let disk = column![
         row![
-            column![fl("Tile label"), cycle_btn(disk_label_text, Message::DiskLabelCycle)].width(Length::FillPortion(1)).spacing(2),
+            column![fl("Tile label"), tooltip(cycle_btn(disk_label_text, Message::DiskLabelCycle), tip_box("Click to cycle: Drive letter, Model, Both", p), TipPos::Top)].width(Length::FillPortion(1)).spacing(2),
             Space::with_width(12),
             pslider("R: / W: spacing", format!("{:.0}px", settings.disk_label_spacing), 8.0, 40.0, settings.disk_label_spacing, 16.0, 1.0, Message::SetDiskLabelSpacing),
         ],
@@ -226,17 +252,17 @@ pub fn view<'a>(
     ].spacing(2);
 
     let left_col = column![
-        sh("Tiles"), tiles_grid, temp_row,
+        sh("Tiles", "Choose which sensors appear on the widget."), tiles_grid, temp_row,
         Space::with_height(4),
-        sh("Tile Labels"), tile_labels,
+        sh("Tile Labels", "Override the auto-detected hardware name shown on each tile."), tile_labels,
         Space::with_height(4),
-        sh("Layout"), layout_pills,
+        sh("Layout", "Stack tiles vertically (tall) or horizontally (wide)."), layout_pills,
         Space::with_height(4),
-        sh("Behavior"), behavior,
+        sh("Behavior", "Control how the widget behaves on your desktop."), behavior,
         Space::with_height(4),
-        sh("Network"), network,
+        sh("Network", "Choose which adapter to monitor. Defaults to all adapters combined."), network,
         Space::with_height(4),
-        sh("Disk"), disk,
+        sh("Disk", "Pick which physical disk the Disk tile should track. Defaults to the disk holding your system drive; its model shows under the tile header. Changes apply live \u{2014} no restart needed."), disk,
     ].spacing(3).width(Length::Fixed(300.0));
 
     // ════════════════════════════════════════════════════════════
@@ -414,12 +440,22 @@ pub fn view<'a>(
     // ── Font: sync toggle + font pickers + 3-col size sliders ──
     let fonts = column![
         row![
-            toggler(settings.sync_fonts).size(14).on_toggle(Message::SetSyncFonts),
-            text("Sync fonts").size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+            tooltip(
+                row![
+                    toggler(settings.sync_fonts).size(14).on_toggle(Message::SetSyncFonts),
+                    text("Sync fonts").size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                ].spacing(6).align_y(iced::Alignment::Center),
+                tip_box("When on, changing Primary font also sets Secondary and Indicator to the same font.", p), TipPos::Top,
+            ),
             Space::with_width(16),
-            toggler(settings.randomize_fonts_on_dice).size(14).on_toggle(Message::SetRandomizeFonts),
-            text("Allow random fonts with \u{1F3B2} button").size(11)
-                .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+            tooltip(
+                row![
+                    toggler(settings.randomize_fonts_on_dice).size(14).on_toggle(Message::SetRandomizeFonts),
+                    text("Allow random fonts with \u{1F3B2} button").size(11)
+                        .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                ].spacing(6).align_y(iced::Alignment::Center),
+                tip_box("When on, the \u{1F3B2} button also picks random fonts in addition to theme + skin.", p), TipPos::Top,
+            ),
         ].spacing(6).align_y(iced::Alignment::Center),
         {
             let mut opts = vec![FONT_DEFAULT.to_string()];
@@ -466,7 +502,7 @@ pub fn view<'a>(
 
     // ── Remote Monitoring ──
     let remote = row![
-        sh("Remote Monitoring"),
+        sh("Remote Monitoring", "Share this machine's sensor data over your local network. Others connect using the key below."),
         Space::with_width(8),
         toggler(settings.remote_enabled).size(14).on_toggle(Message::SetRemoteEnabled),
     ].align_y(iced::Alignment::Center);
@@ -503,13 +539,13 @@ pub fn view<'a>(
     });
 
     let right_col = column![
-        sh("Appearance"), appearance,
+        sh("Appearance", "Customize colors. Click any swatch in the strip to open the color picker."), appearance,
         Space::with_height(6),
-        sh("Font"), fonts,
+        sh("Font", "Pick fonts for Primary numbers, Secondary labels, and Indicators (units). Toggle 'Sync' to lock all three together. Sizes nudge the chosen font up or down."), fonts,
         Space::with_height(6),
         remote,
         Space::with_height(6),
-        sh("Updates"), updates,
+        sh("Updates", ""), updates,
     ].spacing(3).width(Length::Fill);
 
     // ════════════════════════════════════════════
@@ -534,21 +570,21 @@ pub fn view<'a>(
     ).on_press(Message::DragWindow(win_id));
 
     // Bottom bar: [?|⚙] split + Reset + Save
-    let split_left = button(text("?").size(14).font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
+    let split_left = tooltip(button(text("?").size(14).font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
         .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
     ).padding([4, 12]).style(move |_,_| button::Style {
         background: Some(iced::Background::Color(p.tile)),
         border: Border { radius: iced::border::Radius { top_left: 7.0, top_right: 0.0, bottom_right: 0.0, bottom_left: 7.0 }, ..Border::default() },
         ..Default::default()
-    }).on_press(Message::OpenHelp);
+    }).on_press(Message::OpenHelp), tip_box("Help \u{2014} feature guide", p), TipPos::Top);
     let split_divider = container(Space::new(1, 24)).style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(iced::Color { a: 0.4, ..p.muted })), ..Default::default() });
-    let split_right = button(text("\u{2699}").size(13).font(iced::Font::with_name("Segoe UI Symbol"))
+    let split_right = tooltip(button(text("\u{2699}").size(13).font(iced::Font::with_name("Segoe UI Symbol"))
         .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
     ).padding([4, 12]).style(move |_,_| button::Style {
         background: Some(iced::Background::Color(p.tile)),
         border: Border { radius: iced::border::Radius { top_left: 0.0, top_right: 7.0, bottom_right: 7.0, bottom_left: 0.0 }, ..Border::default() },
         ..Default::default()
-    }).on_press(Message::OpenTools);
+    }).on_press(Message::OpenTools), tip_box("Tools \u{2014} Alerts, Game Mode, Utilities", p), TipPos::Top);
 
     // C# BottomBarDanger: tile fill, IndianRed border + text, radius 6.
     let indian_red = iced::Color::from_rgb(0.804, 0.361, 0.361);
@@ -688,8 +724,8 @@ fn tip_box<'a>(t: &str, p: Palette) -> Element<'a, Message> {
     .into()
 }
 
-fn qmark<'a>(p: Palette) -> Element<'a, Message> {
-    container(
+fn qmark<'a>(p: Palette, tip: &str) -> Element<'a, Message> {
+    let bubble = container(
         text("?").size(9).font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
             .style(move |_| iced::widget::text::Style { color: Some(iced::Color::WHITE) })
     )
@@ -699,8 +735,12 @@ fn qmark<'a>(p: Palette) -> Element<'a, Message> {
         background: Some(iced::Background::Color(iced::Color { a: 0.4, ..p.muted })),
         border: Border { radius: 7.0.into(), ..Border::default() },
         ..Default::default()
-    })
-    .into()
+    });
+    if tip.is_empty() {
+        bubble.into()
+    } else {
+        tooltip(bubble, tip_box(tip, p), TipPos::Bottom).into()
+    }
 }
 
 
