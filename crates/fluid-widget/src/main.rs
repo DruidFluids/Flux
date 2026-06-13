@@ -102,7 +102,7 @@ fn set_click_through(title: &str, on: bool) {
 fn set_click_through(_: &str, _: bool) {}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help }
+enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu }
 
 // Snapshot of all appearance state for the C# "Undo last change" stack
 // (colors + skin + fonts). Up to 5 steps back.
@@ -149,6 +149,7 @@ enum Message {
     WindowMoved(window::Id, Point),
     OpenSettings, HideWidget, SaveClose, ResetDefaults, Noop,
     OpenTools, OpenAlerts, OpenGameMode, OpenHelp, ClosePopup(window::Id),
+    ShowWidgetMenu, WidgetMenuSettings, WidgetMenuExit, WindowUnfocused(window::Id),
     ToggleTile(String, bool),
     SetOpacity(f32), SetOrientation(Orientation),
     SetFahrenheit(bool), SetSnap(bool),
@@ -479,6 +480,28 @@ impl App {
                 let _ = self.settings.save();
                 Task::batch([window::close(id), self.resize_widget()])
             }
+            // C# widget Window.ContextMenu (right-click): Settings… / Exit.
+            Message::ShowWidgetMenu => {
+                if self.windows.values().any(|k| *k == WindowKind::WidgetMenu) { return Task::none(); }
+                // Anchor the menu just inside the widget's top-left (cursor
+                // position isn't exposed by iced's right-press event).
+                let pos = Point::new(self.settings.window_x as f32 + 8.0, self.settings.window_y as f32 + 26.0);
+                let (_, t) = window::open(window::Settings {
+                    size: popups::WIDGET_MENU_SIZE, position: window::Position::Specific(pos),
+                    decorations: false, transparent: true, resizable: false,
+                    level: window::Level::AlwaysOnTop, ..Default::default()
+                });
+                t.map(|id| Message::WindowOpened(id, WindowKind::WidgetMenu))
+            }
+            Message::WidgetMenuSettings => Task::batch([self.close_kind(WindowKind::WidgetMenu), self.open_settings()]),
+            Message::WidgetMenuExit => iced::exit(),
+            Message::WindowUnfocused(id) => {
+                // Dismiss the context menu when it loses focus (click elsewhere).
+                if self.windows.get(&id) == Some(&WindowKind::WidgetMenu) {
+                    return window::close(id);
+                }
+                Task::none()
+            }
             Message::SaveClose => {
                 let _ = self.settings.save();
                 let close = self.settings_window().map(window::close).unwrap_or(Task::none());
@@ -736,6 +759,7 @@ impl App {
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id),
             WindowKind::Help => popups::help_view(&self.settings, p, id),
+            WindowKind::WidgetMenu => popups::widget_menu_view(p),
             WindowKind::Widget => self.widget_view(id, p),
         }
     }
@@ -774,7 +798,10 @@ impl App {
                 background: Some(iced::Background::Color(p.bg)),
                 border: Border { radius: skin.widget_radius.into(), width: skin.widget_border, color: widget_border }, ..Default::default()
             });
-        mouse_area(root).on_press(Message::DragWindow(id)).into()
+        mouse_area(root)
+            .on_press(Message::DragWindow(id))
+            .on_right_press(Message::ShowWidgetMenu)
+            .into()
     }
 
     // Returns the current network-traffic indicator opacity multiplier (1.0 if
@@ -798,6 +825,7 @@ impl App {
             window::close_events().map(Message::WindowClosed),
             window::events().map(|(id, event)| match event {
                 window::Event::Moved(pos) => Message::WindowMoved(id, pos),
+                window::Event::Unfocused => Message::WindowUnfocused(id),
                 _ => Message::TrayPoll,
             }),
         ];

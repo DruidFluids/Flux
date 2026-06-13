@@ -81,6 +81,51 @@ fn shell<'a>(title: &str, win_id: window::Id, p: Palette, body: Element<'a, Mess
         .into()
 }
 
+// ── Widget right-click context menu (C# Window.ContextMenu) ──────────────────
+
+pub const WIDGET_MENU_SIZE: iced::Size = iced::Size::new(150.0, 70.0);
+
+pub fn widget_menu_view<'a>(p: Palette) -> Element<'a, Message> {
+    let item = |label: &str, msg: Message| -> Element<'a, Message> {
+        button(
+            text(label.to_string()).size(12)
+                .style(move |_| iced::widget::text::Style { color: Some(p.text) })
+        )
+        .width(Length::Fill)
+        .padding(iced::Padding { top: 5.0, right: 12.0, bottom: 5.0, left: 12.0 })
+        .style(move |_, status| {
+            let hover = matches!(status, button::Status::Hovered);
+            button::Style {
+                background: if hover { Some(iced::Background::Color(p.accent)) } else { None },
+                text_color: if hover { Color::WHITE } else { p.text },
+                border: Border { radius: 4.0.into(), ..Border::default() },
+                ..Default::default()
+            }
+        })
+        .on_press(msg).into()
+    };
+    let divider = container(Space::new(Length::Fill, 1))
+        .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 6.0 })
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(Color { a: 0.3, ..p.muted })),
+            ..Default::default()
+        });
+
+    container(column![
+        item("Settings\u{2026}", Message::WidgetMenuSettings),
+        divider,
+        item("Exit", Message::WidgetMenuExit),
+    ].spacing(2))
+    .width(Length::Fill).height(Length::Fill)
+    .padding(4)
+    .style(move |_| iced::widget::container::Style {
+        background: Some(iced::Background::Color(p.bg)),
+        border: Border { radius: 8.0.into(), width: 1.0, color: Color { a: 0.5, ..p.muted } },
+        ..Default::default()
+    })
+    .into()
+}
+
 // ── Tools ───────────────────────────────────────────────────────────────────
 
 pub const TOOLS_SIZE: iced::Size = iced::Size::new(380.0, 220.0);
