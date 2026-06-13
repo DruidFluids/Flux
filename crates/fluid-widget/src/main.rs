@@ -210,11 +210,15 @@ impl App {
     }
 
     fn current_tiles(&self) -> Vec<String> {
-        if self.game_mode {
-            self.settings.tile_order.iter().filter(|t| self.settings.game_mode_tiles.contains(t)).cloned().collect()
-        } else {
-            self.settings.tile_order.iter().filter(|t| self.settings.visible_tiles.contains(t)).cloned().collect()
-        }
+        // Canonical C# order (AppSettings.TileOrder default): Clock, CPU, GPU,
+        // RAM, Network, Storage. The Rust port has no drag-reorder UI, so we
+        // always render in this order, filtered by which tiles are enabled.
+        const CANONICAL: [&str; 6] = ["Clock", "CPU", "GPU", "RAM", "Network", "Disk"];
+        let enabled = if self.game_mode { &self.settings.game_mode_tiles } else { &self.settings.visible_tiles };
+        CANONICAL.iter()
+            .filter(|t| enabled.iter().any(|v| v == *t))
+            .map(|s| s.to_string())
+            .collect()
     }
     fn widget_size(&self) -> Size {
         let n = self.current_tiles().len().max(1) as f32;
@@ -591,7 +595,8 @@ impl App {
                 Task::none()
             }
             Message::DiskLabelCycle => {
-                let styles = ["Letter", "Model", "Both", "None"];
+                // C# cycle: Drive letter > Model > Both.
+                let styles = ["Letter", "Model", "Both"];
                 let cur = styles.iter().position(|s| *s == self.settings.disk_label_style).unwrap_or(0);
                 self.settings.disk_label_style = styles[(cur + 1) % styles.len()].to_string();
                 Task::none()

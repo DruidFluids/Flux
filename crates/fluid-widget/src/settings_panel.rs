@@ -4,8 +4,9 @@ use iced::{Border, Element, Length};
 use crate::style::Palette;
 use crate::Message;
 
-const TILES: [&str; 6] = ["Clock","CPU","GPU","RAM","Network","Storage"];
-const TILE_INTERNAL: [&str; 6] = ["Clock","CPU","GPU","RAM","Network","Disk"];
+// C# TileTogglesGrid order: row0 CPU/GPU/RAM, row1 Network/Storage/Clock.
+const TILES: [&str; 6] = ["CPU","GPU","RAM","Network","Storage","Clock"];
+const TILE_INTERNAL: [&str; 6] = ["CPU","GPU","RAM","Network","Disk","Clock"];
 
 const FONT_DEFAULT: &str = "(Default)";
 
