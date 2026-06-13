@@ -1,0 +1,18 @@
+[package]
+name = "fluid-widget"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "fluidmonitor"
+path = "src/main.rs"
+
+[dependencies]
+fluid-core = { path = "../fluid-core" }
+fluid-ipc = { path = "../fluid-ipc" }
+iced = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+fluid-sensor = { version = "2.0.0", path = "../fluid-sensor" }

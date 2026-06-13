@@ -1,0 +1,11 @@
+[package]
+name = "fluid-sensor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fluid-core = { path = "../fluid-core" }
+sysinfo = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+nvml-wrapper = "0.12.1"

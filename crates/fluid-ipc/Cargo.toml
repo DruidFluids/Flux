@@ -1,0 +1,12 @@
+[package]
+name = "fluid-ipc"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fluid-core = { path = "../fluid-core" }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+interprocess = { workspace = true }
