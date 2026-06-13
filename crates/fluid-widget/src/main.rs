@@ -104,6 +104,20 @@ fn set_click_through(_: &str, _: bool) {}
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help }
 
+// Snapshot of all appearance state for the C# "Undo last change" stack
+// (colors + skin + fonts). Up to 5 steps back.
+#[derive(Clone)]
+struct Appearance {
+    bg: String, tile: String, accent: String, text: String, muted: String,
+    skin: String,
+    primary_font: Option<String>, secondary_font: Option<String>, indicator_font: Option<String>,
+}
+
+fn nanos() -> usize {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as usize).unwrap_or(0)
+}
+
 struct App {
     settings: AppSettings,
     snapshot: SensorSnapshot,
@@ -113,6 +127,7 @@ struct App {
     flash_on: bool,
     anim_phase: f32,
     font_list: Vec<String>,
+    appearance_undo: Vec<Appearance>,
     editing_color: Option<u8>,
     game_mode: bool,
     click_through_applied: bool,
@@ -153,7 +168,8 @@ enum Message {
     SetArrowSpacing(f32), SetArrowFontOffset(f32),
     SetDiskLabelSpacing(f32), SetDiskLabelFontOffset(f32),
     DiskLabelCycle,
-    SkinPrev, SkinNext, SkinDice,
+    SkinPrev, SkinNext,
+    RandomizeAppearance, RandomizeSkinOnly, UndoAppearance,
     SetSyncFonts(bool), SetRandomizeFonts(bool),
     SetFont(u8, String),
     SetUpdateMode(String),
@@ -181,7 +197,7 @@ impl App {
         let app = Self {
             settings, snapshot: SensorSnapshot::default(), poller: None,
             windows: BTreeMap::new(), warn_state: HashMap::new(),
-            flash_on: false, anim_phase: 0.0, font_list: fonts::system_fonts(), editing_color: None, game_mode: false,
+            flash_on: false, anim_phase: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, game_mode: false,
             click_through_applied: false,
             pending_snap: None, ignore_next_move: false,
             _tray: tray, settings_id: sid, show_id: wid, game_id: gid, exit_id: eid,
@@ -337,6 +353,39 @@ impl App {
         })
     }
 
+    fn snapshot_appearance(&self) -> Appearance {
+        Appearance {
+            bg: self.settings.theme_bg.clone(),
+            tile: self.settings.theme_tile.clone(),
+            accent: self.settings.theme_accent.clone(),
+            text: self.settings.theme_text.clone(),
+            muted: self.settings.theme_muted.clone(),
+            skin: self.settings.active_skin.clone(),
+            primary_font: self.settings.primary_font.clone(),
+            secondary_font: self.settings.secondary_font.clone(),
+            indicator_font: self.settings.indicator_font.clone(),
+        }
+    }
+    // Push the current appearance onto the undo stack (cap 5, like C#).
+    fn push_appearance_undo(&mut self) {
+        let snap = self.snapshot_appearance();
+        self.appearance_undo.push(snap);
+        if self.appearance_undo.len() > 5 {
+            self.appearance_undo.remove(0);
+        }
+    }
+    fn restore_appearance(&mut self, a: Appearance) {
+        self.settings.theme_bg = a.bg;
+        self.settings.theme_tile = a.tile;
+        self.settings.theme_accent = a.accent;
+        self.settings.theme_text = a.text;
+        self.settings.theme_muted = a.muted;
+        self.settings.active_skin = a.skin;
+        self.settings.primary_font = a.primary_font;
+        self.settings.secondary_font = a.secondary_font;
+        self.settings.indicator_font = a.indicator_font;
+    }
+
     // Apply (or clear) click-through on the widget window based on current mode.
     fn apply_click_through(&mut self) -> Task<Message> {
         let want = if self.game_mode {
@@ -453,19 +502,21 @@ impl App {
             Message::SetSnap(on) => { self.settings.snap_to_edges = on; Task::none() }
             // (theme accent edited via the colour swatches / hex editor)
             Message::ThemePrev => {
+                self.push_appearance_undo();
                 let n = style::THEME_PRESETS.len();
                 let idx = style::match_preset(&self.settings).map(|i| (i + n - 1) % n).unwrap_or(n - 1);
                 style::apply_preset(&mut self.settings, idx); Task::none()
             }
             Message::ThemeNext => {
+                self.push_appearance_undo();
                 let n = style::THEME_PRESETS.len();
                 let idx = style::match_preset(&self.settings).map(|i| (i + 1) % n).unwrap_or(0);
                 style::apply_preset(&mut self.settings, idx); Task::none()
             }
             Message::ThemeDice => {
+                self.push_appearance_undo();
                 let n = style::THEME_PRESETS.len();
-                let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos() as usize).unwrap_or(0);
-                let mut idx = nanos % n;
+                let mut idx = nanos() % n;
                 if let Some(cur) = style::match_preset(&self.settings) { if idx == cur { idx = (idx + 1) % n; } }
                 style::apply_preset(&mut self.settings, idx); Task::none()
             }
@@ -518,23 +569,63 @@ impl App {
             Message::SetHotkey(v) => { self.settings.click_through_hotkey = v; Task::none() }
             Message::SetRemoteEnabled(on) => { self.settings.remote_enabled = on; Task::none() }
             Message::SkinPrev => {
+                self.push_appearance_undo();
                 let skins = style::SKIN_NAMES;
                 let cur = skins.iter().position(|s| *s == self.settings.active_skin).unwrap_or(0);
                 self.settings.active_skin = skins[(cur + skins.len() - 1) % skins.len()].to_string();
                 self.resize_widget()
             }
             Message::SkinNext => {
+                self.push_appearance_undo();
                 let skins = style::SKIN_NAMES;
                 let cur = skins.iter().position(|s| *s == self.settings.active_skin).unwrap_or(0);
                 self.settings.active_skin = skins[(cur + 1) % skins.len()].to_string();
                 self.resize_widget()
             }
-            Message::SkinDice => {
+            // C# OnRandomizeAppearance (left-click skin dice): random skin AND a
+            // random colour palette (a mashup); fonts too if RandomizeFontsOnDice.
+            Message::RandomizeAppearance => {
+                self.push_appearance_undo();
+                let r = nanos();
                 let skins = style::SKIN_NAMES;
-                let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos() as usize).unwrap_or(0);
-                let mut idx = nanos % skins.len();
-                if let Some(cur) = skins.iter().position(|s| *s == self.settings.active_skin) { if idx == cur { idx = (idx + 1) % skins.len(); } }
+                let mut si = r % skins.len();
+                if skins[si] == self.settings.active_skin { si = (si + 1) % skins.len(); }
+                self.settings.active_skin = skins[si].to_string();
+
+                let n = style::THEME_PRESETS.len();
+                let ti = (r / 7 + 1) % n;
+                style::apply_preset(&mut self.settings, ti);
+
+                if self.settings.randomize_fonts_on_dice && !self.font_list.is_empty() {
+                    let fl = &self.font_list;
+                    let primary = fl[(r / 13) % fl.len()].clone();
+                    if self.settings.sync_fonts {
+                        self.settings.primary_font = Some(primary.clone());
+                        self.settings.secondary_font = Some(primary.clone());
+                        self.settings.indicator_font = Some(primary);
+                    } else {
+                        self.settings.primary_font = Some(primary);
+                        self.settings.secondary_font = Some(fl[(r / 17) % fl.len()].clone());
+                        self.settings.indicator_font = Some(fl[(r / 19) % fl.len()].clone());
+                    }
+                }
+                self.resize_widget()
+            }
+            // C# OnRandomizeSkinOnly (right-click skin dice): random skin, keep
+            // colours and fonts untouched.
+            Message::RandomizeSkinOnly => {
+                self.push_appearance_undo();
+                let skins = style::SKIN_NAMES;
+                let mut idx = nanos() % skins.len();
+                if skins[idx] == self.settings.active_skin { idx = (idx + 1) % skins.len(); }
                 self.settings.active_skin = skins[idx].to_string();
+                self.resize_widget()
+            }
+            // C# OnUndoAppearance: revert the last appearance change (up to 5).
+            Message::UndoAppearance => {
+                if let Some(prev) = self.appearance_undo.pop() {
+                    self.restore_appearance(prev);
+                }
                 self.resize_widget()
             }
             Message::SetSyncFonts(on) => { self.settings.sync_fonts = on; Task::none() }
@@ -565,6 +656,7 @@ impl App {
             Message::PresetSlotClick(slot) => {
                 let idx = slot as usize;
                 if idx < self.settings.presets.len() {
+                    self.push_appearance_undo();
                     let p = self.settings.presets[idx].clone();
                     self.settings.theme_bg = p.bg;
                     self.settings.theme_tile = p.tile;

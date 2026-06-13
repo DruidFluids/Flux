@@ -1,5 +1,6 @@
 ﻿use fluid_core::settings::{AppSettings, Orientation, TempUnit};
-use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, slider, text, text_input, toggler, Space};
+use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, slider, text, text_input, toggler, tooltip, Space};
+use iced::widget::tooltip::Position as TipPos;
 use iced::{Border, Element, Length};
 use crate::style::Palette;
 use crate::Message;
@@ -278,10 +279,26 @@ pub fn view<'a>(
     let skins_box = container(column![
         text("Skins").size(9).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         row![
-            button(text("\u{21B6}").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-                .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() }).on_press(Message::SkinPrev),
-            button(text("\u{1F3B2}").size(11).font(iced::Font::with_name("Segoe UI Symbol")))
-                .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() }).on_press(Message::SkinDice),
+            // ↶ Undo last appearance change (dice roll, theme/skin/font change).
+            tooltip(
+                button(text("\u{21B6}").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+                    .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() }).on_press(Message::UndoAppearance),
+                tip_box("Undo last change \u{2014} reverts the last appearance change (dice, theme/skin pick, or font change). Up to 5 steps back.", p),
+                TipPos::Bottom,
+            ),
+            // 🎲 Left-click = random skin + colours; right-click = skin only.
+            tooltip(
+                mouse_area(
+                    container(text("\u{1F3B2}").size(11).font(iced::Font::with_name("Segoe UI Symbol"))
+                        .style(move |_| iced::widget::text::Style { color: Some(p.text) }))
+                        .padding([3, 6])
+                        .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() })
+                )
+                .on_press(Message::RandomizeAppearance)
+                .on_right_press(Message::RandomizeSkinOnly),
+                tip_box("Randomize skin + colours. Left-click: rolls a random skin AND colour palette. Right-click: rolls skin only. Fonts roll too if 'Randomize fonts' is on.", p),
+                TipPos::Bottom,
+            ),
             Space::with_width(4),
             pill("\u{2039}".into(), false, Message::SkinPrev),
             container(
@@ -552,6 +569,22 @@ pub fn view<'a>(
             ..Default::default()
         })
         .into()
+}
+
+// Styled tooltip body matching the C# hover cards (dark box, wrapped text).
+fn tip_box<'a>(t: &str, p: Palette) -> Element<'a, Message> {
+    container(
+        text(t.to_string()).size(11)
+            .style(move |_| iced::widget::text::Style { color: Some(p.text) })
+    )
+    .max_width(240)
+    .padding(8)
+    .style(move |_| iced::widget::container::Style {
+        background: Some(iced::Background::Color(p.tile)),
+        border: Border { radius: 6.0.into(), width: 1.0, color: iced::Color { a: 0.4, ..p.muted } },
+        ..Default::default()
+    })
+    .into()
 }
 
 fn qmark<'a>(p: Palette) -> Element<'a, Message> {
