@@ -101,6 +101,32 @@ fn set_click_through(title: &str, on: bool) {
 #[cfg(not(target_os = "windows"))]
 fn set_click_through(_: &str, _: bool) {}
 
+// Current mouse cursor position in logical (DPI-scaled) screen coordinates,
+// matching the coordinate space iced uses for window positioning. iced's
+// right-press event doesn't expose the cursor, so we read it from Win32.
+#[cfg(target_os = "windows")]
+fn cursor_logical_pos() -> Option<(f32, f32)> {
+    use windows::core::HSTRING;
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::HiDpi::GetDpiForWindow;
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, GetCursorPos};
+    unsafe {
+        let mut pt = POINT::default();
+        GetCursorPos(&mut pt).ok()?;
+        // Convert physical pixels -> logical points via the widget's DPI.
+        let scale = match FindWindowW(None, &HSTRING::from(WIDGET_TITLE)) {
+            Ok(h) if !h.0.is_null() => {
+                let dpi = GetDpiForWindow(h);
+                if dpi == 0 { 96.0 } else { dpi as f32 }
+            }
+            _ => 96.0,
+        } / 96.0;
+        Some((pt.x as f32 / scale, pt.y as f32 / scale))
+    }
+}
+#[cfg(not(target_os = "windows"))]
+fn cursor_logical_pos() -> Option<(f32, f32)> { None }
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu }
 
@@ -483,9 +509,12 @@ impl App {
             // C# widget Window.ContextMenu (right-click): Settings… / Exit.
             Message::ShowWidgetMenu => {
                 if self.windows.values().any(|k| *k == WindowKind::WidgetMenu) { return Task::none(); }
-                // Anchor the menu just inside the widget's top-left (cursor
-                // position isn't exposed by iced's right-press event).
-                let pos = Point::new(self.settings.window_x as f32 + 8.0, self.settings.window_y as f32 + 26.0);
+                // Anchor the menu at the cursor (like the C# ContextMenu),
+                // falling back to the widget top-left if unavailable.
+                let pos = match cursor_logical_pos() {
+                    Some((x, y)) => Point::new(x, y),
+                    None => Point::new(self.settings.window_x as f32 + 8.0, self.settings.window_y as f32 + 26.0),
+                };
                 let (_, t) = window::open(window::Settings {
                     size: popups::WIDGET_MENU_SIZE, position: window::Position::Specific(pos),
                     decorations: false, transparent: true, resizable: false,
