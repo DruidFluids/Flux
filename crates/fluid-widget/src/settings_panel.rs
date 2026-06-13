@@ -687,36 +687,52 @@ pub(crate) fn marked_slider<'a>(min: f32, max: f32, val: f32, step: f32, default
         (p.muted, 2.0, 0.7)
     };
     let marker_color = iced::Color { a: mc.a * mo, ..mc };
-    // Position the line at the default fraction. The 6px padding on each side
-    // mirrors the thumb half-width so the marker lands exactly under the thumb
-    // centre when the value equals the default.
-    let lp = (frac * 1000.0).round() as u16;
-    let rp = ((1.0 - frac) * 1000.0).round() as u16;
-    let marker = container(
-        row![
-            Space::with_width(Length::FillPortion(lp.max(1))),
-            container(Space::new(Length::Fixed(mw), Length::Fixed(16.0)))
-                .style(move |_| iced::widget::container::Style {
-                    background: Some(iced::Background::Color(marker_color)),
-                    border: Border { radius: 1.0.into(), ..Border::default() },
-                    ..Default::default()
-                }),
-            Space::with_width(Length::FillPortion(rp.max(1))),
-        ]
-        .height(Length::Fill)
-        .align_y(iced::Alignment::Center)
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 6.0 });
+    // Draw the marker with a canvas so it lands at EXACTLY iced's thumb centre
+    // formula (x = 6 + frac*(width-12)). A flex-spacer layout was always off by
+    // ~half the line width; the canvas knows the real width at draw time.
+    let marker = iced::widget::canvas(DefaultMarker { frac, color: marker_color, width: mw })
+        .width(Length::Fill)
+        .height(Length::Fill);
 
-    // Marker underneath, slider on top — the slider always receives drag events
-    // and the thin marker shows above/below the 2px rail like the C# tick.
-    // Wrap the slider in a mouse_area that forces the Pointer cursor: iced's
-    // slider reports the "Grabbing" interaction while dragging, which winit maps
-    // to the 4-arrow SizeAll cursor on Windows.
-    let sl = mouse_area(sl).interaction(iced::mouse::Interaction::Pointer);
-    stack![marker, sl].height(Length::Fixed(18.0)).into()
+    // Transparent top overlay that reports the Pointer cursor. iced's slider
+    // reports "Grabbing", which winit maps to the 4-arrow SizeAll cursor on
+    // Windows. Stack returns the topmost non-None interaction, so this overlay
+    // wins; it has no handlers, so press/drag events fall through to the slider.
+    let cursor_fix = mouse_area(Space::new(Length::Fill, Length::Fill))
+        .interaction(iced::mouse::Interaction::Pointer);
+    stack![marker, sl, cursor_fix].height(Length::Fixed(18.0)).into()
+}
+
+// Canvas program that draws the default-value tick at the exact thumb position.
+struct DefaultMarker {
+    frac: f32,
+    color: iced::Color,
+    width: f32,
+}
+
+impl iced::widget::canvas::Program<Message> for DefaultMarker {
+    type State = ();
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &iced::Renderer,
+        _theme: &iced::Theme,
+        bounds: iced::Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<iced::widget::canvas::Geometry> {
+        use iced::widget::canvas::{Frame, Path};
+        let mut frame = Frame::new(renderer, bounds.size());
+        // Matches iced slider: handle centre = 6 + frac*(width - 12).
+        let cx = 6.0 + self.frac * (bounds.width - 12.0);
+        let h = 16.0_f32.min(bounds.height);
+        let y = (bounds.height - h) / 2.0;
+        let rect = Path::rectangle(
+            iced::Point::new(cx - self.width / 2.0, y),
+            iced::Size::new(self.width, h),
+        );
+        frame.fill(&rect, self.color);
+        vec![frame.into_geometry()]
+    }
 }
 
 // Styled tooltip body matching the C# hover cards (dark box, wrapped text).
