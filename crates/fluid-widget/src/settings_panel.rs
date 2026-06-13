@@ -1,5 +1,5 @@
 ﻿use fluid_core::settings::{AppSettings, Orientation, TempUnit};
-use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, slider, text, text_input, toggler, tooltip, Space};
+use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, slider, stack, text, text_input, toggler, tooltip, Space};
 use iced::widget::tooltip::Position as TipPos;
 use iced::{Border, Element, Length};
 use crate::style::Palette;
@@ -37,9 +37,26 @@ pub fn view<'a>(
             .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
             .into()
     };
+    // C# PillBtn: 24px tall, radius 12, transparent + muted outline when off,
+    // accent fill + white text when on; hover lights the border accent.
     let pill = |label_text: String, active: bool, msg: Message| -> Element<'a, Message> {
         button(text(label_text).size(11).font(iced::Font::with_name("Segoe UI Symbol")))
-            .padding([4, 14])
+            .padding(iced::Padding { top: 3.0, right: 12.0, bottom: 3.0, left: 12.0 })
+            .style(move |_: &iced::Theme, status: button::Status| {
+                let hover = matches!(status, button::Status::Hovered);
+                button::Style {
+                    background: Some(iced::Background::Color(if active { p.accent } else { iced::Color::TRANSPARENT })),
+                    text_color: if active { iced::Color::WHITE } else { p.muted },
+                    border: Border { radius: 12.0.into(), width: 1.0, color: if active || hover { p.accent } else { p.muted } },
+                    ..Default::default()
+                }
+            })
+            .on_press(msg).into()
+    };
+    // C# layout / °C-°F segmented toggle: radius 4, tile fill (off) / accent (on).
+    let seg = |label_text: String, active: bool, msg: Message| -> Element<'a, Message> {
+        button(text(label_text).size(11).font(iced::Font::with_name("Segoe UI Symbol")))
+            .padding(iced::Padding { top: 4.0, right: 14.0, bottom: 4.0, left: 14.0 })
             .style(move |_: &iced::Theme, _: button::Status| button::Style {
                 background: Some(iced::Background::Color(if active { p.accent } else { p.tile })),
                 text_color: if active { iced::Color::WHITE } else { p.text },
@@ -48,27 +65,29 @@ pub fn view<'a>(
             })
             .on_press(msg).into()
     };
+    // C# InlineBtn: tile fill, 1px muted border, radius 6; hover accents text+border.
     let cycle_btn = |label_text: String, msg: Message| -> Element<'a, Message> {
         button(
-            container(text(label_text).size(11)
-                .style(move |_| iced::widget::text::Style { color: Some(p.text) })
-            ).center_x(Length::Fill)
+            container(text(label_text).size(11)).center_x(Length::Fill)
         )
         .width(Length::Fill)
-        .padding([5, 8])
-        .style(move |_: &iced::Theme, _: button::Status| button::Style {
-            background: Some(iced::Background::Color(p.tile)),
-            text_color: p.text,
-            border: Border { radius: 4.0.into(), width: 1.0, color: p.muted },
-            ..Default::default()
+        .padding(iced::Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 })
+        .style(move |_: &iced::Theme, status: button::Status| {
+            let hover = matches!(status, button::Status::Hovered);
+            button::Style {
+                background: Some(iced::Background::Color(p.tile)),
+                text_color: if hover { p.accent } else { p.text },
+                border: Border { radius: 6.0.into(), width: 1.0, color: if hover { p.accent } else { p.muted } },
+                ..Default::default()
+            }
         })
         .on_press(msg).into()
     };
-    // Paired slider: label + value on one row, slider below, in half-width
-    let pslider = |label_text: &str, value_text: String, min: f32, max: f32, val: f32, step: f32, msg: fn(f32)->Message| -> Element<'a, Message> {
+    // Paired slider with C# default-value marker + thin accent/muted track.
+    let pslider = |label_text: &str, value_text: String, min: f32, max: f32, val: f32, default: f32, step: f32, msg: fn(f32)->Message| -> Element<'a, Message> {
         column![
             row![fl(label_text), Space::with_width(Length::Fill), vl(value_text)],
-            slider(min..=max, val, msg).step(step),
+            marked_slider(min, max, val, step, default, p, msg),
         ].spacing(2).width(Length::FillPortion(1)).into()
     };
 
@@ -99,8 +118,8 @@ pub fn view<'a>(
         Space::with_width(6),
         text("Active").size(11).style(move |_| iced::widget::text::Style { color: Some(iced::Color::from_rgb(0.2, 0.8, 0.4)) }),
         Space::with_width(8),
-        pill("\u{00B0}C".into(), !fahrenheit, Message::SetFahrenheit(false)),
-        pill("\u{00B0}F".into(), fahrenheit, Message::SetFahrenheit(true)),
+        seg("\u{00B0}C".into(), !fahrenheit, Message::SetFahrenheit(false)),
+        seg("\u{00B0}F".into(), fahrenheit, Message::SetFahrenheit(true)),
     ].align_y(iced::Alignment::Center).spacing(0).into();
 
     // ── Tile Labels: CPU/GPU with Auto/Custom pills ──
@@ -125,8 +144,8 @@ pub fn view<'a>(
 
     // ── Layout ──
     let layout_pills = row![
-        pill("Horizontal".into(), settings.orientation == Orientation::Horizontal, Message::SetOrientation(Orientation::Horizontal)),
-        pill("Vertical".into(), settings.orientation == Orientation::Vertical, Message::SetOrientation(Orientation::Vertical)),
+        seg("Horizontal".into(), settings.orientation == Orientation::Horizontal, Message::SetOrientation(Orientation::Horizontal)),
+        seg("Vertical".into(), settings.orientation == Orientation::Vertical, Message::SetOrientation(Orientation::Vertical)),
     ].spacing(4);
 
     // ── Behavior: togglers in pairs + hotkey + paired sliders ──
@@ -154,20 +173,20 @@ pub fn view<'a>(
         Space::with_height(4),
         // Paired sliders: Opacity + Update interval
         row![
-            pslider("Opacity", format!("{:.0}%", settings.widget_opacity * 100.0), 0.3, 1.0, settings.widget_opacity, 0.05, Message::SetOpacity),
+            pslider("Opacity", format!("{:.0}%", settings.widget_opacity * 100.0), 0.3, 1.0, settings.widget_opacity, 0.9, 0.05, Message::SetOpacity),
             Space::with_width(8),
-            pslider("Update interval", format!("{} ms", settings.update_interval_ms), 250.0, 5000.0, settings.update_interval_ms as f32, 250.0, Message::SetInterval),
+            pslider("Update interval", format!("{} ms", settings.update_interval_ms), 250.0, 5000.0, settings.update_interval_ms as f32, 1500.0, 250.0, Message::SetInterval),
         ],
         // UI scale + Tile width
         row![
-            pslider("UI scale", format!("{:.2}x", settings.ui_scale), 0.75, 1.5, settings.ui_scale, 0.05, Message::SetUiScale),
+            pslider("UI scale", format!("{:.2}x", settings.ui_scale), 0.75, 1.5, settings.ui_scale, 1.0, 0.05, Message::SetUiScale),
             Space::with_width(8),
-            pslider("Tile width", format!("{:.0}px", settings.tile_width), 110.0, 200.0, settings.tile_width, 5.0, Message::SetTileWidth),
+            pslider("Tile width", format!("{:.0}px", settings.tile_width), 110.0, 200.0, settings.tile_width, 130.0, 5.0, Message::SetTileWidth),
         ],
         // Tile height alone
         column![
             row![fl("Tile height"), Space::with_width(Length::Fill), vl(format!("{:.0}px", settings.tile_height))],
-            slider(80.0..=150.0, settings.tile_height, Message::SetTileHeight).step(2.0),
+            marked_slider(80.0, 150.0, settings.tile_height, 2.0, 110.0, p, Message::SetTileHeight),
         ].spacing(2),
     ].spacing(4);
 
@@ -179,13 +198,13 @@ pub fn view<'a>(
         row![
             column![fl("Traffic indicator"), cycle_btn(traffic_label, Message::TrafficCycle)].width(Length::FillPortion(1)).spacing(2),
             Space::with_width(12),
-            pslider("Arrow spacing", format!("{:.0}px", settings.network_arrow_spacing), 8.0, 40.0, settings.network_arrow_spacing, 1.0, Message::SetArrowSpacing),
+            pslider("Arrow spacing", format!("{:.0}px", settings.network_arrow_spacing), 8.0, 40.0, settings.network_arrow_spacing, 16.0, 1.0, Message::SetArrowSpacing),
         ],
         Space::with_height(4),
         row![
             column![fl("Monitor adapter"), pick_list(adapters, selected_adapter, Message::SetAdapter).text_size(11).width(Length::Fill)].width(Length::FillPortion(1)).spacing(2),
             Space::with_width(12),
-            pslider("Arrow size", format!("{:+}pt", settings.arrow_font_offset), -5.0, 10.0, settings.arrow_font_offset as f32, 1.0, Message::SetArrowFontOffset),
+            pslider("Arrow size", signed(settings.arrow_font_offset), -5.0, 10.0, settings.arrow_font_offset as f32, 0.0, 1.0, Message::SetArrowFontOffset),
         ],
     ].spacing(2);
 
@@ -196,13 +215,13 @@ pub fn view<'a>(
         row![
             column![fl("Tile label"), cycle_btn(disk_label_text, Message::DiskLabelCycle)].width(Length::FillPortion(1)).spacing(2),
             Space::with_width(12),
-            pslider("R: / W: spacing", format!("{:.0}px", settings.disk_label_spacing), 0.0, 40.0, settings.disk_label_spacing, 1.0, Message::SetDiskLabelSpacing),
+            pslider("R: / W: spacing", format!("{:.0}px", settings.disk_label_spacing), 8.0, 40.0, settings.disk_label_spacing, 16.0, 1.0, Message::SetDiskLabelSpacing),
         ],
         Space::with_height(4),
         row![
             column![fl("Monitor disk"), pick_list(disks, selected_disk, Message::SetDisk).text_size(11).width(Length::Fill)].width(Length::FillPortion(1)).spacing(2),
             Space::with_width(12),
-            pslider("R: / W: size", format!("{:+}pt", settings.disk_label_font_offset), -5.0, 10.0, settings.disk_label_font_offset as f32, 1.0, Message::SetDiskLabelFontOffset),
+            pslider("R: / W: size", signed(settings.disk_label_font_offset), -5.0, 10.0, settings.disk_label_font_offset as f32, 0.0, 1.0, Message::SetDiskLabelFontOffset),
         ],
     ].spacing(2);
 
@@ -389,7 +408,7 @@ pub fn view<'a>(
         Space::with_height(4),
         color_editor,
         row![fl("Muted text visibility"), Space::with_width(Length::Fill), vl(format!("{:.2}", settings.muted_contrast))],
-        slider(0.5..=2.0, settings.muted_contrast, Message::SetMutedContrast).step(0.05),
+        marked_slider(0.5, 1.6, settings.muted_contrast, 0.05, 1.0, p, Message::SetMutedContrast),
     ].spacing(3);
 
     // ── Font: sync toggle + font pickers + 3-col size sliders ──
@@ -429,18 +448,18 @@ pub fn view<'a>(
         row![
             column![
                 fl("Primary"),
-                slider(-4.0..=8.0, settings.primary_font_offset as f32, Message::SetPrimaryFontOffset).step(1.0),
-                vl(format!("{:+}pt", settings.primary_font_offset)),
+                marked_slider(-5.0, 5.0, settings.primary_font_offset as f32, 1.0, 0.0, p, Message::SetPrimaryFontOffset),
+                vl(signed(settings.primary_font_offset)),
             ].width(Length::FillPortion(1)).spacing(2).align_x(iced::Alignment::Center),
             column![
                 fl("Secondary"),
-                slider(-4.0..=8.0, settings.secondary_font_offset as f32, Message::SetSecondaryFontOffset).step(1.0),
-                vl(format!("{:+}pt", settings.secondary_font_offset)),
+                marked_slider(-5.0, 5.0, settings.secondary_font_offset as f32, 1.0, 0.0, p, Message::SetSecondaryFontOffset),
+                vl(signed(settings.secondary_font_offset)),
             ].width(Length::FillPortion(1)).spacing(2).align_x(iced::Alignment::Center),
             column![
                 fl("Indicators"),
-                slider(-4.0..=8.0, settings.indicator_font_offset as f32, Message::SetIndicatorFontOffset).step(1.0),
-                vl(format!("{:+}pt", settings.indicator_font_offset)),
+                marked_slider(-5.0, 5.0, settings.indicator_font_offset as f32, 1.0, 0.0, p, Message::SetIndicatorFontOffset),
+                vl(signed(settings.indicator_font_offset)),
             ].width(Length::FillPortion(1)).spacing(2).align_x(iced::Alignment::Center),
         ].spacing(8),
     ].spacing(4);
@@ -531,19 +550,26 @@ pub fn view<'a>(
         ..Default::default()
     }).on_press(Message::OpenTools);
 
-    let reset_btn = button(text("Reset to Defaults").size(11)
-        .style(move |_| iced::widget::text::Style { color: Some(iced::Color::from_rgb(0.9, 0.3, 0.3)) })
-    ).padding([6, 14]).style(move |_,_| button::Style {
-        background: None,
-        border: Border { radius: 6.0.into(), width: 1.0, color: iced::Color::from_rgb(0.9, 0.3, 0.3) },
+    // C# BottomBarDanger: tile fill, IndianRed border + text, radius 6.
+    let indian_red = iced::Color::from_rgb(0.804, 0.361, 0.361);
+    let reset_btn = button(text("Reset to Defaults").size(12)
+        .style(move |_| iced::widget::text::Style { color: Some(indian_red) })
+    ).padding([7, 14]).style(move |_,_| button::Style {
+        background: Some(iced::Background::Color(p.tile)),
+        text_color: indian_red,
+        border: Border { radius: 6.0.into(), width: 1.0, color: indian_red },
         ..Default::default()
     }).on_press(Message::ResetDefaults);
 
-    let save_btn = button(text("Save and Close").size(11)
-        .style(move |_| iced::widget::text::Style { color: Some(iced::Color::WHITE) })
-    ).padding([6, 20]).style(move |_,_| button::Style {
+    // C# BottomBarPrimary: accent fill, background-coloured text, semibold.
+    let bg_opaque = iced::Color { a: 1.0, ..p.bg };
+    let save_btn = button(text("Save and Close").size(12)
+        .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+        .style(move |_| iced::widget::text::Style { color: Some(bg_opaque) })
+    ).padding([7, 14]).style(move |_,_| button::Style {
         background: Some(iced::Background::Color(p.accent)),
-        border: Border { radius: 6.0.into(), ..Border::default() },
+        text_color: bg_opaque,
+        border: Border { radius: 6.0.into(), width: 1.0, color: p.accent },
         ..Default::default()
     }).on_press(Message::SaveClose);
 
@@ -569,6 +595,70 @@ pub fn view<'a>(
             ..Default::default()
         })
         .into()
+}
+
+// C# value-label format "+0;-0;0": +N for positive, -N for negative, 0 for zero.
+fn signed(v: i32) -> String {
+    if v > 0 { format!("+{}pt", v) } else { format!("{}pt", v) }
+}
+
+// Recreates the C# "Slim" slider + the default-value marker.
+//   * Track: 2px, accent on the filled (left) side, muted@0.25 on the right.
+//   * Thumb: 12px accent circle with a 2px background-coloured ring.
+//   * Marker: a thin vertical line at the default value (1.5px muted@0.5),
+//     glowing accent (2px, full opacity) when the value is within 5% of default.
+fn marked_slider<'a>(min: f32, max: f32, val: f32, step: f32, default: f32, p: Palette, on: fn(f32) -> Message) -> Element<'a, Message> {
+    use iced::widget::slider::{Handle, HandleShape, Rail, Style};
+    let track_active = p.accent;
+    let track_inactive = iced::Color { a: p.muted.a * 0.25, ..p.muted };
+    let bg = p.bg;
+    let accent = p.accent;
+    let sl = slider(min..=max, val, on).step(step).style(move |_t, _s| Style {
+        rail: Rail {
+            backgrounds: (
+                iced::Background::Color(track_active),
+                iced::Background::Color(track_inactive),
+            ),
+            width: 2.0,
+            border: Border { radius: 1.0.into(), width: 0.0, color: iced::Color::TRANSPARENT },
+        },
+        handle: Handle {
+            shape: HandleShape::Circle { radius: 6.0 },
+            background: iced::Background::Color(accent),
+            border_width: 2.0,
+            border_color: bg,
+        },
+    });
+
+    let range = max - min;
+    let frac = if range > 0.0 { ((default - min) / range).clamp(0.0, 1.0) } else { 0.0 };
+    let dist = if range > 0.0 { (val - default).abs() / range } else { 1.0 };
+    let (mc, mw, mo): (iced::Color, f32, f32) = if dist < 0.05 {
+        (p.accent, 2.0, 1.0)
+    } else if dist < 0.15 {
+        let t = (dist - 0.05) / 0.10;
+        (p.accent, 2.0 - t * 0.5, 1.0 - t * 0.4)
+    } else {
+        (p.muted, 1.5, 0.5)
+    };
+    let marker_color = iced::Color { a: mc.a * mo, ..mc };
+    let lp = (frac * 1000.0).round() as u16;
+    let rp = (1000.0 - frac * 1000.0).round() as u16;
+    let marker = container(
+        row![
+            Space::with_width(Length::FillPortion(lp.max(1))),
+            container(Space::new(Length::Fixed(mw), Length::Fill))
+                .style(move |_| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(marker_color)),
+                    ..Default::default()
+                }),
+            Space::with_width(Length::FillPortion(rp.max(1))),
+        ].height(Length::Fill)
+    )
+    // 6px = thumb half-width, so the marker lines up with the thumb centre.
+    .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 6.0 });
+
+    stack![sl, marker].height(Length::Fixed(18.0)).into()
 }
 
 // Styled tooltip body matching the C# hover cards (dark box, wrapped text).
