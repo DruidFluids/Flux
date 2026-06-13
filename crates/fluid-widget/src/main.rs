@@ -20,7 +20,6 @@ use tray_icon::{
 };
 
 const SETTINGS_SIZE: Size = Size::new(720.0, 900.0);
-const SNAP_MARGIN: f32 = 20.0;
 // Unique title applied to the widget window so click-through targets only it
 // (the iced daemon otherwise gives every window the same title).
 const WIDGET_TITLE: &str = "fluidMonitor Widget";
@@ -56,11 +55,39 @@ fn make_tray_icon() -> tray_icon::Icon {
 
 #[cfg(target_os = "windows")]
 fn work_area() -> Option<(f32, f32, f32, f32)> {
-    use windows::Win32::Foundation::RECT;
-    use windows::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS};
-    let mut rect = RECT::default();
-    unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, Some(&mut rect as *mut _ as *mut _), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0)).ok()?; }
-    Some((rect.left as f32, rect.top as f32, rect.right as f32, rect.bottom as f32))
+    // Work area of the monitor the widget is actually on, returned in LOGICAL
+    // coordinates (divided by that monitor's DPI scale) so it matches the
+    // logical window positions iced reports. SPI_GETWORKAREA only covered the
+    // primary monitor in physical pixels — wrong on scaled/multi-monitor setups.
+    use windows::core::HSTRING;
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    use windows::Win32::UI::HiDpi::GetDpiForWindow;
+    use windows::Win32::UI::WindowsAndMessaging::FindWindowW;
+    unsafe {
+        let hwnd = match FindWindowW(None, &HSTRING::from(WIDGET_TITLE)) {
+            Ok(h) if !h.0.is_null() => h,
+            _ => return None,
+        };
+        let mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(mon, &mut mi).as_bool() {
+            return None;
+        }
+        let dpi = GetDpiForWindow(hwnd);
+        let scale = if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 };
+        let w = mi.rcWork;
+        Some((
+            w.left as f32 / scale,
+            w.top as f32 / scale,
+            w.right as f32 / scale,
+            w.bottom as f32 / scale,
+        ))
+    }
 }
 #[cfg(not(target_os = "windows"))]
 fn work_area() -> Option<(f32, f32, f32, f32)> { None }
@@ -190,7 +217,7 @@ enum Message {
     SetCpuName(String), SetGpuName(String),
     SetDisk(String), SetAdapter(String),
     SetAlwaysOnTop(bool), SetRunAtStartup(bool),
-    SetUiScale(f32), SetClickThrough(bool), SetSnapWindows(bool),
+    SetUiScale(f32), SetClickThrough(bool), SetSnapWindows(bool), SetSnapDistance(f32),
     TrafficCycle,
     SetArrowSpacing(f32), SetArrowFontOffset(f32),
     SetDiskLabelSpacing(f32), SetDiskLabelFontOffset(f32),
@@ -351,11 +378,12 @@ impl App {
     fn snap_position(&self, pos: Point) -> Option<Point> {
         let (l, t, r, b) = work_area()?;
         let sz = self.widget_size();
+        let m = self.settings.snap_distance.max(0.0);
         let mut x = pos.x; let mut y = pos.y;
-        if (x - l).abs() < SNAP_MARGIN { x = l; }
-        if ((x + sz.width) - r).abs() < SNAP_MARGIN { x = r - sz.width; }
-        if (y - t).abs() < SNAP_MARGIN { y = t; }
-        if ((y + sz.height) - b).abs() < SNAP_MARGIN { y = b - sz.height; }
+        if (x - l).abs() < m { x = l; }
+        if ((x + sz.width) - r).abs() < m { x = r - sz.width; }
+        if (y - t).abs() < m { y = t; }
+        if ((y + sz.height) - b).abs() < m { y = b - sz.height; }
         if (x - pos.x).abs() > 0.5 || (y - pos.y).abs() > 0.5 { Some(Point::new(x, y)) } else { None }
     }
     fn game_corner(&self) -> Option<Point> {
@@ -614,6 +642,7 @@ impl App {
             Message::SetUiScale(v) => { self.settings.ui_scale = v; self.resize_widget() }
             Message::SetClickThrough(on) => { self.settings.click_through = on; self.apply_click_through() }
             Message::SetSnapWindows(on) => { self.settings.snap_to_windows = on; Task::none() }
+            Message::SetSnapDistance(v) => { self.settings.snap_distance = v; Task::none() }
             Message::TrafficCycle => {
                 let modes = ["Off", "Blink", "Fade", "Glow"];
                 let cur = modes.iter().position(|m| *m == self.settings.network_traffic_indicator).unwrap_or(0);

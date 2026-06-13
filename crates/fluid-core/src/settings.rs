@@ -56,6 +56,7 @@ pub struct AppSettings {
     pub settings_window_x: Option<f64>,
     pub settings_window_y: Option<f64>,
     pub snap_to_edges: bool,
+    pub snap_distance: f32,
 
     pub game_mode_enabled: bool,
     pub game_mode_hotkey: String,
@@ -127,6 +128,7 @@ impl Default for AppSettings {
             settings_window_x: None,
             settings_window_y: None,
             snap_to_edges: true,
+            snap_distance: 20.0,
             game_mode_enabled: false,
             game_mode_hotkey: String::new(),
             game_mode_position: SnapPosition::TopRight,

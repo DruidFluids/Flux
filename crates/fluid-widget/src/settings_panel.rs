@@ -168,25 +168,32 @@ pub fn view<'a>(
     };
 
     // "Snap to windows" is a sub-option of "Snap to edges" — only shown while
-    // edge-snap is on (enabling edge-snap turns it on by default).
-    let snap_row: Element<'a, Message> = if settings.snap_to_edges {
-        row![
-            sw("Snap to edges", settings.snap_to_edges, Message::SetSnap),
-            sw_tt("Snap to windows", settings.snap_to_windows, Message::SetSnapWindows,
-                "When snapping is on, the widget also docks to the outer edges of other windows."),
-        ].spacing(8).into()
+    // edge-snap is on (enabling edge-snap turns it on by default). When edge-snap
+    // is off the startup toggle takes that slot (renamed "Run at startup").
+    let startup_tip = "Launch the widget when you sign in to Windows. Uses your user account only \u{2014} no admin rights needed.";
+    let snap_block: Element<'a, Message> = if settings.snap_to_edges {
+        column![
+            row![
+                sw("Snap to edges", settings.snap_to_edges, Message::SetSnap),
+                sw_tt("Snap to windows", settings.snap_to_windows, Message::SetSnapWindows,
+                    "When snapping is on, the widget also docks to the outer edges of other windows."),
+            ].spacing(8),
+            column![
+                row![fl("Snap distance"), Space::with_width(Length::Fill), vl(format!("{:.0}px", settings.snap_distance))],
+                marked_slider(0.0, 50.0, settings.snap_distance, 1.0, 20.0, p, Message::SetSnapDistance),
+            ].spacing(2),
+            sw_tt("Run at Windows startup", settings.run_at_startup, Message::SetRunAtStartup, startup_tip),
+        ].spacing(4).into()
     } else {
         row![
             sw("Snap to edges", settings.snap_to_edges, Message::SetSnap),
-            Space::with_width(Length::FillPortion(1)),
+            sw_tt("Run at startup", settings.run_at_startup, Message::SetRunAtStartup, startup_tip),
         ].spacing(8).into()
     };
 
     let behavior = column![
         row![sw("Always on top", settings.always_on_top, Message::SetAlwaysOnTop), sw("Click-through", settings.click_through, Message::SetClickThrough)].spacing(8),
-        snap_row,
-        sw_tt("Run at Windows startup", settings.run_at_startup, Message::SetRunAtStartup,
-            "Launch the widget when you sign in to Windows. Uses your user account only \u{2014} no admin rights needed."),
+        snap_block,
         Space::with_height(4),
         fl("Click-through hotkey"),
         row![
