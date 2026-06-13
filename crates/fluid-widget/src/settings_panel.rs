@@ -632,6 +632,8 @@ fn marked_slider<'a>(min: f32, max: f32, val: f32, step: f32, default: f32, p: P
 
     let range = max - min;
     let frac = if range > 0.0 { ((default - min) / range).clamp(0.0, 1.0) } else { 0.0 };
+    // C# UpdateGlow: marker brightens to accent as the value nears the default,
+    // fades to muted as it moves away.
     let dist = if range > 0.0 { (val - default).abs() / range } else { 1.0 };
     let (mc, mw, mo): (iced::Color, f32, f32) = if dist < 0.05 {
         (p.accent, 2.0, 1.0)
@@ -642,23 +644,32 @@ fn marked_slider<'a>(min: f32, max: f32, val: f32, step: f32, default: f32, p: P
         (p.muted, 1.5, 0.5)
     };
     let marker_color = iced::Color { a: mc.a * mo, ..mc };
+    // Position the line at the default fraction. The 6px padding on each side
+    // mirrors the thumb half-width so the marker lands exactly under the thumb
+    // centre when the value equals the default.
     let lp = (frac * 1000.0).round() as u16;
-    let rp = (1000.0 - frac * 1000.0).round() as u16;
+    let rp = ((1.0 - frac) * 1000.0).round() as u16;
     let marker = container(
         row![
             Space::with_width(Length::FillPortion(lp.max(1))),
-            container(Space::new(Length::Fixed(mw), Length::Fill))
+            container(Space::new(Length::Fixed(mw), Length::Fixed(16.0)))
                 .style(move |_| iced::widget::container::Style {
                     background: Some(iced::Background::Color(marker_color)),
+                    border: Border { radius: 1.0.into(), ..Border::default() },
                     ..Default::default()
                 }),
             Space::with_width(Length::FillPortion(rp.max(1))),
-        ].height(Length::Fill)
+        ]
+        .height(Length::Fill)
+        .align_y(iced::Alignment::Center)
     )
-    // 6px = thumb half-width, so the marker lines up with the thumb centre.
+    .width(Length::Fill)
+    .height(Length::Fill)
     .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 6.0 });
 
-    stack![sl, marker].height(Length::Fixed(18.0)).into()
+    // Marker underneath, slider on top — the slider always receives drag events
+    // and the thin marker shows above/below the 2px rail like the C# tick.
+    stack![marker, sl].height(Length::Fixed(18.0)).into()
 }
 
 // Styled tooltip body matching the C# hover cards (dark box, wrapped text).
