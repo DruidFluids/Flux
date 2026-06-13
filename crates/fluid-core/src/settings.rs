@@ -5,7 +5,6 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
-    // Appearance
     pub theme_bg: String,
     pub theme_tile: String,
     pub theme_accent: String,
@@ -17,47 +16,35 @@ pub struct AppSettings {
     pub indicator_font: Option<String>,
     pub font_size_offset: f32,
 
-    // Layout
     pub orientation: Orientation,
     pub tile_order: Vec<String>,
     pub visible_tiles: Vec<String>,
     pub widget_opacity: f32,
     pub click_through: bool,
 
-    // Position
     pub window_x: f64,
     pub window_y: f64,
     pub settings_window_x: Option<f64>,
     pub settings_window_y: Option<f64>,
     pub snap_to_edges: bool,
 
-    // Game mode
     pub game_mode_enabled: bool,
     pub game_mode_hotkey: String,
     pub game_mode_position: SnapPosition,
     pub game_mode_opacity: f32,
     pub game_mode_tiles: Vec<String>,
 
-    // Alerts
-    pub alert_cpu_threshold: f32,
-    pub alert_gpu_threshold: f32,
-    pub alert_ram_threshold: f32,
-    pub alert_mode: AlertMode,
+    pub warnings: Vec<TileWarning>,
 
-    // Remote monitoring
     pub remote_enabled: bool,
     pub remote_port: u16,
     pub remote_key: String,
     pub remote_devices: Vec<RemoteDevice>,
 
-    // Updates
     pub update_check_mode: UpdateMode,
     pub last_update_check: Option<String>,
-
-    // Presets (quick slots)
     pub presets: Vec<PresetSlot>,
 
-    // Misc
     pub temperature_unit: TempUnit,
     pub start_minimized: bool,
     pub first_run_complete: bool,
@@ -66,21 +53,22 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            theme_bg: "#FF1A1A1E".into(),
-            theme_tile: "#FF242428".into(),
-            theme_accent: "#FF3A8FD4".into(),
-            theme_text: "#FFE8E8E8".into(),
-            theme_muted: "#FF888888".into(),
+            // C# dark defaults (ThemeApplier.cs)
+            theme_bg: "#E61E1E22".into(),
+            theme_tile: "#FF2A2A30".into(),
+            theme_accent: "#FF00A8FF".into(),
+            theme_text: "#FFE8E8EC".into(),
+            theme_muted: "#FF9A9AA8".into(),
             active_skin: "Default".into(),
             primary_font: None,
             secondary_font: None,
             indicator_font: None,
             font_size_offset: 0.0,
 
-            orientation: Orientation::Vertical,
+            orientation: Orientation::Horizontal,
             tile_order: vec![
                 "CPU".into(), "GPU".into(), "RAM".into(),
-                "Disk".into(), "Network".into(),
+                "Disk".into(), "Network".into(), "Clock".into(),
             ],
             visible_tiles: vec![
                 "CPU".into(), "GPU".into(), "RAM".into(),
@@ -101,10 +89,10 @@ impl Default for AppSettings {
             game_mode_opacity: 0.8,
             game_mode_tiles: vec!["CPU".into(), "GPU".into(), "RAM".into()],
 
-            alert_cpu_threshold: 85.0,
-            alert_gpu_threshold: 85.0,
-            alert_ram_threshold: 90.0,
-            alert_mode: AlertMode::Flash,
+            warnings: vec![
+                TileWarning { kind: "CPU".into(), enabled: false, metric: WarnMetric::Load,        threshold: 90.0, flash_enabled: true, flash_color: "#FFFF3333".into(), gradient_mode: false },
+                TileWarning { kind: "GPU".into(), enabled: false, metric: WarnMetric::Temperature, threshold: 85.0, flash_enabled: true, flash_color: "#FFFF3333".into(), gradient_mode: true },
+            ],
 
             remote_enabled: false,
             remote_port: 5199,
@@ -113,7 +101,6 @@ impl Default for AppSettings {
 
             update_check_mode: UpdateMode::Manual,
             last_update_check: None,
-
             presets: Vec::new(),
 
             temperature_unit: TempUnit::Celsius,
@@ -124,37 +111,50 @@ impl Default for AppSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum Orientation {
-    Vertical,
-    Horizontal,
-}
+pub enum Orientation { Vertical, Horizontal }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum SnapPosition {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
+pub enum SnapPosition { TopLeft, TopRight, BottomLeft, BottomRight }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum AlertMode {
-    Off,
-    Flash,
-    Gradient,
-}
+pub enum UpdateMode { Auto, Manual, Off }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum UpdateMode {
-    Auto,
-    Manual,
-    Off,
+pub enum TempUnit { Celsius, Fahrenheit }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub enum WarnMetric {
+    #[default]
+    Temperature,
+    Load,
+    UsedGb,
+    Throughput,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum TempUnit {
-    Celsius,
-    Fahrenheit,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TileWarning {
+    pub kind: String,
+    pub enabled: bool,
+    pub metric: WarnMetric,
+    pub threshold: f64,
+    pub flash_enabled: bool,
+    pub flash_color: String,
+    pub gradient_mode: bool,
+}
+
+impl Default for TileWarning {
+    fn default() -> Self {
+        Self {
+            kind: String::new(),
+            enabled: false,
+            metric: WarnMetric::Temperature,
+            threshold: 85.0,
+            flash_enabled: true,
+            flash_color: "#FFFF3333".into(),
+            gradient_mode: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,6 +177,17 @@ pub struct PresetSlot {
 }
 
 impl AppSettings {
+    pub fn warn(&self, kind: &str) -> Option<&TileWarning> {
+        self.warnings.iter().find(|w| w.kind == kind)
+    }
+
+    pub fn warn_mut(&mut self, kind: &str) -> &mut TileWarning {
+        if !self.warnings.iter().any(|w| w.kind == kind) {
+            self.warnings.push(TileWarning { kind: kind.to_string(), ..Default::default() });
+        }
+        self.warnings.iter_mut().find(|w| w.kind == kind).unwrap()
+    }
+
     pub fn config_dir() -> PathBuf {
         directories::ProjectDirs::from("com", "fluidmonitor", "fluidMonitor")
             .map(|d| d.config_dir().to_path_buf())
