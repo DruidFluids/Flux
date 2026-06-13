@@ -849,7 +849,7 @@ dependencies = [
  "objc",
  "rust-ini",
  "web-sys",
- "winreg",
+ "winreg 0.10.1",
  "zbus",
 ]
 
@@ -1304,6 +1304,7 @@ dependencies = [
  "tracing-subscriber",
  "tray-icon",
  "windows 0.62.2",
+ "winreg 0.56.0",
 ]
 
 [[package]]
@@ -2119,7 +2120,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.57.0",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -6130,6 +6131,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "winreg"
+version = "0.56.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
