@@ -1,67 +1,69 @@
 ﻿mod tile;
 mod style;
+mod settings_panel;
 
 use fluid_core::sensor_data::SensorSnapshot;
-use fluid_core::settings::AppSettings;
+use fluid_core::settings::{AppSettings, Orientation, TempUnit};
 use fluid_sensor::SensorPoller;
-use iced::widget::{column, container, mouse_area};
+use iced::widget::{column, container, mouse_area, row};
 use iced::{window, Border, Element, Length, Size, Subscription, Task, Theme};
+use std::collections::BTreeMap;
 use std::time::Duration;
-use style::FluidTheme;
+use style::Palette;
 use tray_icon::{
     menu::{Menu, MenuEvent, MenuItem},
     TrayIcon, TrayIconBuilder,
 };
+
+const VERTICAL_SIZE: Size = Size::new(240.0, 330.0);
+const HORIZONTAL_SIZE: Size = Size::new(820.0, 86.0);
+const SETTINGS_SIZE: Size = Size::new(280.0, 430.0);
 
 fn main() -> iced::Result {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    iced::application("fluidMonitor", App::update, App::view)
+    iced::daemon("fluidMonitor", App::update, App::view)
         .subscription(App::subscription)
         .theme(App::theme)
-        .window(window::Settings {
-            size: Size::new(240.0, 330.0),
-            decorations: false,
-            transparent: true,
-            resizable: false,
-            level: window::Level::AlwaysOnTop,
-            ..Default::default()
-        })
         .run_with(App::new)
 }
 
 fn make_tray_icon() -> tray_icon::Icon {
-    // 32x32 solid accent-blue square with rounded feel (placeholder until real .ico)
     const SIZE: u32 = 32;
     let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
     for y in 0..SIZE {
         for x in 0..SIZE {
-            // simple rounded-corner mask
             let corner = 6i32;
-            let xi = x as i32;
-            let yi = y as i32;
-            let s = SIZE as i32;
-            let in_corner = (xi < corner && yi < corner && (corner - xi) * (corner - xi) + (corner - yi) * (corner - yi) > corner * corner)
-                || (xi >= s - corner && yi < corner && (xi - (s - corner)) * (xi - (s - corner)) + (corner - yi) * (corner - yi) > corner * corner)
-                || (xi < corner && yi >= s - corner && (corner - xi) * (corner - xi) + (yi - (s - corner)) * (yi - (s - corner)) > corner * corner)
-                || (xi >= s - corner && yi >= s - corner && (xi - (s - corner)) * (xi - (s - corner)) + (yi - (s - corner)) * (yi - (s - corner)) > corner * corner);
+            let (xi, yi, s) = (x as i32, y as i32, SIZE as i32);
+            let in_corner = (xi < corner && yi < corner && (corner - xi).pow(2) + (corner - yi).pow(2) > corner.pow(2))
+                || (xi >= s - corner && yi < corner && (xi - (s - corner)).pow(2) + (corner - yi).pow(2) > corner.pow(2))
+                || (xi < corner && yi >= s - corner && (corner - xi).pow(2) + (yi - (s - corner)).pow(2) > corner.pow(2))
+                || (xi >= s - corner && yi >= s - corner && (xi - (s - corner)).pow(2) + (yi - (s - corner)).pow(2) > corner.pow(2));
             if in_corner {
                 rgba.extend_from_slice(&[0, 0, 0, 0]);
             } else {
-                rgba.extend_from_slice(&[77, 153, 255, 255]); // #4D99FF
+                rgba.extend_from_slice(&[77, 153, 255, 255]);
             }
         }
     }
     tray_icon::Icon::from_rgba(rgba, SIZE, SIZE).expect("icon from rgba")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum WindowKind {
+    Widget,
+    Settings,
+}
+
 struct App {
     settings: AppSettings,
     snapshot: SensorSnapshot,
     poller: Option<SensorPoller>,
+    windows: BTreeMap<window::Id, WindowKind>,
     _tray: TrayIcon,
+    settings_id: tray_icon::menu::MenuId,
     exit_id: tray_icon::menu::MenuId,
 }
 
@@ -69,8 +71,16 @@ struct App {
 enum Message {
     SensorTick,
     TrayPoll,
-    DragWindow,
-    Exit,
+    DragWindow(window::Id),
+    WindowOpened(window::Id, WindowKind),
+    WindowClosed(window::Id),
+    SaveClose,
+    ResetDefaults,
+    ToggleTile(String, bool),
+    SetOpacity(f32),
+    SetOrientation(Orientation),
+    SetAccent(String),
+    SetFahrenheit(bool),
 }
 
 impl App {
@@ -78,8 +88,11 @@ impl App {
         let settings = AppSettings::load().unwrap_or_default();
 
         let menu = Menu::new();
+        let settings_item = MenuItem::new("Settings", true, None);
+        let settings_id = settings_item.id().clone();
         let exit_item = MenuItem::new("Exit", true, None);
         let exit_id = exit_item.id().clone();
+        menu.append(&settings_item).expect("tray menu append");
         menu.append(&exit_item).expect("tray menu append");
 
         let tray = TrayIconBuilder::new()
@@ -89,16 +102,59 @@ impl App {
             .build()
             .expect("tray icon build");
 
+        let widget_size = match settings.orientation {
+            Orientation::Vertical => VERTICAL_SIZE,
+            Orientation::Horizontal => HORIZONTAL_SIZE,
+        };
+
+        let (_id, open_task) = window::open(window::Settings {
+            size: widget_size,
+            decorations: false,
+            transparent: true,
+            resizable: false,
+            level: window::Level::AlwaysOnTop,
+            ..Default::default()
+        });
+
         (
             Self {
                 settings,
                 snapshot: SensorSnapshot::default(),
                 poller: None,
+                windows: BTreeMap::new(),
                 _tray: tray,
+                settings_id,
                 exit_id,
             },
-            Task::none(),
+            open_task.map(|id| Message::WindowOpened(id, WindowKind::Widget)),
         )
+    }
+
+    fn widget_window(&self) -> Option<window::Id> {
+        self.windows.iter()
+            .find(|(_, k)| **k == WindowKind::Widget)
+            .map(|(id, _)| *id)
+    }
+
+    fn settings_window(&self) -> Option<window::Id> {
+        self.windows.iter()
+            .find(|(_, k)| **k == WindowKind::Settings)
+            .map(|(id, _)| *id)
+    }
+
+    fn open_settings(&mut self) -> Task<Message> {
+        if self.settings_window().is_some() {
+            return Task::none();
+        }
+        let (_id, open_task) = window::open(window::Settings {
+            size: SETTINGS_SIZE,
+            decorations: false,
+            transparent: true,
+            resizable: false,
+            level: window::Level::AlwaysOnTop,
+            ..Default::default()
+        });
+        open_task.map(|id| Message::WindowOpened(id, WindowKind::Settings))
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -113,41 +169,118 @@ impl App {
                     if event.id == self.exit_id {
                         return iced::exit();
                     }
+                    if event.id == self.settings_id {
+                        return self.open_settings();
+                    }
                 }
                 Task::none()
             }
-            Message::DragWindow => {
-                window::get_latest().and_then(window::drag)
+            Message::DragWindow(id) => window::drag(id),
+            Message::WindowOpened(id, kind) => {
+                self.windows.insert(id, kind);
+                Task::none()
             }
-            Message::Exit => iced::exit(),
+            Message::WindowClosed(id) => {
+                self.windows.remove(&id);
+                if self.widget_window().is_none() {
+                    return iced::exit();
+                }
+                Task::none()
+            }
+            Message::SaveClose => {
+                let _ = self.settings.save();
+                let close = self.settings_window().map(window::close).unwrap_or(Task::none());
+                let resize = self.widget_window().map(|id| {
+                    let size = match self.settings.orientation {
+                        Orientation::Vertical => VERTICAL_SIZE,
+                        Orientation::Horizontal => HORIZONTAL_SIZE,
+                    };
+                    window::resize(id, size)
+                }).unwrap_or(Task::none());
+                Task::batch([close, resize])
+            }
+            Message::ResetDefaults => {
+                self.settings = AppSettings::default();
+                Task::none()
+            }
+            Message::ToggleTile(name, on) => {
+                if on {
+                    if !self.settings.visible_tiles.contains(&name) {
+                        self.settings.visible_tiles.push(name);
+                    }
+                } else {
+                    self.settings.visible_tiles.retain(|t| t != &name);
+                }
+                Task::none()
+            }
+            Message::SetOpacity(v) => {
+                self.settings.widget_opacity = v;
+                Task::none()
+            }
+            Message::SetOrientation(o) => {
+                self.settings.orientation = o;
+                self.widget_window().map(|id| {
+                    let size = match self.settings.orientation {
+                        Orientation::Vertical => VERTICAL_SIZE,
+                        Orientation::Horizontal => HORIZONTAL_SIZE,
+                    };
+                    window::resize(id, size)
+                }).unwrap_or(Task::none())
+            }
+            Message::SetAccent(hex) => {
+                self.settings.theme_accent = hex;
+                Task::none()
+            }
+            Message::SetFahrenheit(f) => {
+                self.settings.temperature_unit = if f { TempUnit::Fahrenheit } else { TempUnit::Celsius };
+                Task::none()
+            }
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
-        let tiles = column![
-            tile::cpu_tile(&self.snapshot.cpu, &self.settings),
-            tile::gpu_tile(&self.snapshot.gpu, &self.settings),
-            tile::ram_tile(&self.snapshot.ram, &self.settings),
-            tile::disk_tile(&self.snapshot.disk, &self.settings),
-            tile::network_tile(&self.snapshot.network, &self.settings),
-        ]
-        .spacing(5);
+    fn view(&self, id: window::Id) -> Element<'_, Message> {
+        let p = Palette::from_settings(&self.settings);
 
-        let root = container(tiles)
+        match self.windows.get(&id) {
+            Some(WindowKind::Settings) => settings_panel::view(&self.settings, p, id),
+            _ => self.widget_view(id, p),
+        }
+    }
+
+    fn widget_view(&self, id: window::Id, p: Palette) -> Element<'_, Message> {
+        let mut tiles: Vec<Element<'_, Message>> = Vec::new();
+        for name in &self.settings.tile_order {
+            if !self.settings.visible_tiles.contains(name) {
+                continue;
+            }
+            let el = match name.as_str() {
+                "CPU" => tile::cpu_tile(&self.snapshot.cpu, &self.settings, p),
+                "GPU" => tile::gpu_tile(&self.snapshot.gpu, &self.settings, p),
+                "RAM" => tile::ram_tile(&self.snapshot.ram, &self.settings, p),
+                "Disk" => tile::disk_tile(&self.snapshot.disk, &self.settings, p),
+                "Network" => tile::network_tile(&self.snapshot.network, &self.settings, p),
+                _ => continue,
+            };
+            tiles.push(el);
+        }
+
+        let body: Element<'_, Message> = match self.settings.orientation {
+            Orientation::Vertical => column(tiles).spacing(5).into(),
+            Orientation::Horizontal => row(tiles).spacing(5).into(),
+        };
+
+        let root = container(body)
             .width(Length::Fill)
             .height(Length::Fill)
             .padding(8)
-            .style(|_| iced::widget::container::Style {
-                background: Some(iced::Background::Color(FluidTheme::BG)),
-                border: Border {
-                    radius: 8.0.into(),
-                    ..Border::default()
-                },
+            .style(move |_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(p.bg)),
+                border: Border { radius: 8.0.into(), ..Border::default() },
                 ..Default::default()
             });
 
         mouse_area(root)
-            .on_press(Message::DragWindow)
+            .on_press(Message::DragWindow(id))
             .into()
     }
 
@@ -155,10 +288,11 @@ impl App {
         Subscription::batch([
             iced::time::every(Duration::from_secs(1)).map(|_| Message::SensorTick),
             iced::time::every(Duration::from_millis(200)).map(|_| Message::TrayPoll),
+            window::close_events().map(Message::WindowClosed),
         ])
     }
 
-    fn theme(&self) -> Theme {
+    fn theme(&self, _id: window::Id) -> Theme {
         Theme::Dark
     }
 }
