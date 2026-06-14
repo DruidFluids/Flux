@@ -74,3 +74,53 @@ findings and resolutions.
 - `cargo clippy -p fluid-widget`: 0 warnings
 - Visual regression: widget renders identically (all tiles, glow arrows, RAM
   speed) after Pass 1+2 changes.
+
+---
+
+## Pass 3 — final verification + dependency hygiene
+
+Added `cargo doc` to the tooling sweep (validates doc comments + links), then
+chased every remaining dead dependency the earlier prunes exposed.
+
+### Findings & resolutions
+| # | Location | Finding | Resolution |
+|---|----------|---------|------------|
+| F1 | fmt.rs:6 | rustdoc parsed `<N>` in a `///` comment as an unclosed HTML tag | wrapped in backticks |
+| F2 | Cargo.toml (workspace) | `thiserror` orphaned workspace-wide after Pass 1 | removed from `[workspace.dependencies]` |
+| F3 | fluid-setup/Cargo.toml | **5 dead deps** — crate uses only `iced`; `fluid-core`/`reqwest`/`tokio`/`anyhow`/`tracing` all unused | reduced to just `iced` |
+| F4 | fluid-ipc/Cargo.toml | `tokio` declared but the IPC layer is fully synchronous | removed |
+| F5 | fluid-remote/Cargo.toml | redundant `tokio` dev-dependency (already a normal dep with `full`) | removed; loopback test still green |
+
+### Reviewed, deliberately left as-is
+- **Line endings:** git warns `LF → CRLF` on commit. A `.gitattributes`
+  (`* text=auto`) would settle it but renormalize *every* file in one churny
+  commit; the warning is cosmetic (git stores LF). Out of scope — noted for a
+  dedicated commit if desired.
+- **`fluid-setup` is a stub** (`// TODO: run setup tasks` — the "Set up" page
+  does nothing yet). Left functionally as-is; only its manifest was cleaned.
+  Real first-run state lives in the widget + an AppData `.setup-complete` marker.
+- **macOS sensor `TODO`s** remain intentional `None`-degrading stubs.
+
+### Pass 3 result
+- `cargo build --workspace`: clean
+- `cargo clippy --workspace --all-targets`: **0 warnings, 0 errors**
+- `cargo doc --no-deps --workspace`: **0 warnings**
+- `cargo test --workspace`: loopback passes; no regressions
+
+---
+
+## Summary across all three passes
+
+| Category | Removed / Added |
+|----------|-----------------|
+| Dead modules | −3 (`color`, `theme`, `error`) |
+| Dead methods / messages | −2 methods, −1 `Message` variant |
+| Dead dependencies | −9 total (`iced`+`reqwest`+`thiserror` from core; 5 from setup; `tokio` from ipc; redundant dev-dep from remote — counting unique removals) |
+| Clippy lints fixed | 8 distinct + the deny-level blocker |
+| Duplication removed | 3 inline-button impls → 1 (`style::inline_btn`) |
+| Documentation | +14 module docs, 1 rustdoc fix |
+| Source hygiene | 3 UTF-8 BOMs stripped |
+
+**End state:** `clippy --all-targets` clean, `cargo doc` clean, build + tests
+green, widget visually unchanged. `fluid-core` no longer drags in `iced`/wgpu,
+`reqwest`, or `thiserror`, shrinking its compile surface considerably.

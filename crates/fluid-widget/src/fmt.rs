@@ -3,7 +3,7 @@
 
 use fluid_core::settings::{AppSettings, TempUnit};
 
-/// C# Shorten(): strip vendor prefixes, (R)/(TM), "<N>-Core", trailing Processor/CPU/Graphics
+/// C# Shorten(): strip vendor prefixes, (R)/(TM), `"<N>-Core"`, trailing Processor/CPU/Graphics
 pub fn shorten(name: &str) -> String {
     if name.trim().is_empty() {
         return String::new();

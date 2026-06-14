@@ -1261,7 +1261,6 @@ dependencies = [
  "fluid-core",
  "interprocess",
  "serde_json",
- "tokio",
  "tracing",
 ]
 
@@ -1313,12 +1312,7 @@ dependencies = [
 name = "fluid-setup"
 version = "2.0.0"
 dependencies = [
- "anyhow",
- "fluid-core",
  "iced",
- "reqwest",
- "tokio",
- "tracing",
 ]
 
 [[package]]

@@ -8,9 +8,4 @@ name = "fluidmonitor-setup"
 path = "src/main.rs"
 
 [dependencies]
-fluid-core = { path = "../fluid-core" }
 iced = { workspace = true }
-reqwest = { workspace = true }
-tokio = { workspace = true }
-anyhow = { workspace = true }
-tracing = { workspace = true }
