@@ -95,10 +95,12 @@ fn line_value<'a>(v: String, u: String, p: Palette, accent: Color, s: &AppSettin
     row![
         text(v).size(sz(18, s.primary_font_offset, s))
             .font(named_font(&s.primary_font, Weight::Bold))
+            .wrapping(iced::widget::text::Wrapping::None)
             .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
         Space::with_width(3),
         text(u).size(sz(12, s.primary_font_offset, s))
             .font(named_font(&s.indicator_font, Weight::Semibold))
+            .wrapping(iced::widget::text::Wrapping::None)
             .style(move |_| iced::widget::text::Style { color: Some(accent) }),
     ]
     .align_y(iced::Alignment::End)
@@ -211,8 +213,17 @@ pub fn ram_tile<'a>(ram: &RamData, s: &AppSettings, p: Palette, w: WarnView) -> 
         small_unit("GB".into(), accent, s),
     ].align_y(iced::Alignment::End);
 
+    // Subheader: RAM type + rated speed, e.g. "DDR5-6000" (C# behaviour).
+    let ram_label = if ram.speed_mhz > 0 {
+        if !ram.mem_type.is_empty() { format!("{}-{}", ram.mem_type, ram.speed_mhz) }
+        else { format!("{} MHz", ram.speed_mhz) }
+    } else {
+        String::new()
+    };
+
     tile_container(column![
         header("RAM".into(), p, s),
+        sub_header(ram_label, p, s),
         Space::with_height(Length::Fill),
         container(primary).width(Length::Fill).center_x(Length::Fill),
         Space::with_height(Length::Fill),
@@ -250,13 +261,17 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
 
     // Static layout: fixed label column + fixed-width left-aligned value column.
     // Nothing shifts when R/W change digit count; the gap is the spacing slider.
-    let value_w = Length::Fixed(90.0 * s.ui_scale);
+    // Fixed label column (28) + fixed wide value column (left-aligned), shared
+    // with the Network tile so values line up across tiles, never wrap, and
+    // never jump. The gap is the spacing slider.
+    let col_w = Length::Fixed(28.0);
+    let value_w = Length::Fixed(110.0 * s.ui_scale);
     let dline = |lbl: &str, v: String, u: String| -> Element<'a, Message> {
         row![
             container(text(lbl.to_string()).size(label_size)
                 .font(named_font(&s.indicator_font, Weight::Bold))
                 .style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-                .width(Length::Fixed(20.0)).align_x(iced::alignment::Horizontal::Right),
+                .width(col_w).align_x(iced::alignment::Horizontal::Right),
             Space::with_width(spacing),
             container(line_value(v, u, p, accent, s)).width(value_w).align_x(iced::alignment::Horizontal::Left),
         ].align_y(iced::Alignment::Center).into()
@@ -313,32 +328,28 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
     // ArrowFontSize = 16 + indicatorOffset + arrowOffset.
     let arrow_size = sz(16, s.indicator_font_offset + s.arrow_font_offset, s);
     let spacing = s.network_arrow_spacing.max(0.0);
-    // Static layout: fixed value column so numbers don't shift with digit count.
-    let value_w = Length::Fixed(90.0 * s.ui_scale);
     let accent_hex = format!("#{:02X}{:02X}{:02X}",
         (accent.r * 255.0).round() as u8, (accent.g * 255.0).round() as u8, (accent.b * 255.0).round() as u8);
-    // SVG arrow spans ~half the 24 viewBox, so ~2x makes it match the text size.
-    let glow_w = (arrow_size as f32) * 1.9;
-    let arrow_col = if glow { glow_w } else { 24.0 };
+    // Match the Disk tile's columns so values align across tiles.
+    let col_w = Length::Fixed(28.0);
+    let value_w = Length::Fixed(110.0 * s.ui_scale);
+    let glow_w = 28.0_f32;
 
     let nline = |down_dir: bool, active: bool, col: Color, v: String, u: String| -> Element<'a, Message> {
-        // Glow mode: SVG arrow with a Gaussian-blur halo (a real soft glow that
-        // follows the arrow shape — no box). Other modes use the text glyph.
+        // Glow mode: SVG arrow with layered wide low-opacity strokes for a soft
+        // glow that follows the arrow shape (no box). Other modes: text glyph.
         let arrow: Element<'a, Message> = if glow && active {
             let d = if down_dir { "M12 6 V17 M7 12 L12 17 L17 12" } else { "M12 18 V7 M7 12 L12 7 L17 12" };
-            // Layered wide round strokes (low opacity) approximate a soft glow
-            // that follows the arrow shape — no blur filter, no box.
             let svg_str = format!(
                 "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\">\
                  <g fill=\"none\" stroke=\"{c}\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\
-                 <path d=\"{d}\" stroke-width=\"9\" opacity=\"0.07\"/>\
-                 <path d=\"{d}\" stroke-width=\"6.5\" opacity=\"0.12\"/>\
-                 <path d=\"{d}\" stroke-width=\"4.5\" opacity=\"0.22\"/>\
+                 <path d=\"{d}\" stroke-width=\"10\" opacity=\"0.22\"/>\
+                 <path d=\"{d}\" stroke-width=\"7\" opacity=\"0.36\"/>\
+                 <path d=\"{d}\" stroke-width=\"4.4\" opacity=\"0.55\"/>\
                  <path d=\"{d}\" stroke-width=\"2.6\" opacity=\"1\"/></g></svg>",
                 c = accent_hex, d = d);
             iced::widget::svg(iced::widget::svg::Handle::from_memory(svg_str.into_bytes()))
                 .width(Length::Fixed(glow_w)).height(Length::Fixed(glow_w))
-                // Use the SVG's own colours/opacities (don't tint to one colour).
                 .style(|_t, _s| iced::widget::svg::Style { color: None })
                 .into()
         } else {
@@ -349,7 +360,7 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
                 .into()
         };
         row![
-            container(arrow).width(Length::Fixed(arrow_col)).align_x(iced::alignment::Horizontal::Center),
+            container(arrow).width(col_w).align_x(iced::alignment::Horizontal::Center),
             Space::with_width(spacing),
             container(line_value(v, u, p, accent, s)).width(value_w).align_x(iced::alignment::Horizontal::Left),
         ].align_y(iced::Alignment::Center).into()

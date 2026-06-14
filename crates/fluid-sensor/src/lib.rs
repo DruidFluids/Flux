@@ -146,6 +146,58 @@ fn wmi_cpu_temp() -> Option<f32> {
     })
 }
 
+// RAM type + rated speed via WMI Win32_PhysicalMemory (root\CIMV2). Static for
+// the machine, so the result is cached after the first successful read.
+#[cfg(windows)]
+fn wmi_ram_info() -> Option<(u32, String)> {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use wmi::{COMLibrary, Variant, WMIConnection};
+    thread_local! {
+        static CONN: RefCell<Option<WMIConnection>> = const { RefCell::new(None) };
+    }
+    CONN.with(|cell| {
+        let mut guard = cell.borrow_mut();
+        if guard.is_none() {
+            let com = unsafe { COMLibrary::assume_initialized() };
+            *guard = WMIConnection::new(com).ok();
+        }
+        let conn = guard.as_ref()?;
+        let rows: Vec<HashMap<String, Variant>> = conn
+            .raw_query("SELECT Speed, SMBIOSMemoryType FROM Win32_PhysicalMemory")
+            .ok()?;
+        let row = rows.into_iter().next()?;
+        let as_u32 = |v: Option<&Variant>| -> u32 {
+            match v {
+                Some(Variant::UI4(n)) => *n,
+                Some(Variant::UI2(n)) => *n as u32,
+                Some(Variant::I4(n)) => *n as u32,
+                Some(Variant::I2(n)) => *n as u32,
+                _ => 0,
+            }
+        };
+        let speed = as_u32(row.get("Speed"));
+        let mem_type = match as_u32(row.get("SMBIOSMemoryType")) {
+            20 => "DDR", 21 => "DDR2", 24 => "DDR3", 26 => "DDR4", 34 => "DDR5",
+            _ => "",
+        }.to_string();
+        if speed == 0 { return None; }
+        Some((speed, mem_type))
+    })
+}
+
+// Cached RAM type/speed (queried once; the value never changes at runtime).
+fn ram_info_cached() -> (u32, String) {
+    use std::sync::OnceLock;
+    static C: OnceLock<(u32, String)> = OnceLock::new();
+    C.get_or_init(|| {
+        #[cfg(windows)]
+        { wmi_ram_info().unwrap_or((0, String::new())) }
+        #[cfg(not(windows))]
+        { (0, String::new()) }
+    }).clone()
+}
+
 #[cfg(target_os = "linux")]
 fn linux_cpu_temp() -> Option<f32> {
     use std::fs;
@@ -410,10 +462,13 @@ impl SensorPoller {
     fn read_ram(&self) -> RamData {
         let used = self.system.used_memory() as f32 / (1024.0 * 1024.0);
         let total = self.system.total_memory() as f32 / (1024.0 * 1024.0);
+        let (speed_mhz, mem_type) = ram_info_cached();
         RamData {
             used_mb: used,
             total_mb: total,
             usage_percent: if total > 0.0 { (used / total) * 100.0 } else { 0.0 },
+            speed_mhz,
+            mem_type,
         }
     }
 

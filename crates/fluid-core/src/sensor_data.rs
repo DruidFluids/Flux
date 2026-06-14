@@ -37,6 +37,8 @@ pub struct RamData {
     pub used_mb: f32,
     pub total_mb: f32,
     pub usage_percent: f32,
+    pub speed_mhz: u32,
+    pub mem_type: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
