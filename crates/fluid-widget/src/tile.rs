@@ -338,6 +338,8 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
                 c = accent_hex, d = d);
             iced::widget::svg(iced::widget::svg::Handle::from_memory(svg_str.into_bytes()))
                 .width(Length::Fixed(glow_w)).height(Length::Fixed(glow_w))
+                // Use the SVG's own colours/opacities (don't tint to one colour).
+                .style(|_t, _s| iced::widget::svg::Style { color: None })
                 .into()
         } else {
             let glyph = if down_dir { "\u{2193}" } else { "\u{2191}" };
