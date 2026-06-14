@@ -1249,11 +1249,8 @@ version = "2.0.0"
 dependencies = [
  "anyhow",
  "directories",
- "iced",
- "reqwest",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]

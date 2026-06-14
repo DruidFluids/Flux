@@ -1,3 +1,6 @@
+//! Cross-platform sensor polling (CPU/GPU/RAM/disk/network) via sysinfo plus
+//! vendor APIs (DXGI/NVML on Windows).
+
 use fluid_core::sensor_data::*;
 use nvml_wrapper::Nvml;
 use nvml_wrapper::enum_wrappers::device::TemperatureSensor;
@@ -75,7 +78,7 @@ fn dxgi_query() -> Option<(String, f32, f32)> {
                 }
             }
             // Prefer the adapter with the most dedicated VRAM (the discrete GPU)
-            if best.as_ref().map_or(true, |b| total_mb > b.2) {
+            if best.as_ref().is_none_or(|b| total_mb > b.2) {
                 best = Some((name, used_mb, total_mb));
             }
         }
@@ -237,6 +240,12 @@ fn linux_cpu_temp() -> Option<f32> {
 fn macos_cpu_temp() -> Option<f32> {
     // TODO: IOKit SMC read of TC0P/TC1P keys. Degrades to None for now.
     None
+}
+
+impl Default for SensorPoller {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SensorPoller {

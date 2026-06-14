@@ -1,3 +1,6 @@
+//! Background sensor service: polls hardware on a timer and serves the latest
+//! snapshot over the local IPC socket.
+
 use anyhow::Result;
 use fluid_ipc::IpcServer;
 use fluid_sensor::SensorPoller;

@@ -1,3 +1,5 @@
+//! Persisted application settings (`settings.json`) and their defaults.
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

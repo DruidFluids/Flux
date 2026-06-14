@@ -1,4 +1,7 @@
-﻿use fluid_core::settings::{AppSettings, TempUnit};
+//! Formatting helpers for sensor values (byte-rate humanizing, temperature
+//! units, model-name shortening).
+
+use fluid_core::settings::{AppSettings, TempUnit};
 
 /// C# Shorten(): strip vendor prefixes, (R)/(TM), "<N>-Core", trailing Processor/CPU/Graphics
 pub fn shorten(name: &str) -> String {

@@ -1,3 +1,6 @@
+//! fluidMonitor widget — the iced daemon: windows, update loop, snapping,
+//! game mode, hotkeys, remote monitoring, and the system tray.
+
 mod tile;
 mod style;
 mod fmt;
@@ -396,7 +399,7 @@ enum Message {
     ToggleTile(String, bool),
     SetOpacity(f32), SetOrientation(Orientation),
     SetFahrenheit(bool), SetSnap(bool),
-    ThemePrev, ThemeNext, ThemeDice, SetColorMode(bool),
+    ThemePrev, ThemeNext, SetColorMode(bool),
     SetWarnEnabled(String, bool),
     SetWarnFlash(String, bool), SetWarnGradient(String, bool),
     SetWarnMetric(String, WarnMetric), SetWarnThresholdStr(String, String), SetWarnFlashColor(String, String),
@@ -685,7 +688,7 @@ impl App {
                     self.remote_conn.insert(device_id, connected);
                 }
                 fluid_remote::RemoteEvent::Snapshot { device_id, snapshot } => {
-                    self.remote_snapshots.insert(device_id, snapshot);
+                    self.remote_snapshots.insert(device_id, *snapshot);
                 }
                 fluid_remote::RemoteEvent::TestResult { ok, message } => {
                     self.device_test_ok = ok;
@@ -700,7 +703,7 @@ impl App {
         let ip = self.new_device_ip.trim();
         let key = self.new_device_key.trim();
         if name.is_empty() || ip.is_empty() { return None; }
-        if fluid_remote::protocol::decode_handshake_key(key).is_none() { return None; }
+        fluid_remote::protocol::decode_handshake_key(key)?; // reject invalid keys
         Some(fluid_core::settings::RemoteDevice {
             id: new_device_id(), name: name.to_string(), host: ip.to_string(),
             port: self.settings.remote_port, key: key.to_string(),
@@ -1093,13 +1096,6 @@ impl App {
                 self.push_appearance_undo();
                 let n = style::THEME_PRESETS.len();
                 let idx = style::match_preset(&self.settings).map(|i| (i + 1) % n).unwrap_or(0);
-                style::apply_preset(&mut self.settings, idx); Task::none()
-            }
-            Message::ThemeDice => {
-                self.push_appearance_undo();
-                let n = style::THEME_PRESETS.len();
-                let mut idx = nanos() % n;
-                if let Some(cur) = style::match_preset(&self.settings) { if idx == cur { idx = (idx + 1) % n; } }
                 style::apply_preset(&mut self.settings, idx); Task::none()
             }
             // Moon / sun toggles: apply the Dark / Light default palette (presets

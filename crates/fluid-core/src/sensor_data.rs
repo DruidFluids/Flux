@@ -1,3 +1,5 @@
+//! Serializable sensor snapshot types shared across the service, IPC, and widget.
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -70,18 +72,3 @@ pub struct NetInterface {
     pub total_downloaded: u64,
 }
 
-impl SensorSnapshot {
-    pub fn cpu_temp_display(&self, fahrenheit: bool) -> Option<String> {
-        self.cpu.temperature_c.map(|c| {
-            if fahrenheit {
-                format!("{:.0} F", c * 9.0 / 5.0 + 32.0)
-            } else {
-                format!("{:.0} C", c)
-            }
-        })
-    }
-
-    pub fn ram_usage_display(&self) -> String {
-        format!("{:.1} / {:.1} GB", self.ram.used_mb / 1024.0, self.ram.total_mb / 1024.0)
-    }
-}

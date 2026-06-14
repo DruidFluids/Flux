@@ -10,10 +10,11 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 
-/// Events emitted by a running client loop.
+/// Events emitted by a running client loop. The snapshot is boxed because it
+/// dwarfs the other variant (≈240 B vs 1 B).
 pub enum ClientEvent {
     State(bool),
-    Snapshot(SensorSnapshot),
+    Snapshot(Box<SensorSnapshot>),
 }
 
 /// Connect + authenticate, returning a split reader/writer on success.
@@ -107,7 +108,7 @@ pub async fn run(host: String, port: u16, key: String, tx: tokio::sync::mpsc::Un
                                 continue;
                             }
                             if let Ok(snap) = serde_json::from_str::<SensorSnapshot>(trimmed) {
-                                let _ = tx.send(ClientEvent::Snapshot(snap));
+                                let _ = tx.send(ClientEvent::Snapshot(Box::new(snap)));
                             }
                         }
                     }

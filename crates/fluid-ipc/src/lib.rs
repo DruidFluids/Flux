@@ -1,4 +1,7 @@
-﻿use anyhow::Result;
+﻿//! Local named-pipe IPC: the service publishes one JSON snapshot per
+//! connection and the widget polls it.
+
+use anyhow::Result;
 use fluid_core::sensor_data::SensorSnapshot;
 use std::io::{BufRead, BufReader, Write};
 use interprocess::local_socket::{GenericNamespaced, ListenerOptions, ToNsName};
@@ -52,9 +55,10 @@ impl IpcClient {
         let name = SOCKET_NAME.to_ns_name::<GenericNamespaced>()?;
         let conn = IpcStream::connect(name)?;
         let reader = BufReader::new(conn);
-        for line in reader.lines() {
-            let line: String = line?;
-            let snapshot: SensorSnapshot = serde_json::from_str(&line)?;
+        // The service writes exactly one JSON snapshot per connection, so read
+        // just the first line.
+        if let Some(line) = reader.lines().next() {
+            let snapshot: SensorSnapshot = serde_json::from_str(&line?)?;
             return Ok(snapshot);
         }
         anyhow::bail!("No data received from service")

@@ -1,5 +1,5 @@
-// System font enumeration for the font pickers.
-// Windows: DirectWrite IDWriteFactory::GetSystemFontCollection.
+//! System font enumeration for the font pickers.
+//! Windows: DirectWrite IDWriteFactory::GetSystemFontCollection.
 // Other platforms fall back to a small curated list (CoreText/fontconfig
 // enumeration can be added behind their own cfg gates later).
 

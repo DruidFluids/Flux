@@ -1,3 +1,5 @@
+//! First-run setup wizard (startup, remote-monitoring, and CPU-temp opt-ins).
+
 use iced::widget::{button, column, container, text, toggler};
 use iced::{Element, Length, Task, Theme};
 
@@ -68,8 +70,8 @@ impl SetupWizard {
         }
     }
 
-    fn view(&self) -> Element<Message> {
-        let content: Element<Message> = match self.page {
+    fn view(&self) -> Element<'_, Message> {
+        let content: Element<'_, Message> = match self.page {
             0 => self.welcome_page(),
             1 => self.options_page(),
             2 => self.progress_page(),
@@ -85,7 +87,7 @@ impl SetupWizard {
             .into()
     }
 
-    fn welcome_page(&self) -> Element<Message> {
+    fn welcome_page(&self) -> Element<'_, Message> {
         column![
             text("Welcome to fluidMonitor").size(20),
             text("v2.0.0").size(12),
@@ -97,7 +99,7 @@ impl SetupWizard {
         .into()
     }
 
-    fn options_page(&self) -> Element<Message> {
+    fn options_page(&self) -> Element<'_, Message> {
         column![
             text("Options").size(18),
             toggler(self.opt_startup)
@@ -116,7 +118,7 @@ impl SetupWizard {
         .into()
     }
 
-    fn progress_page(&self) -> Element<Message> {
+    fn progress_page(&self) -> Element<'_, Message> {
         column![
             text("Setting up").size(18),
             text(&self.status).size(12),
@@ -125,7 +127,7 @@ impl SetupWizard {
         .into()
     }
 
-    fn done_page(&self) -> Element<Message> {
+    fn done_page(&self) -> Element<'_, Message> {
         column![
             text("You're all set").size(18),
             text("fluidMonitor is ready to use").size(14),

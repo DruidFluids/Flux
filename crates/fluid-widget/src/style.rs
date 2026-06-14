@@ -1,4 +1,6 @@
-﻿use fluid_core::settings::AppSettings;
+//! Palette resolution, skins, theme presets, and shared iced widget styles.
+
+use fluid_core::settings::AppSettings;
 use iced::Color;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};

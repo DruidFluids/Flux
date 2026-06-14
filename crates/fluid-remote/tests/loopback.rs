@@ -38,8 +38,7 @@ async fn loopback_auth_and_stream() {
         let tx = tx.clone();
         tokio::spawn(async move {
             for _ in 0..50 {
-                let mut snap = SensorSnapshot::default();
-                snap.timestamp = 42;
+                let snap = SensorSnapshot { timestamp: 42, ..Default::default() };
                 let _ = tx.send(snap);
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }

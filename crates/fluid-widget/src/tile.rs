@@ -1,3 +1,5 @@
+//! Per-metric tile rendering (CPU/GPU/RAM/Disk/Network/Clock).
+
 use fluid_core::sensor_data::*;
 use fluid_core::settings::AppSettings;
 use iced::widget::{column, container, row, text, Space};

@@ -29,8 +29,9 @@ pub enum RemoteEvent {
     KeyChanged(String),
     /// A device's connection state changed.
     ConnState { device_id: String, connected: bool },
-    /// A fresh snapshot arrived from a device.
-    Snapshot { device_id: String, snapshot: SensorSnapshot },
+    /// A fresh snapshot arrived from a device. Boxed (it dwarfs the other
+    /// variants) to keep the enum small.
+    Snapshot { device_id: String, snapshot: Box<SensorSnapshot> },
     /// Result of a one-shot connection test.
     TestResult { ok: bool, message: String },
 }

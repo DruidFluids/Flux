@@ -1,3 +1,6 @@
+//! Secondary windows: Tools, Alerts, Game Mode, Help, Utilities, the Window
+//! Picker, and the widget right-click context menu.
+
 use fluid_core::settings::{AppSettings, SnapPosition, WarnMetric};
 use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, text, text_editor, text_input, toggler, Space};
 use iced::{window, Border, Color, Element, Length};

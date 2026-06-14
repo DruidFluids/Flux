@@ -1,4 +1,7 @@
-﻿use fluid_core::settings::{AppSettings, Orientation, TempUnit};
+//! The Settings window view: left column (tiles, behavior, network/disk) and
+//! right column (appearance, fonts, remote, updates).
+
+use fluid_core::settings::{AppSettings, Orientation, TempUnit};
 use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, slider, stack, text, text_input, toggler, tooltip, Space};
 use iced::widget::tooltip::Position as TipPos;
 use iced::{Border, Element, Length};
@@ -58,6 +61,10 @@ pub(crate) fn hotkey_field<'a>(combo: &str, capturing: bool, width: f32, arm_msg
         .on_press(arm_msg).into()
 }
 
+// The settings window aggregates a lot of independent inputs; the cohesive
+// groups are already bundled (RemoteView, UpdateView) and the rest are distinct
+// scalars that a wrapper struct would only obscure.
+#[allow(clippy::too_many_arguments)]
 pub fn view<'a>(
     settings: &AppSettings, p: Palette, win_id: iced::window::Id,
     theme_name: String, disks: Vec<String>, adapters: Vec<String>,
