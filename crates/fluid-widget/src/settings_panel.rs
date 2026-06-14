@@ -329,9 +329,9 @@ pub fn view<'a>(
         row![
             hotkey_field(&settings.click_through_hotkey, capturing_click_through, 150.0,
                 Message::ArmHotkey(crate::hotkeys::HotkeyTarget::ClickThrough), p),
-            button(text("\u{2715}").size(10).font(crate::style::ICONS).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+            crate::style::with_tip(button(text("\u{2715}").size(10).font(crate::style::ICONS).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
                 .padding([2, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
-                .on_press(Message::ClearHotkey(crate::hotkeys::HotkeyTarget::ClickThrough)),
+                .on_press(Message::ClearHotkey(crate::hotkeys::HotkeyTarget::ClickThrough)), "Clear the hotkey", p),
         ].spacing(6).align_y(iced::Alignment::Center),
         Space::with_height(4),
         // Paired sliders: Opacity + Update interval
@@ -563,11 +563,11 @@ pub fn view<'a>(
 
     // ── Colors row: 🌙 ☀ ‹ name › + ──
     let preset_cycler = row![
-        icon_btn("\u{1F319}", is_dark, Message::SetColorMode(true)),
-        icon_btn("\u{2600}", !is_dark, Message::SetColorMode(false)),
+        crate::style::with_tip(icon_btn("\u{1F319}", is_dark, Message::SetColorMode(true)), "Dark color mode", p),
+        crate::style::with_tip(icon_btn("\u{2600}", !is_dark, Message::SetColorMode(false)), "Light color mode", p),
         Space::with_width(4),
-        pill("\u{2039}".into(), false, Message::ThemePrev),
-        button(
+        crate::style::with_tip(pill("\u{2039}".into(), false, Message::ThemePrev), "Previous theme", p),
+        crate::style::with_tip(button(
             container(row![
                 container(Space::new(7, 7)).style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.accent)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() }),
                 Space::with_width(5),
@@ -575,8 +575,8 @@ pub fn view<'a>(
             ].align_y(iced::Alignment::Center)).center_x(Length::Fill)
         ).width(Length::Fill).padding([4, 6])
         .style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
-        .on_press(Message::ThemeNext),
-        pill("\u{203A}".into(), false, Message::ThemeNext),
+        .on_press(Message::ThemeNext), "Next theme", p),
+        crate::style::with_tip(pill("\u{203A}".into(), false, Message::ThemeNext), "Next theme", p),
         tooltip(icon_btn("+", false, Message::SavePreset),
             tip_box("Save the current colors + skin as a new preset slot.", p), TipPos::Bottom),
     ].align_y(iced::Alignment::Center).spacing(3);
@@ -592,7 +592,7 @@ pub fn view<'a>(
             ),
             die,
             Space::with_width(4),
-            pill("\u{2039}".into(), false, Message::SkinPrev),
+            crate::style::with_tip(pill("\u{2039}".into(), false, Message::SkinPrev), "Previous skin", p),
             container(
                 row![
                     container(Space::new(2, 14)).style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.accent)), ..Default::default() }),
@@ -601,7 +601,7 @@ pub fn view<'a>(
                 ].align_y(iced::Alignment::Center)
             ).width(Length::Fill).center_x(Length::Fill).padding([4, 8])
             .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() }),
-            pill("\u{203A}".into(), false, Message::SkinNext),
+            crate::style::with_tip(pill("\u{203A}".into(), false, Message::SkinNext), "Next skin", p),
             tooltip(icon_btn("\u{1F4C1}", false, Message::OpenSkinsFolder),
                 tip_box("Open the skins folder. Drop a skin .json in and restart to use it.", p), TipPos::Bottom),
         ].align_y(iced::Alignment::Center).spacing(3),
@@ -630,7 +630,7 @@ pub fn view<'a>(
         let is_accent = slot == 2;
         let short_hex = if hex_s.len() > 4 { format!("#{}", &hex_s[3..]) } else { hex_s.clone() };
         let col: Element<'a, Message> = column![
-            button(Space::new(Length::Fill, 36))
+            crate::style::with_tip(button(Space::new(Length::Fill, 36))
                 .padding(0)
                 .style(move |_, _| button::Style {
                     background: Some(iced::Background::Color(c)),
@@ -641,7 +641,7 @@ pub fn view<'a>(
                     },
                     ..Default::default()
                 })
-                .on_press(Message::EditColor(slot)),
+                .on_press(Message::EditColor(slot)), &format!("Edit the {name} color"), p),
             text(name.to_string()).size(9)
                 .font(if is_accent { iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT } } else { iced::Font::DEFAULT })
                 .style(move |_| iced::widget::text::Style { color: Some(if is_accent { p.text } else { p.muted }) }),
@@ -668,9 +668,9 @@ pub fn view<'a>(
                 .on_input(move |s| Message::SetHexColor(slot, s))
                 .style(crate::style::dark_input_style(p)),
             Space::with_width(8),
-            button(text("done").size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+            crate::style::with_tip(button(text("done").size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
                 .padding([3, 10]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
-                .on_press(Message::EditColor(slot)),
+                .on_press(Message::EditColor(slot)), "Close the color editor", p),
         ].spacing(0).align_y(iced::Alignment::Center).into()
     } else {
         Space::with_height(0).into()
