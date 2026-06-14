@@ -189,7 +189,11 @@ pub fn view<'a>(
         }
     })
     .on_press(Message::OpenCpuDriver).into();
-    let status_color = if cpu_driver_installed { p.accent } else { p.muted };
+    // Driver status: green when active, red when inactive (used on the Tiles
+    // row and the Sensors-tab section).
+    let driver_green = iced::Color::from_rgb(0.30, 0.78, 0.45);
+    let driver_red = iced::Color::from_rgb(0.86, 0.30, 0.25);
+    let status_color = if cpu_driver_installed { driver_green } else { driver_red };
     let status_label = if cpu_driver_installed { "Active" } else { "Inactive" };
     let driver_status: Element<'a, Message> = button(
         text(status_label).size(11).style(move |_| iced::widget::text::Style { color: Some(status_color) })
@@ -879,7 +883,33 @@ pub fn view<'a>(
         sh("Behavior", "Control how the widget behaves on your desktop."), behavior,
     ].spacing(4).into();
 
+    // CPU sensor driver (PawnIO) management — status + install/manage button.
+    let driver_status_chip = container(
+        text(status_label).size(11)
+            .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+            .style(move |_| iced::widget::text::Style { color: Some(status_color) })
+    )
+    .padding(iced::Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 })
+    .style(move |_| iced::widget::container::Style {
+        background: Some(iced::Background::Color(iced::Color { a: 0.14, ..status_color })),
+        border: Border { radius: 5.0.into(), width: 1.0, color: iced::Color { a: 0.5, ..status_color } },
+        ..Default::default()
+    });
+    let driver_btn_label = if cpu_driver_installed { "Manage / Remove" } else { "Install driver" };
+    let cpu_driver = column![
+        text("Reads the CPU's die temperature directly. fluidMonitor downloads the official signed PawnIO driver, verifies its signature, and installs it on request \u{2014} the rest of the widget works without it.")
+            .size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+        Space::with_height(4),
+        row![
+            driver_status_chip,
+            Space::with_width(Length::Fill),
+            crate::style::inline_btn(driver_btn_label, Message::OpenCpuDriver, p),
+        ].align_y(iced::Alignment::Center),
+    ].spacing(2);
+
     let sensors_tab: Element<'a, Message> = column![
+        sh("CPU Sensor Driver", "Optional signed driver (PawnIO) for accurate CPU temperature."), cpu_driver,
+        Space::with_height(6),
         sh("Network", "Choose which adapter to monitor. Defaults to all adapters combined."), network,
         Space::with_height(6),
         sh("Disk", "Pick which physical disk the Disk tile should track. Defaults to the disk holding your system drive; its model shows under the tile header. Changes apply live \u{2014} no restart needed."), disk,
