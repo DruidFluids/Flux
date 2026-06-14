@@ -968,48 +968,39 @@ pub fn picker_view<'a>(skins: bool, settings: &AppSettings, p: Palette, win_id: 
         }
     };
 
-    let mut cards: Vec<Element<'a, Message>> = Vec::new();
+    // A single browsable list (one row per item), matching the C# layout.
+    let mut col = column![].spacing(4);
     if skins {
         let active = settings.active_skin.clone();
         for name in crate::style::skin_names() {
             let sel = name == active;
             let nm = name.to_string();
-            cards.push(
+            col = col.push(
                 button(row![
-                    skin_preview(&name, p, 32.0, 22.0),
-                    Space::with_width(8),
-                    text(name.clone()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                    skin_preview(&name, p, 40.0, 24.0),
+                    Space::with_width(10),
+                    text(name.clone()).size(12).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                    Space::with_width(Length::Fill),
                 ].align_y(iced::Alignment::Center))
-                .width(Length::FillPortion(1)).padding(8).style(card_style(sel))
-                .on_press(Message::ApplySkin(nm)).into()
+                .width(Length::Fill).padding(iced::Padding { top: 7.0, right: 10.0, bottom: 7.0, left: 8.0 }).style(card_style(sel))
+                .on_press(Message::ApplySkin(nm))
             );
         }
     } else {
         let cur = crate::style::match_preset(settings);
         for (i, t) in crate::style::THEME_PRESETS.iter().enumerate() {
             let sel = cur == Some(i);
-            cards.push(
-                button(column![
-                    text(t.0.to_string()).size(11)
+            col = col.push(
+                button(row![
+                    text(t.0.to_string()).size(12)
                         .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
                         .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-                    Space::with_height(5),
-                    row![chip(t.1), chip(t.2), chip(t.3), chip(t.4), chip(t.5)].spacing(4),
-                ].spacing(0))
-                .width(Length::FillPortion(1)).padding(8).style(card_style(sel))
-                .on_press(Message::ApplyThemePreset(i)).into()
+                    Space::with_width(Length::Fill),
+                    chip(t.1), chip(t.2), chip(t.3), chip(t.4), chip(t.5),
+                ].spacing(4).align_y(iced::Alignment::Center))
+                .width(Length::Fill).padding(iced::Padding { top: 7.0, right: 10.0, bottom: 7.0, left: 10.0 }).style(card_style(sel))
+                .on_press(Message::ApplyThemePreset(i))
             );
-        }
-    }
-
-    // Two cards per row.
-    let mut col = column![].spacing(8);
-    let mut it = cards.into_iter();
-    loop {
-        match (it.next(), it.next()) {
-            (Some(a), Some(b)) => col = col.push(row![a, b].spacing(8)),
-            (Some(a), None) => { col = col.push(row![a, Space::with_width(Length::FillPortion(1))].spacing(8)); break; }
-            _ => break,
         }
     }
     let title = if skins { "CHOOSE A SKIN" } else { "CHOOSE A THEME" };

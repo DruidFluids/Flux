@@ -413,7 +413,7 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
     // Fade / Glow are all identical geometry) — only the colour and, in Glow
     // mode, the bloom/halo layers change. This keeps up/down arrows and all
     // indicator modes pixel-identical.
-    let glow_w = (arrow_size as f32) * 1.6;
+    let glow_w = (arrow_size as f32) * 1.4;
     let col_w = Length::Fixed(glow_w);
 
     let nline = |down_dir: bool, active: bool, col: Color, v: String, u: String| -> Element<'a, Message> {
