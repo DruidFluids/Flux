@@ -513,7 +513,8 @@ pub fn view<'a>(
         let slot = mouse_area(
             container(text(label).size(11).font(crate::style::ICONS)
                 .style(move |_| iced::widget::text::Style { color: Some(fg) }))
-                .width(Length::Fixed(24.0)).height(Length::Fixed(22.0)).center_x(Length::Fill).center_y(Length::Fill)
+                .width(Length::Fixed(24.0)).height(Length::Fixed(22.0))
+                .align_x(iced::alignment::Horizontal::Center).align_y(iced::alignment::Vertical::Center)
                 .style(move |_| iced::widget::container::Style {
                     background: Some(iced::Background::Color(fill)),
                     border: Border { radius: 3.0.into(), width: 1.0, color: if armed { p.accent } else { iced::Color { a: 0.5, ..p.muted } } },
