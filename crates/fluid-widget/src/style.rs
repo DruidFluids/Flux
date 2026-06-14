@@ -507,7 +507,7 @@ fn builtin_skin_style(name: &str) -> SkinStyle {
 
 // ── User-installed skins (data-only) ─────────────────────────────────────────
 //
-// Skins live as JSON files in `%APPDATA%\fluidmonitor\skins\*.json`. They are
+// Skins live as JSON files in `%APPDATA%\Fluxid\…\skins\*.json`. They are
 // pure data (geometry numbers + a border source enum) — never code — parsed
 // with serde, range-clamped, and unable to shadow a built-in skin name. Loaded
 // once, lazily, on first use; drop a file in and restart to pick it up.
@@ -570,8 +570,8 @@ pub fn ensure_skins_dir() -> std::path::PathBuf {
     dir
 }
 
-const EXAMPLE_SKIN: &str = r#"// fluidMonitor skin file — copy this to "<YourName>.json" (drop the .txt),
-// edit the values, and restart fluidMonitor. Skins are pure data: only the
+const EXAMPLE_SKIN: &str = r#"// Fluxid skin file — copy this to "<YourName>.json" (drop the .txt),
+// edit the values, and restart Fluxid. Skins are pure data: only the
 // fields below are read, all are optional, and values are range-clamped.
 //
 //   border_src: "Transparent" | "Muted" | "Accent" | "Text"

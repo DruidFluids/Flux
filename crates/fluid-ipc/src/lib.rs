@@ -10,7 +10,7 @@ use interprocess::local_socket::traits::Listener as _;
 type IpcListener = interprocess::local_socket::Listener;
 type IpcStream = interprocess::local_socket::Stream;
 
-const SOCKET_NAME: &str = "fluidmonitor.sock";
+const SOCKET_NAME: &str = "fluxid.sock";
 
 pub struct IpcServer {
     listener: IpcListener,

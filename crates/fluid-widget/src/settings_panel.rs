@@ -799,7 +799,7 @@ pub fn view<'a>(
 
         // Remote Devices
         remote_col = remote_col.push(Space::with_height(8));
-        remote_col = remote_col.push(sh("Remote Devices", "Monitor other machines running fluidMonitor. Add them using their IP and handshake key."));
+        remote_col = remote_col.push(sh("Remote Devices", "Monitor other machines running Fluxid. Add them using their IP and handshake key."));
         remote_col = remote_col.push(
             fl(&format!("{} / 5 devices configured", remote.devices.len()))
         );
@@ -988,7 +988,7 @@ pub fn view<'a>(
     });
     let driver_btn_label = if cpu_driver_installed { "Manage / Remove" } else { "Install driver" };
     let cpu_driver = column![
-        text("Reads the CPU's die temperature directly. fluidMonitor downloads the official signed PawnIO driver, verifies its signature, and installs it on request \u{2014} the rest of the widget works without it.")
+        text("Reads the CPU's die temperature directly. Fluxid downloads the official signed PawnIO driver, verifies its signature, and installs it on request \u{2014} the rest of the widget works without it.")
             .size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         Space::with_height(4),
         row![

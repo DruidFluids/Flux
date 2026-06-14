@@ -1,4 +1,4 @@
-//! fluidMonitor widget — the iced daemon: windows, update loop, snapping,
+//! Fluxid widget — the iced daemon: windows, update loop, snapping,
 //! game mode, hotkeys, remote monitoring, and the system tray.
 
 mod tile;
@@ -28,7 +28,11 @@ use tray_icon::{
 
 // Unique title applied to the widget window so click-through targets only it
 // (the iced daemon otherwise gives every window the same title).
-const WIDGET_TITLE: &str = "fluidMonitor Widget";
+const WIDGET_TITLE: &str = "Fluxid Widget";
+// The default window title the iced daemon assigns a new window before it's
+// registered in our state (App::title's fallback). widget_hwnd() finds the
+// window by this title, then renames it to WIDGET_TITLE. Keep the two in sync.
+const DEFAULT_TITLE: &str = "Fluxid";
 
 fn main() -> iced::Result {
     tracing_subscriber::fmt()
@@ -201,7 +205,7 @@ fn enum_window_titles() -> Vec<String> {
             let n = GetWindowTextW(h, &mut buf);
             if n > 0 {
                 let t = String::from_utf16_lossy(&buf[..n as usize]);
-                if !t.starts_with("fluidMonitor") && !ctx.titles.contains(&t) { ctx.titles.push(t); }
+                if !t.starts_with("Fluxid") && !ctx.titles.contains(&t) { ctx.titles.push(t); }
             }
         }
         BOOL(1)
@@ -218,8 +222,8 @@ fn set_run_at_startup(on: bool) {
     use winreg::RegKey;
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok((key, _)) = hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\Run") {
-        if on { if let Ok(exe) = std::env::current_exe() { let _ = key.set_value("fluidMonitor", &exe.to_string_lossy().to_string()); } }
-        else { let _ = key.delete_value("fluidMonitor"); }
+        if on { if let Ok(exe) = std::env::current_exe() { let _ = key.set_value("Fluxid", &exe.to_string_lossy().to_string()); } }
+        else { let _ = key.delete_value("Fluxid"); let _ = key.delete_value("fluidMonitor"); }
     }
 }
 #[cfg(not(target_os = "windows"))]
@@ -227,7 +231,7 @@ fn set_run_at_startup(_: bool) {}
 
 // iced/winit doesn't expose raw HWND access. The daemon title fn runs before the
 // window is registered in our state, so the widget keeps the default
-// "fluidMonitor" title. We resolve the widget HWND once (it's the only such
+// "Fluxid" title. We resolve the widget HWND once (it's the only such
 // window at startup), rename it to a unique title, and cache the handle so later
 // lookups never depend on the title again.
 #[cfg(target_os = "windows")]
@@ -248,7 +252,7 @@ fn widget_hwnd() -> Option<windows::Win32::Foundation::HWND> {
                 return Some(h);
             }
         }
-        if let Ok(h) = FindWindowW(None, &HSTRING::from("fluidMonitor")) {
+        if let Ok(h) = FindWindowW(None, &HSTRING::from(DEFAULT_TITLE)) {
             if !h.0.is_null() {
                 let _ = SetWindowTextW(h, &HSTRING::from(WIDGET_TITLE));
                 CACHED.store(h.0 as isize, Ordering::Relaxed);
@@ -617,7 +621,7 @@ impl App {
         let ei = MenuItem::new("Exit", true, None);
         let (sid, wid, gid, eid) = (si.id().clone(), wi.id().clone(), gi.id().clone(), ei.id().clone());
         menu.append(&si).ok(); menu.append(&wi).ok(); menu.append(&gi).ok(); menu.append(&ei).ok();
-        let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("fluidMonitor").with_icon(make_tray_icon()).build().expect("tray");
+        let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("Fluxid").with_icon(make_tray_icon()).build().expect("tray");
         let app = Self {
             settings, snapshot: SensorSnapshot::default(), poller: None,
             windows: BTreeMap::new(), warn_state: HashMap::new(),
@@ -2134,7 +2138,7 @@ impl App {
     fn title(&self, id: window::Id) -> String {
         match self.windows.get(&id) {
             Some(WindowKind::Widget) => WIDGET_TITLE.to_string(),
-            _ => "fluidMonitor".to_string(),
+            _ => DEFAULT_TITLE.to_string(),
         }
     }
 }

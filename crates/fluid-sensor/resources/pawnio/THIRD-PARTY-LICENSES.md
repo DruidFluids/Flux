@@ -9,7 +9,7 @@ redistributed here **unmodified**.
 - **License:** GNU Lesser General Public License v2.1 (LGPL-2.1)
 - **Driver / loader:** PawnIO — https://github.com/namazso/PawnIO • https://pawnio.eu/
 
-fluidMonitor does **not** bundle or redistribute the PawnIO **driver** itself; the
+Fluxid does **not** bundle or redistribute the PawnIO **driver** itself; the
 user installs that separately (the app downloads the official signed installer
 and verifies its Authenticode signature first). These `.bin` files are small
 signed bytecode modules that the PawnIO driver loads and verifies; they are not

@@ -314,10 +314,46 @@ impl AppSettings {
         self.warnings.iter_mut().find(|w| w.kind == kind).unwrap()
     }
     pub fn config_dir() -> PathBuf {
-        directories::ProjectDirs::from("com", "fluidmonitor", "fluidMonitor").map(|d| d.config_dir().to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
+        directories::ProjectDirs::from("com", "Fluxid", "Fluxid").map(|d| d.config_dir().to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
+    }
+    /// Pre-rename config location ("fluidMonitor"), for one-time migration.
+    fn legacy_config_dir() -> Option<PathBuf> {
+        directories::ProjectDirs::from("com", "fluidmonitor", "fluidMonitor").map(|d| d.config_dir().to_path_buf())
+    }
+    /// Copy the old fluidMonitor config into the new Fluxid location once, so a
+    /// rename doesn't lose the user's themes, devices, presets, etc.
+    fn migrate_legacy() {
+        let new_dir = Self::config_dir();
+        if new_dir.join("settings.json").exists() { return; }
+        if let Some(old_dir) = Self::legacy_config_dir() {
+            if old_dir.join("settings.json").exists() {
+                let _ = std::fs::create_dir_all(&new_dir);
+                if let Ok(entries) = std::fs::read_dir(&old_dir) {
+                    for e in entries.flatten() {
+                        if e.path().is_file() {
+                            let _ = std::fs::copy(e.path(), new_dir.join(e.file_name()));
+                        }
+                    }
+                }
+                // Carry over user skins (config_dir/skins/*.json).
+                let old_skins = old_dir.join("skins");
+                if old_skins.is_dir() {
+                    let new_skins = new_dir.join("skins");
+                    let _ = std::fs::create_dir_all(&new_skins);
+                    if let Ok(es) = std::fs::read_dir(&old_skins) {
+                        for e in es.flatten() {
+                            if e.path().is_file() {
+                                let _ = std::fs::copy(e.path(), new_skins.join(e.file_name()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     pub fn config_path() -> PathBuf { Self::config_dir().join("settings.json") }
     pub fn load() -> Result<Self> {
+        Self::migrate_legacy();
         let path = Self::config_path();
         if path.exists() { let json = std::fs::read_to_string(&path)?; Ok(serde_json::from_str(&json)?) } else { Ok(Self::default()) }
     }

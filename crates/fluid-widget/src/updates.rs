@@ -31,7 +31,7 @@ pub enum CheckResult {
 
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent("fluidMonitor-updater")
+        .user_agent("Fluxid-updater")
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())
@@ -165,7 +165,7 @@ pub async fn download_and_launch(url: String, expected_sha256: Option<String>) -
         return Err("Integrity check failed (checksum mismatch) — update aborted".into());
     }
 
-    let fname = url.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("fluidMonitor-setup.exe");
+    let fname = url.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("Fluxid-setup.exe");
     let path = std::env::temp_dir().join(fname);
     std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
 

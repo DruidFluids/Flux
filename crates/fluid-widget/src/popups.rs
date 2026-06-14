@@ -123,7 +123,7 @@ pub fn widget_menu_view<'a>(p: Palette) -> Element<'a, Message> {
     container(column![
         crate::style::with_tip(item("Settings\u{2026}", Message::WidgetMenuSettings), "Open settings", p),
         divider,
-        crate::style::with_tip(item("Exit", Message::WidgetMenuExit), "Quit fluidMonitor", p),
+        crate::style::with_tip(item("Exit", Message::WidgetMenuExit), "Quit Fluxid", p),
     ].spacing(2))
     .width(Length::Fill).height(Length::Fill)
     .padding(4)
@@ -392,7 +392,7 @@ const HELP_SECTIONS: [(&str, &str); 9] = [
     ("Themes & Skins", "57 built-in color themes and 16 skins. Cycle with the arrows, roll the dice for a random pick, or hand-edit the five theme colors."),
     ("Tile Alerts", "Set per-tile temperature or load thresholds. When crossed the tile flashes; gradient mode shifts the unit color from blue (cool) to red (hot)."),
     ("Game Mode", "Bind a hotkey to instantly snap the widget to a corner of your primary monitor with a custom opacity and tile set — ideal while gaming."),
-    ("Behavior", "Always-on-top, click-through, snap-to-edges and snap-to-windows. Optionally launch fluidMonitor at Windows sign-in."),
+    ("Behavior", "Always-on-top, click-through, snap-to-edges and snap-to-windows. Optionally launch Fluxid at Windows sign-in."),
     ("Network & Disk", "Pick which adapter and disk to monitor. Choose how the traffic indicator animates and how disk drives are labelled."),
     ("Fonts", "Choose primary, secondary and indicator fonts. Sync keeps all three in step. Per-element size offsets fine-tune the look."),
     ("Updates", "Auto, Manual or Off. Check for new releases on demand from the Updates section in Settings."),
@@ -409,6 +409,18 @@ pub fn help_view<'a>(_settings: &AppSettings, p: Palette, win_id: window::Id) ->
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
         ].spacing(3));
     }
+    // Footer: the project name + how to say it.
+    col = col.push(
+        container(
+            column![
+                text("Fluxid".to_string()).size(12)
+                    .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                    .style(move |_| iced::widget::text::Style { color: Some(p.accent) }),
+                text("pronounced \u{201C}FLUKS-id\u{201D}  (flux + fluid)".to_string()).size(10)
+                    .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+            ].spacing(1)
+        ).padding(iced::Padding { top: 6.0, right: 0.0, bottom: 0.0, left: 0.0 })
+    );
     let body = scrollable(container(col).padding(iced::Padding { top: 4.0, right: 6.0, bottom: 8.0, left: 0.0 })).height(Length::Fill);
     shell("HELP", win_id, p, body.into())
 }
@@ -461,9 +473,9 @@ pub fn cpu_driver_view<'a>(
 
         S::Primary => column![
             heading("Turn on CPU temperature", p.accent),
-            para("Reading the CPU's die temperature needs a small hardware-sensor driver. fluidMonitor uses PawnIO \u{2014} a free, open-source, Microsoft-signed driver built specifically for safe sensor access."),
+            para("Reading the CPU's die temperature needs a small hardware-sensor driver. Fluxid uses PawnIO \u{2014} a free, open-source, Microsoft-signed driver built specifically for safe sensor access."),
             Space::with_height(4),
-            muted("fluidMonitor never bundles the driver. It downloads the official signed installer, verifies its signature, then runs it. You'll see one Windows permission prompt (driver installs require it). Everything else on the widget works without this."),
+            muted("Fluxid never bundles the driver. It downloads the official signed installer, verifies its signature, then runs it. You'll see one Windows permission prompt (driver installs require it). Everything else on the widget works without this."),
             Space::with_height(Length::Fill),
             row![
                 ibtn("More info", Message::CpuDriverMoreInfo),
@@ -590,7 +602,7 @@ pub fn utilities_view<'a>(blocklist: &'a text_editor::Content, status: &str, p: 
     );
 
     let disclaimer = container(
-        text("Disclaimer: Third-party tools linked here are not bundled with, vetted by, or endorsed by fluidMonitor. fluidMonitor only opens their official website \u{2014} review anything you download or run yourself. Use at your own risk.".to_string())
+        text("Disclaimer: Third-party tools linked here are not bundled with, vetted by, or endorsed by Fluxid. Fluxid only opens their official website \u{2014} review anything you download or run yourself. Use at your own risk.".to_string())
             .size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) })
     )
     .width(Length::Fill).padding(iced::Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
