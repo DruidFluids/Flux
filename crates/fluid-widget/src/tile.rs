@@ -330,10 +330,11 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
     let spacing = s.network_arrow_spacing.max(0.0);
     let accent_hex = format!("#{:02X}{:02X}{:02X}",
         (accent.r * 255.0).round() as u8, (accent.g * 255.0).round() as u8, (accent.b * 255.0).round() as u8);
-    // Match the Disk tile's columns so values align across tiles.
-    let col_w = Length::Fixed(30.0);
+    // The glow SVG arrow spans ~17/32 of its box, so this makes the rendered
+    // arrow match the text-glyph arrow size — identical size in every mode.
+    let glow_w = (arrow_size as f32) * 1.85;
+    let col_w = Length::Fixed(glow_w.max(30.0));
     let value_w = Length::Fill;
-    let glow_w = 32.0_f32;
 
     let nline = |down_dir: bool, active: bool, col: Color, v: String, u: String| -> Element<'a, Message> {
         // Glow mode: neon arrow — a radial bloom + a blurred accent stroke + a

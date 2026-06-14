@@ -397,6 +397,17 @@ impl App {
     fn widget_window(&self) -> Option<window::Id> {
         self.windows.iter().find(|(_, k)| **k == WindowKind::Widget).map(|(id, _)| *id)
     }
+    // Keep settings/popups above the always-on-top widget: drop the widget to
+    // Normal level while any other window is open, restore when none remain.
+    fn update_widget_level(&self) -> Task<Message> {
+        let others_open = self.windows.values().any(|k| *k != WindowKind::Widget && *k != WindowKind::WidgetMenu);
+        let level = if self.settings.always_on_top && !others_open {
+            window::Level::AlwaysOnTop
+        } else {
+            window::Level::Normal
+        };
+        self.widget_window().map(|id| window::change_level(id, level)).unwrap_or(Task::none())
+    }
     fn settings_window(&self) -> Option<window::Id> {
         self.windows.iter().find(|(_, k)| **k == WindowKind::Settings).map(|(id, _)| *id)
     }
@@ -670,7 +681,8 @@ impl App {
                     rename_widget_window();
                     return self.apply_click_through();
                 }
-                Task::none()
+                // A settings/popup opened: drop the widget below it.
+                self.update_widget_level()
             }
             Message::WindowMoved(id, pos) => {
                 match self.windows.get(&id) {
@@ -689,7 +701,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::WindowClosed(id) => { self.windows.remove(&id); if self.widget_window().is_none() { return iced::exit(); } Task::none() }
+            Message::WindowClosed(id) => { self.windows.remove(&id); if self.widget_window().is_none() { return iced::exit(); } self.update_widget_level() }
             Message::OpenSettings => self.open_settings(),
             Message::HideWidget => self.widget_window().map(|id| window::change_mode(id, window::Mode::Hidden)).unwrap_or(Task::none()),
             Message::OpenTools => self.open_popup(WindowKind::Tools, popups::TOOLS_SIZE),
@@ -810,7 +822,7 @@ impl App {
             Message::SetAdapter(v) => { self.settings.network_adapter_name = if v == "All adapters" { String::new() } else { v }; Task::none() }
             Message::SetAlwaysOnTop(on) => {
                 self.settings.always_on_top = on;
-                self.widget_window().map(|id| window::change_level(id, if on { window::Level::AlwaysOnTop } else { window::Level::Normal })).unwrap_or(Task::none())
+                self.update_widget_level()
             }
             Message::SetRunAtStartup(on) => { self.settings.run_at_startup = on; set_run_at_startup(on); Task::none() }
             Message::SetUiScale(v) => { self.settings.ui_scale = v; self.resize_widget() }
