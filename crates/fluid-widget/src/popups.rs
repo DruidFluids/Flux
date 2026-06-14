@@ -291,7 +291,7 @@ fn pos_cell<'a>(settings: &AppSettings, pos: SnapPosition, glyph: &str, label_te
     pill(format!("{} {}", glyph, label_text), active, Message::SetGameModePosition(pos), p)
 }
 
-pub fn game_mode_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id) -> Element<'a, Message> {
+pub fn game_mode_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id, capturing: bool) -> Element<'a, Message> {
     let s = settings;
     let intro = text(
         "Press the hotkey to instantly snap the widget to your primary monitor. Press again to \
@@ -299,12 +299,12 @@ pub fn game_mode_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id
     ).size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) });
 
     let hotkey_row = row![
-        text_input("(click to set)", &s.game_mode_hotkey).size(11).width(180)
-            .on_input(Message::SetGameModeHotkey),
+        crate::settings_panel::hotkey_field(&s.game_mode_hotkey, capturing, 180.0,
+            Message::ArmHotkey(crate::hotkeys::HotkeyTarget::GameMode), p),
         button(text("Clear".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
             .padding([4, 10])
             .style(move |_, _| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
-            .on_press(Message::SetGameModeHotkey(String::new())),
+            .on_press(Message::ClearHotkey(crate::hotkeys::HotkeyTarget::GameMode)),
     ].spacing(6).align_y(iced::Alignment::Center);
 
     let empty: Element<'a, Message> = Space::with_width(Length::FillPortion(1)).into();

@@ -4,6 +4,7 @@ mod fmt;
 mod settings_panel;
 mod popups;
 mod fonts;
+mod hotkeys;
 
 use fluid_core::sensor_data::SensorSnapshot;
 use fluid_core::settings::{AppSettings, Orientation, SnapPosition, TempUnit, WarnMetric};
@@ -302,6 +303,10 @@ struct App {
     popout_device: HashMap<window::Id, String>,
     pending_popout: std::collections::VecDeque<String>,
     remote_expanded: bool,
+    // ── Global hotkeys ──
+    hotkeys: Option<hotkeys::HotkeyManager>,
+    hotkey_rx: Option<std::sync::mpsc::Receiver<hotkeys::HotkeyEvent>>,
+    capturing_hotkey: Option<hotkeys::HotkeyTarget>,
     add_device_open: bool,
     new_device_name: String,
     new_device_ip: String,
@@ -347,7 +352,9 @@ enum Message {
     SetUpdateMode(String),
     PresetSlotClick(u8),
     EditColor(u8),
-    SetHotkey(String),
+    ArmHotkey(hotkeys::HotkeyTarget),
+    HotkeyKeyPressed(iced::keyboard::Key, iced::keyboard::Modifiers),
+    ClearHotkey(hotkeys::HotkeyTarget),
     RemotePoll,
     ToggleRemoteSection(bool),
     SetTcpFeedEnabled(bool),
@@ -357,7 +364,7 @@ enum Message {
     SetNewDeviceName(String), SetNewDeviceIp(String), SetNewDeviceKey(String),
     TestDevice, SaveDevice, RemoveDevice(String),
     OpenPopout(String),
-    SetGameModeEnabled(bool), SetGameModeHotkey(String),
+    SetGameModeEnabled(bool),
     SetGameModePosition(SnapPosition), SetGameModeOpacity(f32),
     SetGameModeOrientation(String), SetGameModeClickThrough(bool),
     ToggleGameModeTile(String, bool),
@@ -381,6 +388,11 @@ impl App {
         if settings.remote_enabled { remote.set_server_enabled(true); }
         let remote_expanded = settings.remote_enabled;
 
+        // Register global hotkeys from the saved combos.
+        let (hotkeys_mgr, hotkey_rx) = hotkeys::HotkeyManager::start();
+        hotkeys_mgr.set_combo(hotkeys::HotkeyTarget::ClickThrough, &settings.click_through_hotkey);
+        hotkeys_mgr.set_combo(hotkeys::HotkeyTarget::GameMode, &settings.game_mode_hotkey);
+
         let menu = Menu::new();
         let si = MenuItem::new("Settings", true, None);
         let wi = MenuItem::new("Show Widget", true, None);
@@ -399,6 +411,7 @@ impl App {
             remote: Some(remote), remote_rx: Some(remote_rx),
             remote_snapshots: HashMap::new(), remote_conn: HashMap::new(),
             popout_device: HashMap::new(), pending_popout: std::collections::VecDeque::new(), remote_expanded,
+            hotkeys: Some(hotkeys_mgr), hotkey_rx: Some(hotkey_rx), capturing_hotkey: None,
             add_device_open: false,
             new_device_name: String::new(), new_device_ip: String::new(), new_device_key: String::new(),
             device_test_status: String::new(), device_test_ok: false,
@@ -508,6 +521,51 @@ impl App {
         }
         Task::batch(tasks)
     }
+    // ── Hotkey helpers ──
+    fn set_hotkey(&mut self, target: hotkeys::HotkeyTarget, combo: String) {
+        match target {
+            hotkeys::HotkeyTarget::ClickThrough => self.settings.click_through_hotkey = combo.clone(),
+            hotkeys::HotkeyTarget::GameMode => self.settings.game_mode_hotkey = combo.clone(),
+        }
+        let _ = self.settings.save();
+        if let Some(h) = &self.hotkeys { h.set_combo(target, &combo); }
+    }
+    fn toggle_click_through(&mut self) -> Task<Message> {
+        self.settings.click_through = !self.settings.click_through;
+        let _ = self.settings.save();
+        self.apply_click_through()
+    }
+    fn toggle_game_mode(&mut self) -> Task<Message> {
+        // Don't enter game mode if it isn't enabled in settings (matches C#
+        // EnterGameMode); exiting always works.
+        if !self.game_mode && !self.settings.game_mode_enabled { return Task::none(); }
+        self.game_mode = !self.game_mode;
+        let mut tasks: Vec<Task<Message>> = Vec::new();
+        if let Some(id) = self.widget_window() {
+            tasks.push(window::resize(id, self.widget_size()));
+            if self.game_mode {
+                if let Some(c) = self.game_corner() { self.ignore_next_move = true; tasks.push(window::move_to(id, c)); }
+            } else {
+                self.ignore_next_move = true;
+                tasks.push(window::move_to(id, Point::new(self.settings.window_x as f32, self.settings.window_y as f32)));
+            }
+        }
+        tasks.push(self.apply_click_through());
+        Task::batch(tasks)
+    }
+    fn drain_hotkey_events(&mut self) -> Task<Message> {
+        let mut events = Vec::new();
+        if let Some(rx) = &self.hotkey_rx { while let Ok(e) = rx.try_recv() { events.push(e); } }
+        let mut tasks: Vec<Task<Message>> = Vec::new();
+        for e in events {
+            match e {
+                hotkeys::HotkeyEvent::ClickThrough => tasks.push(self.toggle_click_through()),
+                hotkeys::HotkeyEvent::GameMode => tasks.push(self.toggle_game_mode()),
+            }
+        }
+        if tasks.is_empty() { Task::none() } else { Task::batch(tasks) }
+    }
+
     // ── Remote monitoring helpers ──
     fn drain_remote_events(&mut self) {
         let mut events = Vec::new();
@@ -726,15 +784,10 @@ impl App {
                     if event.id == self.settings_id { tasks.push(self.open_settings()); }
                     if event.id == self.show_id { if let Some(id) = self.widget_window() { tasks.push(window::change_mode(id, window::Mode::Windowed)); } }
                     if event.id == self.game_id {
-                        self.game_mode = !self.game_mode;
-                        if let Some(id) = self.widget_window() {
-                            tasks.push(window::resize(id, self.widget_size()));
-                            if self.game_mode { if let Some(c) = self.game_corner() { self.ignore_next_move = true; tasks.push(window::move_to(id, c)); } }
-                            else { self.ignore_next_move = true; tasks.push(window::move_to(id, Point::new(self.settings.window_x as f32, self.settings.window_y as f32))); }
-                        }
-                        tasks.push(self.apply_click_through());
+                        tasks.push(self.toggle_game_mode());
                     }
                 }
+                tasks.push(self.drain_hotkey_events());
                 if let Some((id, pos, when)) = self.pending_snap {
                     if when.elapsed() > Duration::from_millis(150) {
                         self.pending_snap = None;
@@ -942,7 +995,29 @@ impl App {
             Message::SetArrowFontOffset(v) => { self.settings.arrow_font_offset = v as i32; Task::none() }
             Message::SetDiskLabelSpacing(v) => { self.settings.disk_label_spacing = v; Task::none() }
             Message::SetDiskLabelFontOffset(v) => { self.settings.disk_label_font_offset = v as i32; Task::none() }
-            Message::SetHotkey(v) => { self.settings.click_through_hotkey = v; Task::none() }
+            Message::ArmHotkey(target) => {
+                // Toggle capture: clicking the armed field again disarms it.
+                self.capturing_hotkey = if self.capturing_hotkey == Some(target) { None } else { Some(target) };
+                Task::none()
+            }
+            Message::HotkeyKeyPressed(key, mods) => {
+                let target = match self.capturing_hotkey { Some(t) => t, None => return Task::none() };
+                // Escape cancels capture without binding (matches C#).
+                if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                    self.capturing_hotkey = None;
+                    return Task::none();
+                }
+                if let Some(combo) = hotkeys::format_combo(&key, mods) {
+                    self.set_hotkey(target, combo);
+                    self.capturing_hotkey = None;
+                }
+                Task::none()
+            }
+            Message::ClearHotkey(target) => {
+                self.set_hotkey(target, String::new());
+                self.capturing_hotkey = None;
+                Task::none()
+            }
             Message::RemotePoll => { self.drain_remote_events(); Task::none() }
             Message::ToggleRemoteSection(on) => { self.remote_expanded = on; Task::none() }
             Message::SetTcpFeedEnabled(on) => {
@@ -1141,7 +1216,6 @@ impl App {
                 Task::none()
             }
             Message::SetGameModeEnabled(on) => { self.settings.game_mode_enabled = on; Task::none() }
-            Message::SetGameModeHotkey(s) => { self.settings.game_mode_hotkey = s; Task::none() }
             Message::SetGameModePosition(pos) => {
                 self.settings.game_mode_position = pos;
                 if self.game_mode {
@@ -1194,11 +1268,12 @@ impl App {
                     test_status: self.device_test_status.clone(),
                     test_ok: self.device_test_ok,
                 };
-                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, remote)
+                let capturing_ct = self.capturing_hotkey == Some(hotkeys::HotkeyTarget::ClickThrough);
+                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, capturing_ct, remote)
             }
             WindowKind::Tools => popups::tools_view(&self.settings, p, id),
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
-            WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id),
+            WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id, self.capturing_hotkey == Some(hotkeys::HotkeyTarget::GameMode)),
             WindowKind::Help => popups::help_view(&self.settings, p, id),
             WindowKind::WidgetMenu => popups::widget_menu_view(p),
             WindowKind::Popout => self.popout_view(id, p),
@@ -1318,6 +1393,10 @@ impl App {
         // Only run the animation clock for the animated modes (Glow is static).
         if matches!(self.settings.network_traffic_indicator.as_str(), "Blink" | "Fade") {
             subs.push(iced::time::every(Duration::from_millis(60)).map(|_| Message::AnimTick));
+        }
+        // While a hotkey field is armed, capture the next key combo.
+        if self.capturing_hotkey.is_some() {
+            subs.push(iced::keyboard::on_key_press(|key, mods| Some(Message::HotkeyKeyPressed(key, mods))));
         }
         Subscription::batch(subs)
     }

@@ -26,12 +26,35 @@ pub struct RemoteView {
     pub test_ok: bool,
 }
 
+/// A click-to-capture hotkey field: shows the bound combo, "(click to set)"
+/// when empty, or "(press keys…)" while armed. Pressing it emits `arm_msg`.
+pub(crate) fn hotkey_field<'a>(combo: &str, capturing: bool, width: f32, arm_msg: Message, p: Palette) -> Element<'a, Message> {
+    let label = if capturing {
+        "(press keys\u{2026})".to_string()
+    } else if combo.is_empty() {
+        "(click to set)".to_string()
+    } else {
+        combo.to_string()
+    };
+    let dim = combo.is_empty() || capturing;
+    button(text(label).size(11).style(move |_| iced::widget::text::Style { color: Some(if dim { p.muted } else { p.text }) }))
+        .width(Length::Fixed(width))
+        .padding(iced::Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+        .style(move |_: &iced::Theme, _: button::Status| button::Style {
+            background: Some(iced::Background::Color(crate::style::field_bg(p))),
+            border: Border { radius: 4.0.into(), width: 1.0, color: if capturing { p.accent } else { iced::Color { a: 0.4, ..p.muted } } },
+            ..Default::default()
+        })
+        .on_press(arm_msg).into()
+}
+
 pub fn view<'a>(
     settings: &AppSettings, p: Palette, win_id: iced::window::Id,
     theme_name: String, disks: Vec<String>, adapters: Vec<String>,
     fonts: Vec<String>,
     cpu_name: String, gpu_name: String,
     editing_color: Option<u8>,
+    capturing_click_through: bool,
     remote: RemoteView,
 ) -> Element<'a, Message> {
     // ── Style helpers ──
@@ -240,11 +263,11 @@ pub fn view<'a>(
         Space::with_height(4),
         fl("Click-through hotkey"),
         row![
-            text_input("", &settings.click_through_hotkey).size(11).width(150).style(crate::style::dark_input_style(p)),
-            text("click to set").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+            hotkey_field(&settings.click_through_hotkey, capturing_click_through, 150.0,
+                Message::ArmHotkey(crate::hotkeys::HotkeyTarget::ClickThrough), p),
             button(text("\u{2715}").size(10).font(crate::style::ICONS).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
                 .padding([2, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
-                .on_press(Message::SetHotkey(String::new())),
+                .on_press(Message::ClearHotkey(crate::hotkeys::HotkeyTarget::ClickThrough)),
         ].spacing(6).align_y(iced::Alignment::Center),
         Space::with_height(4),
         // Paired sliders: Opacity + Update interval
