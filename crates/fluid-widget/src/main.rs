@@ -9,6 +9,7 @@ mod popups;
 mod fonts;
 mod hotkeys;
 mod updates;
+mod firewall;
 
 use fluid_core::sensor_data::SensorSnapshot;
 use fluid_core::settings::{AppSettings, Orientation, SnapPosition, TempUnit, WarnMetric};
@@ -1179,6 +1180,12 @@ impl App {
             Message::ToggleRemoteSection(on) => { self.remote_expanded = on; Task::none() }
             Message::SetTcpFeedEnabled(on) => {
                 self.settings.remote_enabled = on;
+                // Add the firewall rule the first time the feed is enabled (one
+                // UAC), so Windows won't pop the raw "allow app" dialog on bind.
+                if on && !self.settings.remote_firewall_configured {
+                    firewall::ensure_rule(self.settings.remote_port);
+                    self.settings.remote_firewall_configured = true;
+                }
                 if let Some(r) = &self.remote { r.set_server_enabled(on); }
                 let _ = self.settings.save();
                 Task::none()

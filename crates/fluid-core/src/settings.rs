@@ -77,6 +77,10 @@ pub struct AppSettings {
 
     #[serde(default)]
     pub snap_blocklist: Vec<String>,
+    /// Set once the Windows Firewall rule for the TCP feed has been added, so we
+    /// don't re-prompt for elevation on every enable.
+    #[serde(default)]
+    pub remote_firewall_configured: bool,
 
     pub update_check_mode: UpdateMode,
     pub last_update_check: Option<String>,
@@ -151,6 +155,7 @@ impl Default for AppSettings {
             remote_key: String::new(),
             remote_devices: Vec::new(),
             snap_blocklist: Vec::new(),
+            remote_firewall_configured: false,
             update_check_mode: UpdateMode::Manual,
             last_update_check: None,
             presets: Vec::new(),
