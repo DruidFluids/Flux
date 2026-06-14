@@ -371,6 +371,7 @@ struct App {
     update_status: String,
     update_status_kind: u8, // 0 neutral, 1 good (green), 2 bad (red)
     update_available: Option<(String, String, String)>, // version, changelog, url
+    appearance_status: String,
     add_device_open: bool,
     new_device_name: String,
     new_device_ip: String,
@@ -417,6 +418,8 @@ enum Message {
     SetSyncFonts(bool), SetRandomizeFonts(bool),
     SetFont(u8, String),
     SetUpdateMode(String),
+    SavePreset,
+    ExportAppearance, ImportAppearance, ImportAppearanceCode(Option<String>),
     CheckForUpdates,
     UpdateCheckDone(updates::CheckResult),
     DownloadUpdate,
@@ -489,6 +492,7 @@ impl App {
             blocklist_editor: iced::widget::text_editor::Content::with_text(&blocklist_text),
             blocklist_status: String::new(),
             update_checking: false, update_status: String::new(), update_status_kind: 0, update_available: None,
+            appearance_status: String::new(),
             add_device_open: false,
             new_device_name: String::new(), new_device_ip: String::new(), new_device_key: String::new(),
             device_test_status: String::new(), device_test_ok: false,
@@ -846,6 +850,40 @@ impl App {
         self.settings.primary_font = a.primary_font;
         self.settings.secondary_font = a.secondary_font;
         self.settings.indicator_font = a.indicator_font;
+    }
+
+    // Encode the current appearance (colors + skin + fonts) to a share code.
+    fn appearance_share_code(&self) -> String {
+        use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+        let s = &self.settings;
+        let v = serde_json::json!({
+            "bg": s.theme_bg, "tile": s.theme_tile, "accent": s.theme_accent,
+            "text": s.theme_text, "muted": s.theme_muted, "skin": s.active_skin,
+            "pf": s.primary_font, "sf": s.secondary_font, "if": s.indicator_font,
+        });
+        format!("FMA1:{}", B64.encode(v.to_string()))
+    }
+    // Apply a share code to the current appearance. Returns false if invalid.
+    fn apply_share_code(&mut self, code: &str) -> bool {
+        use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+        let body = match code.trim().strip_prefix("FMA1:") { Some(b) => b, None => return false };
+        let bytes = match B64.decode(body) { Ok(b) => b, Err(_) => return false };
+        let text = match String::from_utf8(bytes) { Ok(t) => t, Err(_) => return false };
+        let v: serde_json::Value = match serde_json::from_str(&text) { Ok(v) => v, Err(_) => return false };
+        self.push_appearance_undo();
+        let s = &mut self.settings;
+        let str_or = |v: &serde_json::Value, k: &str, cur: &str| v[k].as_str().unwrap_or(cur).to_string();
+        s.theme_bg = str_or(&v, "bg", &s.theme_bg);
+        s.theme_tile = str_or(&v, "tile", &s.theme_tile);
+        s.theme_accent = str_or(&v, "accent", &s.theme_accent);
+        s.theme_text = str_or(&v, "text", &s.theme_text);
+        s.theme_muted = str_or(&v, "muted", &s.theme_muted);
+        s.active_skin = str_or(&v, "skin", &s.active_skin);
+        s.primary_font = v["pf"].as_str().map(|x| x.to_string());
+        s.secondary_font = v["sf"].as_str().map(|x| x.to_string());
+        s.indicator_font = v["if"].as_str().map(|x| x.to_string());
+        let _ = self.settings.save();
+        true
     }
 
     // Apply (or clear) click-through on the widget window based on current mode.
@@ -1336,6 +1374,32 @@ impl App {
                 Err(e) => { self.update_status = format!("Download failed: {e}"); self.update_status_kind = 2; Task::none() }
             },
             Message::UpdateLater => { self.update_available = None; self.update_status = String::new(); Task::none() }
+            Message::SavePreset => {
+                if self.settings.presets.len() < 5 {
+                    let a = self.snapshot_appearance();
+                    self.settings.presets.push(fluid_core::settings::PresetSlot {
+                        name: format!("Slot {}", self.settings.presets.len() + 1),
+                        bg: a.bg, tile: a.tile, accent: a.accent, text: a.text, muted: a.muted, skin: a.skin,
+                    });
+                    let _ = self.settings.save();
+                    self.appearance_status = "Saved".into();
+                } else {
+                    self.appearance_status = "All 5 slots full".into();
+                }
+                Task::none()
+            }
+            Message::ExportAppearance => {
+                self.appearance_status = "Copied to clipboard".into();
+                iced::clipboard::write(self.appearance_share_code())
+            }
+            Message::ImportAppearance => iced::clipboard::read().map(Message::ImportAppearanceCode),
+            Message::ImportAppearanceCode(opt) => {
+                match opt {
+                    Some(code) if self.apply_share_code(&code) => self.appearance_status = "Imported".into(),
+                    _ => self.appearance_status = "No valid code on clipboard".into(),
+                }
+                Task::none()
+            }
             Message::PresetSlotClick(slot) => {
                 let idx = slot as usize;
                 if idx < self.settings.presets.len() {
@@ -1438,7 +1502,7 @@ impl App {
                     status_kind: self.update_status_kind,
                     available: self.update_available.as_ref().map(|(v, c, _)| (v.clone(), c.clone())),
                 };
-                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, capturing_ct, remote, update)
+                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, capturing_ct, self.appearance_status.clone(), remote, update)
             }
             WindowKind::Tools => popups::tools_view(&self.settings, p, id),
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),

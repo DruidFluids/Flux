@@ -65,6 +65,7 @@ pub fn view<'a>(
     cpu_name: String, gpu_name: String,
     editing_color: Option<u8>,
     capturing_click_through: bool,
+    appearance_status: String,
     remote: RemoteView,
     update: UpdateView,
 ) -> Element<'a, Message> {
@@ -369,16 +370,26 @@ pub fn view<'a>(
     }
     saved_row = saved_row.push(Space::with_width(6));
     saved_row = saved_row.push(
-        button(text("\u{2199}").size(12).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-            .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() })
-            .on_press(Message::Noop)
+        tooltip(
+            button(text("\u{2199}").size(12).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+                .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() })
+                .on_press(Message::ImportAppearance),
+            tip_box("Import appearance from a share code on the clipboard.", p), TipPos::Bottom,
+        )
     );
     saved_row = saved_row.push(Space::with_width(3));
     saved_row = saved_row.push(
-        button(text("\u{2197}").size(12).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-            .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() })
-            .on_press(Message::Noop)
+        tooltip(
+            button(text("\u{2197}").size(12).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+                .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() })
+                .on_press(Message::ExportAppearance),
+            tip_box("Export the current appearance as a share code to the clipboard.", p), TipPos::Bottom,
+        )
     );
+    if !appearance_status.is_empty() {
+        saved_row = saved_row.push(Space::with_width(8));
+        saved_row = saved_row.push(text(appearance_status.to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.accent) }));
+    }
 
     // Monochrome icon button (Segoe UI Symbol). Accent-filled when `active`.
     let icon_btn = |glyph: &str, active: bool, msg: Message| -> Element<'a, Message> {
@@ -425,7 +436,8 @@ pub fn view<'a>(
         .style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
         .on_press(Message::ThemeNext),
         pill("\u{203A}".into(), false, Message::ThemeNext),
-        icon_btn("+", false, Message::Noop),
+        tooltip(icon_btn("+", false, Message::SavePreset),
+            tip_box("Save the current colours + skin as a new preset slot.", p), TipPos::Bottom),
     ].align_y(iced::Alignment::Center).spacing(3);
 
     // ── Skins box (Skins row + Colors row), matching the C# layout ──

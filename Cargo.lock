@@ -1329,6 +1329,7 @@ name = "fluid-widget"
 version = "2.0.0"
 dependencies = [
  "anyhow",
+ "base64",
  "chrono",
  "fluid-core",
  "fluid-ipc",
