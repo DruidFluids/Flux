@@ -243,7 +243,7 @@ fn cursor_logical_pos() -> Option<(f32, f32)> {
 fn cursor_logical_pos() -> Option<(f32, f32)> { None }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu }
+enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout }
 
 // Snapshot of all appearance state for the C# "Undo last change" stack
 // (colors + skin + fonts). Up to 5 steps back.
@@ -257,6 +257,17 @@ struct Appearance {
 fn nanos() -> usize {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.subsec_nanos() as usize).unwrap_or(0)
+}
+
+// Stable per-device id (time + monotonic counter, hex). Used to key remote
+// device connections and popout windows.
+fn new_device_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64).unwrap_or(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{:x}{:x}", t, n)
 }
 
 struct App {
@@ -283,6 +294,20 @@ struct App {
     show_id: tray_icon::menu::MenuId,
     game_id: tray_icon::menu::MenuId,
     exit_id: tray_icon::menu::MenuId,
+    // ── Remote monitoring ──
+    remote: Option<fluid_remote::RemoteManager>,
+    remote_rx: Option<std::sync::mpsc::Receiver<fluid_remote::RemoteEvent>>,
+    remote_snapshots: HashMap<String, SensorSnapshot>,
+    remote_conn: HashMap<String, bool>,
+    popout_device: HashMap<window::Id, String>,
+    pending_popout: std::collections::VecDeque<String>,
+    remote_expanded: bool,
+    add_device_open: bool,
+    new_device_name: String,
+    new_device_ip: String,
+    new_device_key: String,
+    device_test_status: String,
+    device_test_ok: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -323,7 +348,15 @@ enum Message {
     PresetSlotClick(u8),
     EditColor(u8),
     SetHotkey(String),
-    SetRemoteEnabled(bool),
+    RemotePoll,
+    ToggleRemoteSection(bool),
+    SetTcpFeedEnabled(bool),
+    CopyHandshakeKey,
+    RegenerateKey,
+    ShowAddDevice, CancelAddDevice,
+    SetNewDeviceName(String), SetNewDeviceIp(String), SetNewDeviceKey(String),
+    TestDevice, SaveDevice, RemoveDevice(String),
+    OpenPopout(String),
     SetGameModeEnabled(bool), SetGameModeHotkey(String),
     SetGameModePosition(SnapPosition), SetGameModeOpacity(f32),
     SetGameModeOrientation(String), SetGameModeClickThrough(bool),
@@ -332,7 +365,22 @@ enum Message {
 
 impl App {
     fn new() -> (Self, Task<Message>) {
-        let settings = AppSettings::load().unwrap_or_default();
+        let mut settings = AppSettings::load().unwrap_or_default();
+        // Assign stable ids to any devices loaded from an older config.
+        let mut devices_changed = false;
+        for d in settings.remote_devices.iter_mut() {
+            if d.id.is_empty() { d.id = new_device_id(); devices_changed = true; }
+        }
+        if devices_changed { let _ = settings.save(); }
+
+        // Start the remote-monitoring runtime; it hands back the handshake key.
+        let (remote, remote_rx, handshake_key) =
+            fluid_remote::RemoteManager::start(settings.remote_port);
+        settings.remote_key = handshake_key;
+        remote.set_devices(settings.remote_devices.clone());
+        if settings.remote_enabled { remote.set_server_enabled(true); }
+        let remote_expanded = settings.remote_enabled;
+
         let menu = Menu::new();
         let si = MenuItem::new("Settings", true, None);
         let wi = MenuItem::new("Show Widget", true, None);
@@ -348,6 +396,12 @@ impl App {
             click_through_applied: false,
             pending_snap: None, ignore_next_move: false, snap_right: false, snap_bottom: false,
             _tray: tray, settings_id: sid, show_id: wid, game_id: gid, exit_id: eid,
+            remote: Some(remote), remote_rx: Some(remote_rx),
+            remote_snapshots: HashMap::new(), remote_conn: HashMap::new(),
+            popout_device: HashMap::new(), pending_popout: std::collections::VecDeque::new(), remote_expanded,
+            add_device_open: false,
+            new_device_name: String::new(), new_device_ip: String::new(), new_device_key: String::new(),
+            device_test_status: String::new(), device_test_ok: false,
         };
         let size = app.widget_size();
         let position = if app.settings.first_run_complete {
@@ -454,6 +508,48 @@ impl App {
         }
         Task::batch(tasks)
     }
+    // ── Remote monitoring helpers ──
+    fn drain_remote_events(&mut self) {
+        let mut events = Vec::new();
+        if let Some(rx) = &self.remote_rx {
+            while let Ok(ev) = rx.try_recv() { events.push(ev); }
+        }
+        for ev in events {
+            match ev {
+                fluid_remote::RemoteEvent::KeyChanged(k) => { self.settings.remote_key = k; }
+                fluid_remote::RemoteEvent::ConnState { device_id, connected } => {
+                    self.remote_conn.insert(device_id, connected);
+                }
+                fluid_remote::RemoteEvent::Snapshot { device_id, snapshot } => {
+                    self.remote_snapshots.insert(device_id, snapshot);
+                }
+                fluid_remote::RemoteEvent::TestResult { ok, message } => {
+                    self.device_test_ok = ok;
+                    self.device_test_status = if ok { "\u{2713} Connected".into() }
+                        else { format!("\u{2717} {message}") };
+                }
+            }
+        }
+    }
+    fn build_device_from_form(&self) -> Option<fluid_core::settings::RemoteDevice> {
+        let name = self.new_device_name.trim();
+        let ip = self.new_device_ip.trim();
+        let key = self.new_device_key.trim();
+        if name.is_empty() || ip.is_empty() { return None; }
+        if fluid_remote::protocol::decode_handshake_key(key).is_none() { return None; }
+        Some(fluid_core::settings::RemoteDevice {
+            id: new_device_id(), name: name.to_string(), host: ip.to_string(),
+            port: self.settings.remote_port, key: key.to_string(),
+        })
+    }
+    fn popout_size(&self) -> Size {
+        let tw = self.settings.tile_width;
+        let th = self.settings.tile_height;
+        let sp = style::skin_style(&self.settings.active_skin).tile_spacing;
+        let n = 5.0; // CPU/GPU/RAM/Network/Disk, stacked vertically
+        Size::new(tw + 24.0, 12.0 + 16.0 + 4.0 + n * th + (n - 1.0) * sp + 12.0)
+    }
+
     fn eval_warnings(&mut self) {
         self.warn_state.clear();
         for w in &self.settings.warnings {
@@ -611,7 +707,10 @@ impl App {
             Message::Noop => Task::none(),
             Message::SensorTick => {
                 let poller = self.poller.get_or_insert_with(SensorPoller::new);
-                self.snapshot = poller.poll(); self.eval_warnings(); Task::none()
+                self.snapshot = poller.poll(); self.eval_warnings();
+                // Feed the TCP server so connected remotes receive this machine.
+                if let Some(r) = &self.remote { r.push_snapshot(self.snapshot.clone()); }
+                Task::none()
             }
             Message::FlashTick => { self.flash_on = !self.flash_on; Task::none() }
             Message::AnimTick => {
@@ -675,6 +774,10 @@ impl App {
             }
             Message::WindowOpened(id, kind) => {
                 self.windows.insert(id, kind);
+                if kind == WindowKind::Popout {
+                    if let Some(dev) = self.pending_popout.pop_front() { self.popout_device.insert(id, dev); }
+                    return self.update_widget_level();
+                }
                 if kind == WindowKind::Widget {
                     // Give the widget a unique OS window title (FindWindow target
                     // for snap + click-through), then apply click-through state.
@@ -701,7 +804,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::WindowClosed(id) => { self.windows.remove(&id); if self.widget_window().is_none() { return iced::exit(); } self.update_widget_level() }
+            Message::WindowClosed(id) => { self.windows.remove(&id); self.popout_device.remove(&id); if self.widget_window().is_none() { return iced::exit(); } self.update_widget_level() }
             Message::OpenSettings => self.open_settings(),
             Message::HideWidget => self.widget_window().map(|id| window::change_mode(id, window::Mode::Hidden)).unwrap_or(Task::none()),
             Message::OpenTools => self.open_popup(WindowKind::Tools, popups::TOOLS_SIZE),
@@ -840,7 +943,78 @@ impl App {
             Message::SetDiskLabelSpacing(v) => { self.settings.disk_label_spacing = v; Task::none() }
             Message::SetDiskLabelFontOffset(v) => { self.settings.disk_label_font_offset = v as i32; Task::none() }
             Message::SetHotkey(v) => { self.settings.click_through_hotkey = v; Task::none() }
-            Message::SetRemoteEnabled(on) => { self.settings.remote_enabled = on; Task::none() }
+            Message::RemotePoll => { self.drain_remote_events(); Task::none() }
+            Message::ToggleRemoteSection(on) => { self.remote_expanded = on; Task::none() }
+            Message::SetTcpFeedEnabled(on) => {
+                self.settings.remote_enabled = on;
+                if let Some(r) = &self.remote { r.set_server_enabled(on); }
+                let _ = self.settings.save();
+                Task::none()
+            }
+            Message::CopyHandshakeKey => {
+                let key = self.settings.remote_key.clone();
+                if !key.is_empty() { return iced::clipboard::write(key); }
+                Task::none()
+            }
+            Message::RegenerateKey => {
+                if let Some(r) = &self.remote { r.regenerate_key(); }
+                Task::none()
+            }
+            Message::ShowAddDevice => {
+                self.add_device_open = true;
+                self.new_device_name.clear(); self.new_device_ip.clear(); self.new_device_key.clear();
+                self.device_test_status.clear();
+                Task::none()
+            }
+            Message::CancelAddDevice => { self.add_device_open = false; Task::none() }
+            Message::SetNewDeviceName(v) => { self.new_device_name = v; Task::none() }
+            Message::SetNewDeviceIp(v) => { self.new_device_ip = v; Task::none() }
+            Message::SetNewDeviceKey(v) => { self.new_device_key = v; Task::none() }
+            Message::TestDevice => {
+                match self.build_device_from_form() {
+                    Some(dev) => {
+                        self.device_test_status = "Testing\u{2026}".into();
+                        if let Some(r) = &self.remote { r.test_device(dev.host, dev.port, dev.key); }
+                    }
+                    None => { self.device_test_status = "Fill in all fields first".into(); self.device_test_ok = false; }
+                }
+                Task::none()
+            }
+            Message::SaveDevice => {
+                if self.settings.remote_devices.len() >= 5 { return Task::none(); }
+                match self.build_device_from_form() {
+                    Some(dev) => {
+                        self.settings.remote_devices.push(dev);
+                        let _ = self.settings.save();
+                        if let Some(r) = &self.remote { r.set_devices(self.settings.remote_devices.clone()); }
+                        self.add_device_open = false;
+                    }
+                    None => { self.device_test_status = "Fill in all fields first".into(); self.device_test_ok = false; }
+                }
+                Task::none()
+            }
+            Message::RemoveDevice(id) => {
+                self.settings.remote_devices.retain(|d| d.id != id);
+                self.remote_snapshots.remove(&id); self.remote_conn.remove(&id);
+                let _ = self.settings.save();
+                if let Some(r) = &self.remote { r.set_devices(self.settings.remote_devices.clone()); }
+                Task::none()
+            }
+            Message::OpenPopout(id) => {
+                let dev = self.settings.remote_devices.iter().find(|d| d.id == id).cloned();
+                match dev {
+                    Some(dev) => {
+                        self.pending_popout.push_back(dev.id.clone());
+                        let size = self.popout_size();
+                        let (_, t) = window::open(window::Settings {
+                            size, position: window::Position::Default, decorations: false, transparent: true,
+                            resizable: false, level: window::Level::AlwaysOnTop, ..Default::default()
+                        });
+                        t.map(|wid| Message::WindowOpened(wid, WindowKind::Popout))
+                    }
+                    None => Task::none(),
+                }
+            }
             Message::SkinPrev => {
                 self.push_appearance_undo();
                 let skins = style::SKIN_NAMES;
@@ -1007,15 +1181,71 @@ impl App {
             WindowKind::Settings => {
                 let cpu_name = fmt::shorten(&self.snapshot.cpu.name);
                 let gpu_name = fmt::shorten(&self.snapshot.gpu.name);
-                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color)
+                let remote = settings_panel::RemoteView {
+                    expanded: self.remote_expanded,
+                    feed_on: self.settings.remote_enabled,
+                    handshake_key: self.settings.remote_key.clone(),
+                    devices: self.settings.remote_devices.clone(),
+                    conn: self.remote_conn.clone(),
+                    add_open: self.add_device_open,
+                    new_name: self.new_device_name.clone(),
+                    new_ip: self.new_device_ip.clone(),
+                    new_key: self.new_device_key.clone(),
+                    test_status: self.device_test_status.clone(),
+                    test_ok: self.device_test_ok,
+                };
+                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, remote)
             }
             WindowKind::Tools => popups::tools_view(&self.settings, p, id),
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id),
             WindowKind::Help => popups::help_view(&self.settings, p, id),
             WindowKind::WidgetMenu => popups::widget_menu_view(p),
+            WindowKind::Popout => self.popout_view(id, p),
             WindowKind::Widget => self.widget_view(id, p),
         }
+    }
+
+    fn popout_view(&self, id: window::Id, p: Palette) -> Element<'_, Message> {
+        let dev_id = self.popout_device.get(&id).cloned().unwrap_or_default();
+        let dev = self.settings.remote_devices.iter().find(|d| d.id == dev_id);
+        let name = dev.map(|d| d.name.clone()).unwrap_or_else(|| "Remote".into());
+        let connected = self.remote_conn.get(&dev_id).copied().unwrap_or(false);
+        let snap = self.remote_snapshots.get(&dev_id).cloned().unwrap_or_default();
+        let no_warn = tile::WarnView { flash: false, accent_override: None };
+
+        let tiles: Vec<Element<'_, Message>> = vec![
+            tile::cpu_tile(&snap.cpu, &self.settings, p, no_warn),
+            tile::gpu_tile(&snap.gpu, &self.settings, p, no_warn),
+            tile::ram_tile(&snap.ram, &self.settings, p, no_warn),
+            tile::network_tile(&snap.network, &self.settings, p, no_warn, 1.0),
+            tile::disk_tile(&snap.disk, &self.settings, p, no_warn),
+        ];
+        let skin = style::skin_style(&self.settings.active_skin);
+        let body = column(tiles).spacing(skin.tile_spacing);
+
+        let label = if connected { name } else { format!("{name}  \u{2022} offline") };
+        let header = row![
+            Space::with_width(Length::Fill),
+            text(label).size(9)
+                .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                .style(move |_| iced::widget::text::Style { color: Some(p.accent) }),
+            Space::with_width(Length::Fill),
+            button(text("\u{2715}").size(11).font(iced::Font::with_name("Segoe UI Symbol"))
+                .style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+                .padding(0).style(|_, _| button::Style { background: None, ..Default::default() })
+                .on_press(Message::ClosePopup(id)),
+        ].align_y(iced::Alignment::Center).height(16);
+
+        let widget_border = skin.border_color(&p);
+        let root = container(column![header, Space::with_height(4), body])
+            .width(Length::Fill).height(Length::Fill).padding(6)
+            .style(move |_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(p.bg)),
+                border: Border { radius: 12.0.into(), width: skin.widget_border, color: widget_border },
+                ..Default::default()
+            });
+        mouse_area(root).on_press(Message::DragWindow(id)).into()
     }
 
     fn widget_view(&self, id: window::Id, p: Palette) -> Element<'_, Message> {
@@ -1076,6 +1306,7 @@ impl App {
         let mut subs = vec![
             iced::time::every(Duration::from_millis(self.settings.update_interval_ms.max(250))).map(|_| Message::SensorTick),
             iced::time::every(Duration::from_millis(200)).map(|_| Message::TrayPoll),
+            iced::time::every(Duration::from_millis(250)).map(|_| Message::RemotePoll),
             iced::time::every(Duration::from_millis(600)).map(|_| Message::FlashTick),
             window::close_events().map(Message::WindowClosed),
             window::events().map(|(id, event)| match event {

@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 fluid-core = { path = "../fluid-core" }
 fluid-ipc = { path = "../fluid-ipc" }
+fluid-remote = { path = "../fluid-remote" }
 iced = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }

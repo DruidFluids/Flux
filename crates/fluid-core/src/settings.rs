@@ -196,7 +196,14 @@ impl Default for TileWarning {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RemoteDevice { pub name: String, pub host: String, pub port: u16, pub key: String }
+pub struct RemoteDevice {
+    #[serde(default)]
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub key: String,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresetSlot { pub name: String, pub bg: String, pub tile: String, pub accent: String, pub text: String, pub muted: String, pub skin: String }
 

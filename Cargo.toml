@@ -4,6 +4,7 @@ members = [
     "crates/fluid-core",
     "crates/fluid-sensor",
     "crates/fluid-ipc",
+    "crates/fluid-remote",
     "crates/fluid-widget",
     "crates/fluid-service",
     "crates/fluid-setup",
@@ -30,6 +31,13 @@ sysinfo = "0.34"
 directories = "6"
 notify = "7"
 interprocess = "2"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
 
 [profile.release]
 opt-level = "z"

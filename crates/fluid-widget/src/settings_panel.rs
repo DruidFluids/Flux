@@ -11,12 +11,28 @@ const TILE_INTERNAL: [&str; 6] = ["CPU","GPU","RAM","Network","Disk","Clock"];
 
 const FONT_DEFAULT: &str = "(Default)";
 
+/// Remote-monitoring UI state passed in from the App.
+pub struct RemoteView {
+    pub expanded: bool,
+    pub feed_on: bool,
+    pub handshake_key: String,
+    pub devices: Vec<fluid_core::settings::RemoteDevice>,
+    pub conn: std::collections::HashMap<String, bool>,
+    pub add_open: bool,
+    pub new_name: String,
+    pub new_ip: String,
+    pub new_key: String,
+    pub test_status: String,
+    pub test_ok: bool,
+}
+
 pub fn view<'a>(
     settings: &AppSettings, p: Palette, win_id: iced::window::Id,
     theme_name: String, disks: Vec<String>, adapters: Vec<String>,
     fonts: Vec<String>,
     cpu_name: String, gpu_name: String,
     editing_color: Option<u8>,
+    remote: RemoteView,
 ) -> Element<'a, Message> {
     // ── Style helpers ──
     let sh = |label: &str, tip: &'static str| -> Element<'a, Message> {
@@ -547,11 +563,146 @@ pub fn view<'a>(
     ].spacing(4);
 
     // ── Remote Monitoring ──
-    let remote = row![
+    // C# InlineBtn, auto-width (cycle_btn fills its row, unsuitable here).
+    let ibtn = |label_text: String, msg: Message| -> Element<'a, Message> {
+        button(text(label_text).size(11))
+            .padding(iced::Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 })
+            .style(move |_: &iced::Theme, status: button::Status| {
+                let hover = matches!(status, button::Status::Hovered);
+                button::Style {
+                    background: Some(iced::Background::Color(p.tile)),
+                    text_color: if hover { p.accent } else { p.text },
+                    border: Border { radius: 6.0.into(), width: 1.0, color: if hover { p.accent } else { p.muted } },
+                    ..Default::default()
+                }
+            })
+            .on_press(msg).into()
+    };
+    let dot = |connected: bool| -> Element<'a, Message> {
+        let c = if connected { iced::Color::from_rgb8(0x3D, 0xC9, 0x8A) } else { iced::Color::from_rgb8(0xCD, 0x5C, 0x5C) };
+        container(Space::new(6, 6)).style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(c)),
+            border: Border { radius: 3.0.into(), ..Border::default() },
+            ..Default::default()
+        }).into()
+    };
+
+    let remote_header = row![
         sh("Remote Monitoring", "Share this machine's sensor data over your local network. Others connect using the key below."),
         Space::with_width(8),
-        toggler(settings.remote_enabled).size(14).on_toggle(Message::SetRemoteEnabled).style(crate::style::toggler_style(p)),
+        toggler(remote.expanded).size(14).on_toggle(Message::ToggleRemoteSection).style(crate::style::toggler_style(p)),
     ].align_y(iced::Alignment::Center);
+
+    let mut remote_col = column![remote_header].spacing(6);
+
+    if remote.expanded {
+        // Host: TCP feed + handshake key
+        let feed_toggle = row![
+            toggler(remote.feed_on).size(14).on_toggle(Message::SetTcpFeedEnabled).style(crate::style::toggler_style(p)),
+            text("Enable TCP sensor feed (port 5199)").size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+        ].spacing(6).align_y(iced::Alignment::Center);
+
+        let key_row = row![
+            text_input("", &remote.handshake_key).size(10).width(260).style(crate::style::dark_input_style(p)),
+            ibtn("Copy".into(), Message::CopyHandshakeKey),
+        ].spacing(8).align_y(iced::Alignment::Center);
+
+        let regen_row = row![
+            ibtn("Regenerate Key\u{2026}".into(), Message::RegenerateKey),
+            Space::with_width(Length::Fill),
+        ].spacing(8).align_y(iced::Alignment::Center);
+
+        remote_col = remote_col.push(feed_toggle);
+        remote_col = remote_col.push(fl("Handshake key"));
+        remote_col = remote_col.push(key_row);
+        remote_col = remote_col.push(regen_row);
+        remote_col = remote_col.push(
+            text("\u{26A0} Regenerating disconnects all remote devices.").size(11)
+                .style(move |_| iced::widget::text::Style { color: Some(iced::Color { a: 0.45, ..p.muted }) })
+        );
+
+        // Remote Devices
+        remote_col = remote_col.push(Space::with_height(8));
+        remote_col = remote_col.push(sh("Remote Devices", "Monitor other machines running fluidMonitor. Add them using their IP and handshake key."));
+        remote_col = remote_col.push(
+            fl(&format!("{} / 5 devices configured", remote.devices.len()))
+        );
+
+        for d in &remote.devices {
+            let connected = remote.conn.get(&d.id).copied().unwrap_or(false);
+            let id_popout = d.id.clone();
+            let id_remove = d.id.clone();
+            let row_el = container(row![
+                dot(connected),
+                Space::with_width(6),
+                text(d.name.clone()).size(12)
+                    .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                    .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                Space::with_width(Length::Fill),
+                text(d.host.clone()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+                Space::with_width(8),
+                ibtn("Popout".into(), Message::OpenPopout(id_popout)),
+                button(text("\u{2715}").size(11).font(iced::Font::with_name("Segoe UI Symbol"))
+                    .style(move |_| iced::widget::text::Style { color: Some(iced::Color::from_rgb8(0xCD, 0x5C, 0x5C)) }))
+                    .padding(iced::Padding { top: 2.0, right: 4.0, bottom: 2.0, left: 4.0 })
+                    .style(|_, _| button::Style { background: None, ..Default::default() })
+                    .on_press(Message::RemoveDevice(id_remove)),
+            ].align_y(iced::Alignment::Center).spacing(2))
+            .padding(iced::Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
+            .style(move |_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(p.tile)),
+                border: Border { radius: 4.0.into(), ..Border::default() },
+                ..Default::default()
+            });
+            remote_col = remote_col.push(row_el);
+        }
+
+        if remote.add_open {
+            let status_color = if remote.test_ok { p.accent } else { iced::Color::from_rgb8(0xCD, 0x5C, 0x5C) };
+            let status_text = remote.test_status.clone();
+            let add_panel = container(column![
+                text("Add remote device").size(12)
+                    .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                    .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                Space::with_height(8),
+                row![
+                    column![fl("Name"),
+                        text_input("", &remote.new_name).size(11).on_input(Message::SetNewDeviceName).style(crate::style::dark_input_style(p)),
+                    ].spacing(2).width(Length::FillPortion(1)),
+                    Space::with_width(10),
+                    column![fl("IP address"),
+                        text_input("", &remote.new_ip).size(11).on_input(Message::SetNewDeviceIp).style(crate::style::dark_input_style(p)),
+                    ].spacing(2).width(Length::FillPortion(1)),
+                ],
+                Space::with_height(6),
+                fl("Handshake key"),
+                text_input("", &remote.new_key).size(11).on_input(Message::SetNewDeviceKey).style(crate::style::dark_input_style(p)),
+                Space::with_height(8),
+                row![
+                    ibtn("Test".into(), Message::TestDevice),
+                    ibtn("Save".into(), Message::SaveDevice),
+                    ibtn("Cancel".into(), Message::CancelAddDevice),
+                    text(status_text).size(11).style(move |_| iced::widget::text::Style { color: Some(status_color) }),
+                ].spacing(4).align_y(iced::Alignment::Center),
+            ].spacing(2))
+            .padding(iced::Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
+            .width(Length::Fill)
+            .style(move |_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(p.tile)),
+                border: Border { radius: 4.0.into(), ..Border::default() },
+                ..Default::default()
+            });
+            remote_col = remote_col.push(Space::with_height(3));
+            remote_col = remote_col.push(add_panel);
+        } else if remote.devices.len() < 5 {
+            remote_col = remote_col.push(Space::with_height(6));
+            remote_col = remote_col.push(
+                row![ibtn("+ Add Device".into(), Message::ShowAddDevice), Space::with_width(Length::Fill)]
+            );
+        }
+    }
+
+    let remote = remote_col;
 
     // ── Updates box ──
     let updates = container(column![
