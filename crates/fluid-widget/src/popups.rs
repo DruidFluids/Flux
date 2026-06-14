@@ -703,6 +703,40 @@ pub fn popout_config_view<'a>(dev: Option<&'a RemoteDevice>, p: Palette, win_id:
         text_input("Auto", &po.gpu_label).size(11).on_input(move |s| Message::PopoutLabel(gl.clone(), 1, s)).style(crate::style::dark_input_style(p)),
     ].spacing(6).align_y(iced::Alignment::Center));
 
+    // Alerts (per-device): CPU/GPU temperature or load thresholds that flash
+    // this popout's tile, independent of the local widget's alerts.
+    col = col.push(section("Alerts"));
+    let warn_block = |kind: &'static str| -> Element<'a, Message> {
+        let w = po.warn(kind).cloned().unwrap_or_default();
+        let metric_label = if matches!(w.metric, WarnMetric::Load) { "Load" } else { "Temperature" };
+        let unit = if matches!(w.metric, WarnMetric::Load) { " %" } else { " \u{00B0}C" };
+        let (ke, km, kt, kf) = (id.clone(), id.clone(), id.clone(), id.clone());
+        let metrics = vec!["Temperature".to_string(), "Load".to_string()];
+        column![
+            row![
+                toggler(w.enabled).size(14).on_toggle(move |b| Message::PopoutWarnEnabled(ke.clone(), kind.to_string(), b)).style(crate::style::toggler_style(p)),
+                text(format!("{} alert", kind)).size(11).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT }).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+            ].spacing(6).align_y(iced::Alignment::Center),
+            row![
+                pick_list(metrics, Some(metric_label.to_string()), move |s: String| {
+                    let m = if s == "Load" { WarnMetric::Load } else { WarnMetric::Temperature };
+                    Message::PopoutWarnMetric(km.clone(), kind.to_string(), m)
+                }).text_size(11).width(Length::Fixed(130.0)).style(crate::style::pick_list_style(p)),
+                Space::with_width(Length::Fill),
+                text_input("", &format!("{}", w.threshold as i64)).size(11).width(Length::Fixed(56.0))
+                    .on_input(move |s| Message::PopoutWarnThreshold(kt.clone(), kind.to_string(), s))
+                    .style(crate::style::dark_input_style(p)),
+                text(unit.to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+            ].spacing(6).align_y(iced::Alignment::Center),
+            row![
+                toggler(w.flash_enabled).size(14).on_toggle(move |b| Message::PopoutWarnFlash(kf.clone(), kind.to_string(), b)).style(crate::style::toggler_style(p)),
+                text("Flash the tile when exceeded".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+            ].spacing(6).align_y(iced::Alignment::Center),
+        ].spacing(4).into()
+    };
+    col = col.push(warn_block("CPU"));
+    col = col.push(warn_block("GPU"));
+
     let body = scrollable(
         container(col.width(Length::Fill)).width(Length::Fill)
             .padding(iced::Padding { top: 4.0, right: 8.0, bottom: 8.0, left: 0.0 })

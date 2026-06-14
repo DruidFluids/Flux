@@ -382,6 +382,34 @@ fn new_device_id() -> String {
     format!("{:x}{:x}", t, n)
 }
 
+// Evaluate one tile alert against a snapshot, returning the flash/colour view.
+// Shared by the local widget's per-device popouts (which keep their own alert
+// set). `flash_on` is the global blink phase so the tile pulses rather than
+// staying lit.
+fn warn_view_for(warnings: &[fluid_core::settings::TileWarning], kind: &str, snap: &SensorSnapshot, flash_on: bool) -> WarnView {
+    let w = match warnings.iter().find(|w| w.kind == kind) {
+        Some(w) if w.enabled => w,
+        _ => return WarnView::default(),
+    };
+    let (temp, load, used_gb): (Option<f32>, f32, f32) = match kind {
+        "CPU" => (snap.cpu.temperature_c, snap.cpu.usage_percent, 0.0),
+        "GPU" => (snap.gpu.temperature_c, snap.gpu.usage_percent, 0.0),
+        "RAM" => (None, snap.ram.usage_percent, snap.ram.used_mb / 1024.0),
+        _ => return WarnView::default(),
+    };
+    let current: f64 = match w.metric {
+        WarnMetric::Temperature => temp.unwrap_or(0.0) as f64,
+        WarnMetric::Load => load as f64,
+        WarnMetric::UsedGb => used_gb as f64,
+        WarnMetric::Throughput => 0.0,
+    };
+    let exceeded = current >= w.threshold;
+    let accent_override = if w.gradient_mode && w.metric == WarnMetric::Temperature {
+        temp.and_then(|t| { let dist = w.threshold - t as f64; if dist <= 15.0 { Some(style::gradient_color(dist)) } else { None } })
+    } else { None };
+    WarnView { flash: exceeded && w.flash_enabled && flash_on, accent_override }
+}
+
 struct App {
     settings: AppSettings,
     snapshot: SensorSnapshot,
@@ -506,6 +534,8 @@ enum Message {
     OpenPopoutConfig(String),
     PopoutSyncColors(String, bool), PopoutColor(String, u8, String), PopoutOpacity(String, f32),
     PopoutTile(String, String, bool), PopoutLabel(String, u8, String),
+    PopoutWarnEnabled(String, String, bool), PopoutWarnMetric(String, String, WarnMetric),
+    PopoutWarnThreshold(String, String, String), PopoutWarnFlash(String, String, bool),
     SetGameModeEnabled(bool),
     SetGameModePosition(SnapPosition), SetGameModeOpacity(f32),
     SetGameModeOrientation(String), SetGameModeClickThrough(bool),
@@ -1486,6 +1516,30 @@ impl App {
                 let _ = self.settings.save();
                 Task::none()
             }
+            Message::PopoutWarnEnabled(id, kind, on) => {
+                if let Some(d) = self.device_mut(&id) { d.popout.warn_mut(&kind).enabled = on; }
+                let _ = self.settings.save();
+                Task::none()
+            }
+            Message::PopoutWarnMetric(id, kind, m) => {
+                if let Some(d) = self.device_mut(&id) { d.popout.warn_mut(&kind).metric = m; }
+                let _ = self.settings.save();
+                Task::none()
+            }
+            Message::PopoutWarnThreshold(id, kind, s) => {
+                let parsed = s.trim().parse::<f64>().ok();
+                if let Some(d) = self.device_mut(&id) {
+                    if let Some(v) = parsed { d.popout.warn_mut(&kind).threshold = v; }
+                    else if s.trim().is_empty() { d.popout.warn_mut(&kind).threshold = 0.0; }
+                }
+                let _ = self.settings.save();
+                Task::none()
+            }
+            Message::PopoutWarnFlash(id, kind, on) => {
+                if let Some(d) = self.device_mut(&id) { d.popout.warn_mut(&kind).flash_enabled = on; }
+                let _ = self.settings.save();
+                Task::none()
+            }
             Message::SkinPrev => {
                 self.push_appearance_undo();
                 let skins = style::skin_names();
@@ -1789,9 +1843,9 @@ impl App {
         let p = Palette::from_settings(&s, po.opacity);
 
         let mut tiles: Vec<Element<'_, Message>> = Vec::new();
-        if po.show_cpu { tiles.push(tile::cpu_tile(&snap.cpu, &s, p, no_warn, true)); }
-        if po.show_gpu { tiles.push(tile::gpu_tile(&snap.gpu, &s, p, no_warn)); }
-        if po.show_ram { tiles.push(tile::ram_tile(&snap.ram, &s, p, no_warn)); }
+        if po.show_cpu { tiles.push(tile::cpu_tile(&snap.cpu, &s, p, warn_view_for(&po.warnings, "CPU", &snap, self.flash_on), true)); }
+        if po.show_gpu { tiles.push(tile::gpu_tile(&snap.gpu, &s, p, warn_view_for(&po.warnings, "GPU", &snap, self.flash_on))); }
+        if po.show_ram { tiles.push(tile::ram_tile(&snap.ram, &s, p, warn_view_for(&po.warnings, "RAM", &snap, self.flash_on))); }
         if po.show_network { tiles.push(tile::network_tile(&snap.network, &s, p, no_warn, 1.0)); }
         if po.show_storage { tiles.push(tile::disk_tile(&snap.disk, &s, p, no_warn)); }
         let skin = style::skin_style(&s.active_skin);

@@ -248,6 +248,9 @@ pub struct PopoutSettings {
     pub show_storage: bool,
     pub cpu_label: String,
     pub gpu_label: String,
+    /// Per-device tile alerts for this popout (independent of the local widget's).
+    #[serde(default)]
+    pub warnings: Vec<TileWarning>,
 }
 impl Default for PopoutSettings {
     fn default() -> Self {
@@ -259,7 +262,15 @@ impl Default for PopoutSettings {
             show_cpu: true, show_gpu: true, show_ram: true,
             show_network: true, show_storage: true,
             cpu_label: String::new(), gpu_label: String::new(),
+            warnings: Vec::new(),
         }
+    }
+}
+impl PopoutSettings {
+    pub fn warn(&self, kind: &str) -> Option<&TileWarning> { self.warnings.iter().find(|w| w.kind == kind) }
+    pub fn warn_mut(&mut self, kind: &str) -> &mut TileWarning {
+        if !self.warnings.iter().any(|w| w.kind == kind) { self.warnings.push(TileWarning { kind: kind.to_string(), ..Default::default() }); }
+        self.warnings.iter_mut().find(|w| w.kind == kind).unwrap()
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
