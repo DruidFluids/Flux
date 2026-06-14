@@ -47,3 +47,30 @@ findings and resolutions.
 - `cargo build --workspace`: clean
 - `cargo test --workspace`: 1 passed (loopback), rest have no tests
 - Net: removed 3 modules, 3 dependencies, 2 dead methods, 1 dead message; added 14 module docs.
+
+---
+
+## Pass 2 — deduplication + deeper read ("polishing the polish")
+
+### Findings & resolutions
+| # | Location | Finding | Resolution |
+|---|----------|---------|------------|
+| P1 | settings_panel.rs ×2, popups.rs ×1 | three near-identical "InlineBtn" closures with **inconsistent** radius (4 vs 6) and padding (4,10 / 4,12 / 5,12) | extracted `style::inline_btn` as the single source of truth (radius 6, padding 5/12); locals are now one-line forwarders → zero call-site churn, consistent look |
+
+### Reviewed, deliberately left as-is (with rationale)
+- `fmt_net` vs `fmt_disk`: near-duplicate, but the KB precision differs on
+  purpose (net shows `12.3 KB/s`, disk shows `12 KB/s`) to mirror the C# app.
+- Status/accent colour literals (success greens `#3DC98A`/`#58C858`, danger reds
+  `#CD5C5C`/`#C06060`, alert `#E06040`) are **not** unified: each mirrors a
+  specific C# brush (`IndianRed`, etc.); faithfulness to the bible > internal
+  de-dup.
+- `popups::pill` vs the `settings_panel` `pill` closure differ materially
+  (Segoe font + transparent/accent fill vs simple fill) — not duplicates.
+- Dense one-statement-per-`;` formatting is the deliberate house style (no
+  `rustfmt.toml`); **not** running `cargo fmt` — it would fight the author's
+  layout and explode the diff for no behavioural gain.
+
+### Pass 2 result
+- `cargo clippy -p fluid-widget`: 0 warnings
+- Visual regression: widget renders identically (all tiles, glow arrows, RAM
+  speed) after Pass 1+2 changes.

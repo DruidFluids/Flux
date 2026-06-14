@@ -435,20 +435,7 @@ pub const WINDOW_PICKER_SIZE: iced::Size = iced::Size::new(420.0, 460.0);
 
 pub fn utilities_view<'a>(blocklist: &'a text_editor::Content, status: &str, p: Palette, win_id: window::Id) -> Element<'a, Message> {
     // C# InlineBtn: tile fill, 1px border, radius 6; hover accents.
-    let ibtn = |lbl: &str, msg: Message| -> Element<'a, Message> {
-        button(text(lbl.to_string()).size(11))
-            .padding([5, 12])
-            .style(move |_: &iced::Theme, status: button::Status| {
-                let hover = matches!(status, button::Status::Hovered);
-                button::Style {
-                    background: Some(iced::Background::Color(p.tile)),
-                    text_color: if hover { p.accent } else { p.text },
-                    border: Border { radius: 6.0.into(), width: 1.0, color: if hover { p.accent } else { p.muted } },
-                    ..Default::default()
-                }
-            })
-            .on_press(msg).into()
-    };
+    let ibtn = |lbl: &str, msg: Message| crate::style::inline_btn(lbl, msg, p);
     let card = |title: &str, desc: &str, action: Element<'a, Message>| -> Element<'a, Message> {
         container(column![
             text(title.to_string()).size(13)

@@ -617,20 +617,7 @@ pub fn view<'a>(
 
     // ── Remote Monitoring ──
     // C# InlineBtn, auto-width (cycle_btn fills its row, unsuitable here).
-    let ibtn = |label_text: String, msg: Message| -> Element<'a, Message> {
-        button(text(label_text).size(11))
-            .padding(iced::Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 })
-            .style(move |_: &iced::Theme, status: button::Status| {
-                let hover = matches!(status, button::Status::Hovered);
-                button::Style {
-                    background: Some(iced::Background::Color(p.tile)),
-                    text_color: if hover { p.accent } else { p.text },
-                    border: Border { radius: 6.0.into(), width: 1.0, color: if hover { p.accent } else { p.muted } },
-                    ..Default::default()
-                }
-            })
-            .on_press(msg).into()
-    };
+    let ibtn = |label_text: String, msg: Message| crate::style::inline_btn(label_text, msg, p);
     let dot = |connected: bool| -> Element<'a, Message> {
         let c = if connected { iced::Color::from_rgb8(0x3D, 0xC9, 0x8A) } else { iced::Color::from_rgb8(0xCD, 0x5C, 0x5C) };
         container(Space::new(6, 6)).style(move |_| iced::widget::container::Style {
@@ -758,17 +745,7 @@ pub fn view<'a>(
     let remote = remote_col;
 
     // ── Updates box ──
-    let inline_btn = |lbl: &str, msg: Message| -> Element<'a, Message> {
-        button(text(lbl.to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }))
-            .padding([4, 12])
-            .style(move |_: &iced::Theme, status: button::Status| {
-                let hover = matches!(status, button::Status::Hovered);
-                button::Style { background: Some(iced::Background::Color(p.tile)),
-                    text_color: if hover { p.accent } else { p.text },
-                    border: Border { radius: 4.0.into(), width: 1.0, color: if hover { p.accent } else { p.muted } }, ..Default::default() }
-            })
-            .on_press(msg).into()
-    };
+    let inline_btn = |lbl: &str, msg: Message| crate::style::inline_btn(lbl, msg, p);
     let status_color = match update.status_kind {
         1 => iced::Color::from_rgb8(0x58, 0xC8, 0x58),
         2 => iced::Color::from_rgb8(0xC0, 0x60, 0x60),

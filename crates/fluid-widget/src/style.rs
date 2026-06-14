@@ -1,13 +1,35 @@
 //! Palette resolution, skins, theme presets, and shared iced widget styles.
 
+use crate::Message;
 use fluid_core::settings::AppSettings;
-use iced::Color;
+use iced::widget::{button, text};
+use iced::{Border, Color, Element};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 /// A darker field colour (dropdowns / inputs) derived from the theme background.
 pub fn field_bg(p: Palette) -> Color {
     Color { r: p.bg.r * 0.5, g: p.bg.g * 0.5, b: p.bg.b * 0.5, a: 1.0 }
+}
+
+/// C# `InlineBtn`: tile fill, 1px border, radius 6; hover accents text + border.
+/// Auto-width (shrinks to its label). The single source of truth for the
+/// inline-action buttons used across Settings and the popups.
+pub fn inline_btn<'a>(label: impl Into<String>, msg: Message, p: Palette) -> Element<'a, Message> {
+    let label = label.into();
+    button(text(label).size(11))
+        .padding(iced::Padding { top: 5.0, right: 12.0, bottom: 5.0, left: 12.0 })
+        .style(move |_: &iced::Theme, status: button::Status| {
+            let hover = matches!(status, button::Status::Hovered);
+            button::Style {
+                background: Some(iced::Background::Color(p.tile)),
+                text_color: if hover { p.accent } else { p.text },
+                border: Border { radius: 6.0.into(), width: 1.0, color: if hover { p.accent } else { p.muted } },
+                ..Default::default()
+            }
+        })
+        .on_press(msg)
+        .into()
 }
 
 /// Dark dropdown (pick_list) style.
