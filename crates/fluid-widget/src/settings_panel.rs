@@ -468,7 +468,8 @@ pub fn view<'a>(
             ).width(Length::Fill).center_x(Length::Fill).padding([4, 8])
             .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() }),
             pill("\u{203A}".into(), false, Message::SkinNext),
-            icon_btn("\u{1F4C1}", false, Message::Noop),
+            tooltip(icon_btn("\u{1F4C1}", false, Message::OpenSkinsFolder),
+                tip_box("Open the skins folder. Drop a skin .json in and restart to use it.", p), TipPos::Bottom),
         ].align_y(iced::Alignment::Center).spacing(3),
         Space::with_height(6),
         text("Colors").size(9).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),

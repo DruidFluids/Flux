@@ -290,10 +290,11 @@ pub fn apply_preset(s: &mut AppSettings, idx: usize) {
 }
 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
 pub enum BorderSource { Transparent, Muted, Accent, Text }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(default)]
 pub struct SkinStyle {
     pub tile_radius: f32,
     pub widget_radius: f32,
@@ -307,6 +308,18 @@ pub struct SkinStyle {
     pub sheen: f32,
 }
 
+impl Default for SkinStyle {
+    fn default() -> Self {
+        // The "Default" skin — also the base for external skins that omit fields.
+        SkinStyle {
+            tile_radius: 12.0, widget_radius: 16.0,
+            tile_border: 0.0, widget_border: 0.0, tile_spacing: 6.0,
+            border_src: BorderSource::Transparent, border_alpha: 0.0,
+            accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
+        }
+    }
+}
+
 impl SkinStyle {
     pub fn border_color(&self, p: &Palette) -> Color {
         let base = match self.border_src {
@@ -317,6 +330,21 @@ impl SkinStyle {
         };
         Color { a: base.a * self.border_alpha, ..base }
     }
+
+    /// Clamp every field to a sane range so a hand-edited / downloaded skin file
+    /// can never produce absurd geometry. Pure data — no code is executed.
+    fn sanitized(mut self) -> Self {
+        self.tile_radius = self.tile_radius.clamp(0.0, 50.0);
+        self.widget_radius = self.widget_radius.clamp(0.0, 50.0);
+        self.tile_border = self.tile_border.clamp(0.0, 10.0);
+        self.widget_border = self.widget_border.clamp(0.0, 10.0);
+        self.tile_spacing = self.tile_spacing.clamp(0.0, 30.0);
+        self.border_alpha = self.border_alpha.clamp(0.0, 1.0);
+        self.accent_bar = self.accent_bar.clamp(0.0, 10.0);
+        self.header_bar = self.header_bar.clamp(0.0, 10.0);
+        self.sheen = self.sheen.clamp(0.0, 1.0);
+        self
+    }
 }
 
 pub const SKIN_NAMES: [&str; 16] = [
@@ -325,7 +353,15 @@ pub const SKIN_NAMES: [&str; 16] = [
     "Frosted","Cyberpunk","Paper","Ink","Aurora","Compact",
 ];
 
+/// Resolve a skin by name: user-installed skins first, then the built-ins.
 pub fn skin_style(name: &str) -> SkinStyle {
+    if let Some(s) = external_skins().get(name) {
+        return *s;
+    }
+    builtin_skin_style(name)
+}
+
+fn builtin_skin_style(name: &str) -> SkinStyle {
     match name {
         "Default" => SkinStyle {
             tile_radius: 12.0, widget_radius: 16.0,
@@ -423,6 +459,92 @@ pub fn skin_style(name: &str) -> SkinStyle {
             border_src: BorderSource::Transparent, border_alpha: 0.0,
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
         },
-        _ => skin_style("Default"),
+        _ => builtin_skin_style("Default"),
     }
 }
+
+// ── User-installed skins (data-only) ─────────────────────────────────────────
+//
+// Skins live as JSON files in `%APPDATA%\fluidmonitor\skins\*.json`. They are
+// pure data (geometry numbers + a border source enum) — never code — parsed
+// with serde, range-clamped, and unable to shadow a built-in skin name. Loaded
+// once, lazily, on first use; drop a file in and restart to pick it up.
+
+#[derive(serde::Deserialize)]
+struct SkinFile {
+    name: String,
+    #[serde(flatten)]
+    style: SkinStyle,
+}
+
+/// Directory holding user skin files.
+pub fn skins_dir() -> std::path::PathBuf {
+    fluid_core::settings::AppSettings::config_dir().join("skins")
+}
+
+fn external_skins() -> &'static HashMap<String, SkinStyle> {
+    static EXTERNAL: OnceLock<HashMap<String, SkinStyle>> = OnceLock::new();
+    EXTERNAL.get_or_init(read_skins_dir)
+}
+
+fn read_skins_dir() -> HashMap<String, SkinStyle> {
+    let mut map = HashMap::new();
+    let Ok(entries) = std::fs::read_dir(skins_dir()) else { return map };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else { continue };
+        let Ok(skin) = serde_json::from_str::<SkinFile>(&text) else { continue };
+        let name = skin.name.trim().to_string();
+        // Reject blanks and names that would shadow a built-in skin.
+        if name.is_empty() || SKIN_NAMES.contains(&name.as_str()) {
+            continue;
+        }
+        map.insert(name, skin.style.sanitized());
+    }
+    map
+}
+
+/// All available skin names: built-ins followed by sorted user skins.
+pub fn skin_names() -> Vec<String> {
+    let mut names: Vec<String> = SKIN_NAMES.iter().map(|s| s.to_string()).collect();
+    let mut ext: Vec<String> = external_skins().keys().cloned().collect();
+    ext.sort();
+    names.extend(ext);
+    names
+}
+
+/// Create the skins directory (and a commented example + README the first time)
+/// and return its path, so the folder button always opens something useful.
+pub fn ensure_skins_dir() -> std::path::PathBuf {
+    let dir = skins_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let example = dir.join("example-skin.json.txt");
+    if !example.exists() {
+        let _ = std::fs::write(&example, EXAMPLE_SKIN);
+    }
+    dir
+}
+
+const EXAMPLE_SKIN: &str = r#"// fluidMonitor skin file — copy this to "<YourName>.json" (drop the .txt),
+// edit the values, and restart fluidMonitor. Skins are pure data: only the
+// fields below are read, all are optional, and values are range-clamped.
+//
+//   border_src: "Transparent" | "Muted" | "Accent" | "Text"
+//
+// {
+//   "name": "My Skin",
+//   "tile_radius": 10.0,
+//   "widget_radius": 14.0,
+//   "tile_border": 1.0,
+//   "widget_border": 0.0,
+//   "tile_spacing": 6.0,
+//   "border_src": "Accent",
+//   "border_alpha": 1.0,
+//   "accent_bar": 3.0,
+//   "header_bar": 0.0,
+//   "sheen": 0.1
+// }
+"#;

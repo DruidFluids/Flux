@@ -400,7 +400,7 @@ enum Message {
     WindowMoved(window::Id, Point),
     OpenSettings, HideWidget, SaveClose, ResetDefaults, Noop,
     OpenTools, OpenAlerts, OpenGameMode, OpenHelp, OpenUtilities, ClosePopup(window::Id),
-    OpenUrl(String),
+    OpenUrl(String), OpenSkinsFolder,
     BlocklistAction(iced::widget::text_editor::Action), SaveBlocklist,
     PickWindow, PickWindowChosen(String),
     ShowWidgetMenu, WidgetMenuSettings, WidgetMenuExit, WindowUnfocused(window::Id),
@@ -1017,6 +1017,11 @@ impl App {
             Message::OpenHelp => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::Help, popups::HELP_SIZE)]),
             Message::OpenUtilities => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::Utilities, popups::UTILITIES_SIZE)]),
             Message::OpenUrl(url) => { open_url(&url); Task::none() }
+            Message::OpenSkinsFolder => {
+                let dir = style::ensure_skins_dir();
+                open_url(&dir.to_string_lossy());
+                Task::none()
+            }
             Message::BlocklistAction(action) => { self.blocklist_editor.perform(action); Task::none() }
             Message::SaveBlocklist => {
                 let lines: Vec<String> = self.blocklist_editor.text()
@@ -1262,14 +1267,14 @@ impl App {
             }
             Message::SkinPrev => {
                 self.push_appearance_undo();
-                let skins = style::SKIN_NAMES;
+                let skins = style::skin_names();
                 let cur = skins.iter().position(|s| *s == self.settings.active_skin).unwrap_or(0);
                 self.settings.active_skin = skins[(cur + skins.len() - 1) % skins.len()].to_string();
                 self.resize_widget()
             }
             Message::SkinNext => {
                 self.push_appearance_undo();
-                let skins = style::SKIN_NAMES;
+                let skins = style::skin_names();
                 let cur = skins.iter().position(|s| *s == self.settings.active_skin).unwrap_or(0);
                 self.settings.active_skin = skins[(cur + 1) % skins.len()].to_string();
                 self.resize_widget()
@@ -1279,7 +1284,7 @@ impl App {
             Message::RandomizeAppearance => {
                 self.push_appearance_undo();
                 let r = nanos();
-                let skins = style::SKIN_NAMES;
+                let skins = style::skin_names();
                 let mut si = r % skins.len();
                 if skins[si] == self.settings.active_skin { si = (si + 1) % skins.len(); }
                 self.settings.active_skin = skins[si].to_string();
@@ -1307,7 +1312,7 @@ impl App {
             // colours and fonts untouched.
             Message::RandomizeSkinOnly => {
                 self.push_appearance_undo();
-                let skins = style::SKIN_NAMES;
+                let skins = style::skin_names();
                 let mut idx = nanos() % skins.len();
                 if skins[idx] == self.settings.active_skin { idx = (idx + 1) % skins.len(); }
                 self.settings.active_skin = skins[idx].to_string();

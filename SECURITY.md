@@ -70,10 +70,19 @@ industry-standard fixes are:
 2. **Publish `SHA256SUMS`** with every release (also required by the updater).
 3. Keep avoiding download-and-execute and `iex`-style patterns (done).
 
+## Skin loader (data-only)
+- User skins live as JSON in `%APPDATA%\fluidmonitor\skins\*.json`. They are
+  **pure data** — geometry numbers + a `border_src` enum — deserialized with
+  serde, **range-clamped** (radii/borders/spacing/alpha all bounded), and
+  **cannot shadow a built-in skin name**. No code, scripts, or DLLs are ever
+  loaded or executed from a skin file. Unparseable/invalid files are skipped.
+- The "Skins folder" button opens that directory (creating it with a commented
+  example on first use). Loaded once at startup.
+
 ## Future surfaces to keep in scope
-- **Skin-pack loader:** download skins as **JSON data only**, parse with a strict
-  deserializer (serde, no arbitrary types), validate fields, and **never**
-  execute or load code/DLLs from them. No dynamic code paths.
+- **Skin catalog download:** if skins are ever fetched from GitHub, keep the same
+  data-only contract — download JSON, parse + clamp, never execute. (Not yet
+  implemented; only local-folder install exists today.)
 
 ## Reporting
 Open a private security advisory on the GitHub repository rather than a public
