@@ -160,28 +160,26 @@ pub fn cpu_tile<'a>(cpu: &CpuData, s: &AppSettings, p: Palette, w: WarnView, dri
 // secondary line so it fits the tile's reserved bottom slot.
 fn cpu_temp_hint<'a>(p: Palette, s: &AppSettings) -> Element<'a, Message> {
     let fs = sz(11, s.secondary_font_offset, s);
+    // The label fills the bar so the whole bar is the click target; the dismiss
+    // "x" sits flush at the right edge.
     let enable = button(
-        text("Turn on temp").size(fs)
-            .font(named_font(&s.secondary_font, Weight::Normal))
-            .wrapping(iced::widget::text::Wrapping::None)
-            .style(move |_| iced::widget::text::Style { color: Some(p.accent) })
+        container(
+            text("Turn on temp").size(fs)
+                .font(named_font(&s.secondary_font, Weight::Normal))
+                .wrapping(iced::widget::text::Wrapping::None)
+                .style(move |_| iced::widget::text::Style { color: Some(p.accent) })
+        ).width(Length::Fill).center_x(Length::Fill)
     )
-    .padding(iced::Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 })
-    .style(move |_: &iced::Theme, status: button::Status| {
-        let hover = matches!(status, button::Status::Hovered);
-        button::Style {
-            background: if hover { Some(iced::Background::Color(Color { a: 0.18, ..p.accent })) } else { None },
-            border: Border { radius: 4.0.into(), ..Border::default() },
-            ..Default::default()
-        }
-    })
+    .width(Length::Fill)
+    .padding(0)
+    .style(|_: &iced::Theme, _: button::Status| button::Style { background: None, ..Default::default() })
     .on_press(Message::OpenCpuDriver);
 
     let dismiss = button(
-        text("\u{2715}").size(fs)
+        text("\u{2715}").size(fs).font(iced::Font::with_name("Segoe UI Symbol"))
             .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
     )
-    .padding(iced::Padding { top: 0.0, right: 3.0, bottom: 0.0, left: 3.0 })
+    .padding(iced::Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 })
     .style(move |_: &iced::Theme, status: button::Status| {
         let hover = matches!(status, button::Status::Hovered);
         button::Style {
@@ -192,9 +190,22 @@ fn cpu_temp_hint<'a>(p: Palette, s: &AppSettings) -> Element<'a, Message> {
     })
     .on_press(Message::DismissCpuTempHint);
 
-    row![enable, Space::with_width(2), dismiss]
-        .align_y(iced::Alignment::Center)
-        .into()
+    // Clean bar across the tile (subtle accent fill, rounded), matching the C#
+    // affordance. The leading spacer balances the trailing "x" so the label
+    // stays visually centred.
+    container(
+        row![Space::with_width(14), enable, dismiss]
+            .align_y(iced::Alignment::Center)
+            .width(Length::Fill)
+    )
+    .width(Length::Fill)
+    .padding(iced::Padding { top: 2.0, right: 4.0, bottom: 2.0, left: 4.0 })
+    .style(move |_| iced::widget::container::Style {
+        background: Some(iced::Background::Color(Color { a: 0.14, ..p.accent })),
+        border: Border { radius: 5.0.into(), ..Border::default() },
+        ..Default::default()
+    })
+    .into()
 }
 
 pub fn gpu_tile<'a>(gpu: &GpuData, s: &AppSettings, p: Palette, w: WarnView) -> Element<'a, Message> {

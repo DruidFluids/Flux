@@ -311,21 +311,16 @@ fn cursor_logical_pos() -> Option<(f32, f32)> {
 fn cursor_logical_pos() -> Option<(f32, f32)> { None }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, WindowPicker, ThemeStore, PopoutConfig, CpuDriver }
+enum WindowKind { Widget, Settings, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, WindowPicker, ThemeStore, PopoutConfig, CpuDriver }
 
-// Per-tab settings window height so each category fits snugly with no scrollbar
-// and no big empty gap. The hidden scrollbar is a safety net for slight
-// underestimates.
-fn settings_size_for_tab(tab: usize) -> Size {
-    let h = match tab {
-        0 => 470.0, // Tiles
-        1 => 700.0, // Appearance
-        2 => 610.0, // Behavior
-        3 => 470.0, // Sensors (Network + Disk)
-        4 => 600.0, // Remote
-        _ => 420.0, // Updates
-    };
-    Size::new(560.0, h)
+// Settings window is a single FIXED size for every tab — it never grows or
+// shrinks when switching tabs. The height is sized to the tallest tab
+// (Appearance: colors + size + fonts) so nothing is clipped; shorter tabs
+// simply have empty space below. The hidden scrollbar catches any slight
+// overflow without ever showing a bar.
+const SETTINGS_FIXED_SIZE: Size = Size::new(560.0, 720.0);
+fn settings_size_for_tab(_tab: usize) -> Size {
+    SETTINGS_FIXED_SIZE
 }
 
 // Keep secondary windows (settings, popups, menus) off the taskbar so only the
@@ -338,7 +333,6 @@ fn no_taskbar() -> iced::window::settings::PlatformSpecific {
 // fields; the right-click WidgetMenu always opens at the cursor.
 fn kind_key(kind: WindowKind) -> Option<&'static str> {
     match kind {
-        WindowKind::Tools => Some("tools"),
         WindowKind::Alerts => Some("alerts"),
         WindowKind::GameMode => Some("gamemode"),
         WindowKind::Help => Some("help"),
@@ -455,7 +449,7 @@ enum Message {
     WindowClosed(window::Id),
     WindowMoved(window::Id, Point),
     OpenSettings, HideWidget, SaveClose, ResetDefaults, Noop,
-    OpenTools, OpenAlerts, OpenGameMode, OpenHelp, OpenUtilities, ClosePopup(window::Id),
+    OpenAlerts, OpenGameMode, OpenHelp, OpenUtilities, ClosePopup(window::Id),
     OpenUrl(String), OpenSkinsFolder,
     OpenThemeStore, ApplyPackTheme(usize, usize),
     ThemeStoreOpenFranchise(usize), ThemeStoreBack,
@@ -1102,11 +1096,10 @@ impl App {
             Message::WindowClosed(id) => { self.windows.remove(&id); self.popout_device.remove(&id); if self.widget_window().is_none() { return iced::exit(); } self.update_widget_level() }
             Message::OpenSettings => self.open_settings(),
             Message::HideWidget => self.widget_window().map(|id| window::change_mode(id, window::Mode::Hidden)).unwrap_or(Task::none()),
-            Message::OpenTools => self.open_popup(WindowKind::Tools, popups::TOOLS_SIZE),
-            Message::OpenAlerts => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::Alerts, popups::ALERTS_SIZE)]),
-            Message::OpenGameMode => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::GameMode, popups::GAME_MODE_SIZE)]),
-            Message::OpenHelp => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::Help, popups::HELP_SIZE)]),
-            Message::OpenUtilities => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::Utilities, popups::UTILITIES_SIZE)]),
+            Message::OpenAlerts => self.open_popup(WindowKind::Alerts, popups::ALERTS_SIZE),
+            Message::OpenGameMode => self.open_popup(WindowKind::GameMode, popups::GAME_MODE_SIZE),
+            Message::OpenHelp => self.open_popup(WindowKind::Help, popups::HELP_SIZE),
+            Message::OpenUtilities => self.open_popup(WindowKind::Utilities, popups::UTILITIES_SIZE),
             // ── Optional CPU sensor driver (PawnIO) ──
             Message::OpenCpuDriver => {
                 self.cpu_driver_installed = cpu_driver::is_installed();
@@ -1757,7 +1750,6 @@ impl App {
                 };
                 settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), remote, update, self.cpu_driver_installed)
             }
-            WindowKind::Tools => popups::tools_view(&self.settings, p, id),
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id, self.capturing_hotkey == Some(hotkeys::HotkeyTarget::GameMode)),
             WindowKind::Help => popups::help_view(&self.settings, p, id),

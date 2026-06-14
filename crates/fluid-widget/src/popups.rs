@@ -135,56 +135,6 @@ pub fn widget_menu_view<'a>(p: Palette) -> Element<'a, Message> {
     .into()
 }
 
-// ── Tools ───────────────────────────────────────────────────────────────────
-
-pub const TOOLS_SIZE: iced::Size = iced::Size::new(380.0, 220.0);
-
-fn tool_card<'a>(icon: &str, icon_color: Color, title: &str, subtitle: &str, msg: Message, p: Palette) -> Element<'a, Message> {
-    let icon_box = container(
-        text(icon.to_string()).size(20).font(iced::Font::with_name("Segoe UI Symbol"))
-            .style(move |_| iced::widget::text::Style { color: Some(icon_color) })
-    ).width(42).height(42).center_x(42).center_y(42)
-        .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(Color { a: 0.12, ..icon_color })),
-            border: Border { radius: 10.0.into(), ..Border::default() },
-            ..Default::default()
-        });
-
-    let content = column![
-        icon_box,
-        Space::with_height(8),
-        text(title.to_string()).size(11)
-            .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
-            .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-        text(subtitle.to_string()).size(9)
-            .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
-    ].align_x(iced::Alignment::Center).spacing(2);
-
-    button(container(content).center_x(Length::Fill).padding([14, 8]))
-        .width(Length::FillPortion(1))
-        .style(move |_, status| button::Style {
-            background: Some(iced::Background::Color(match status {
-                button::Status::Hovered => Color { a: p.tile.a, ..p.tile },
-                _ => Color { a: p.tile.a * 0.6, ..p.tile },
-            })),
-            border: Border { radius: 8.0.into(), width: 1.0, color: Color { a: 0.2, ..p.muted } },
-            ..Default::default()
-        })
-        .on_press(msg).into()
-}
-
-pub fn tools_view<'a>(_settings: &AppSettings, p: Palette, win_id: window::Id) -> Element<'a, Message> {
-    let cards = row![
-        tool_card("\u{26A0}", Color::from_rgb8(0xE0, 0x60, 0x40), "Alerts", "Thresholds", Message::OpenAlerts, p),
-        Space::with_width(10),
-        tool_card("\u{1F3AE}", Color::from_rgb8(0x6A, 0x9F, 0xD8), "Game Mode", "Hotkey snap", Message::OpenGameMode, p),
-        Space::with_width(10),
-        tool_card("\u{1F527}", Color::from_rgb8(0x88, 0xAA, 0x55), "Utilities", "System tools", Message::OpenUtilities, p),
-    ];
-    let body = container(cards).padding(iced::Padding { top: 10.0, right: 0.0, bottom: 0.0, left: 0.0 });
-    shell("TOOLS", win_id, p, body.into())
-}
-
 // ── Tile Alerts (Warnings) ───────────────────────────────────────────────────
 
 pub const ALERTS_SIZE: iced::Size = iced::Size::new(460.0, 560.0);
@@ -281,8 +231,6 @@ pub fn alerts_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id) -
         warn_card(settings, "CPU", p),
         Space::with_height(8),
         warn_card(settings, "GPU", p),
-        Space::with_height(8),
-        warn_card(settings, "RAM", p),
     ];
 
     let body = column![

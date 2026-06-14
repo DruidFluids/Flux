@@ -335,13 +335,15 @@ pub fn view<'a>(
             Space::with_width(8),
             pslider("Update interval", format!("{} ms", settings.update_interval_ms), 250.0, 5000.0, settings.update_interval_ms as f32, 1500.0, 250.0, Message::SetInterval),
         ],
-        // UI scale + Tile width
+    ].spacing(4);
+
+    // ── Size: sliders that change tile/widget dimensions (live in Appearance) ──
+    let sizing = column![
         row![
             pslider("UI scale", format!("{:.2}x", settings.ui_scale), 0.75, 1.5, settings.ui_scale, 1.0, 0.01, Message::SetUiScale),
             Space::with_width(8),
             pslider("Tile width", format!("{:.0}px", settings.tile_width), 110.0, 200.0, settings.tile_width, 130.0, 5.0, Message::SetTileWidth),
         ],
-        // Tile height alone
         column![
             row![fl("Tile height"), Space::with_width(Length::Fill), vl(format!("{:.0}px", settings.tile_height))],
             marked_slider(80.0, 150.0, settings.tile_height, 2.0, 110.0, p, Message::SetTileHeight),
@@ -868,6 +870,8 @@ pub fn view<'a>(
     let appearance_tab: Element<'a, Message> = column![
         sh("Appearance", "Customize colors. Click any swatch in the strip to open the color picker."), appearance,
         Space::with_height(6),
+        sh("Size", "Scale the whole widget and set tile width/height."), sizing,
+        Space::with_height(6),
         sh("Font", "Pick fonts for Primary numbers, Secondary labels, and Indicators (units). Toggle 'Sync' to lock all three together. Sizes nudge the chosen font up or down."), fonts,
     ].spacing(4).into();
 
@@ -884,12 +888,54 @@ pub fn view<'a>(
     let remote_tab: Element<'a, Message> = column![remote].spacing(4).into();
     let updates_tab: Element<'a, Message> = column![sh("Updates", ""), updates].spacing(4).into();
 
+    // ── Tools tab: launchers that used to live behind the bottom-left gear ──
+    let tool_item = |icon: &str, icon_color: iced::Color, title: &str, subtitle: &str, msg: Message| -> Element<'a, Message> {
+        let ic = container(
+            text(icon.to_string()).size(18).font(iced::Font::with_name("Segoe UI Symbol"))
+                .style(move |_| iced::widget::text::Style { color: Some(icon_color) })
+        ).width(34).height(34).center_x(34).center_y(34)
+            .style(move |_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(iced::Color { a: 0.14, ..icon_color })),
+                border: Border { radius: 8.0.into(), ..Border::default() },
+                ..Default::default()
+            });
+        button(
+            row![
+                ic,
+                column![
+                    text(title.to_string()).size(12)
+                        .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                        .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                    text(subtitle.to_string()).size(10)
+                        .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+                ].spacing(1),
+            ].spacing(10).align_y(iced::Alignment::Center)
+        )
+        .width(Length::Fill)
+        .padding(iced::Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 10.0 })
+        .style(move |_: &iced::Theme, status: button::Status| {
+            let hover = matches!(status, button::Status::Hovered);
+            button::Style {
+                background: Some(iced::Background::Color(if hover { p.tile } else { iced::Color { a: p.tile.a * 0.6, ..p.tile } })),
+                border: Border { radius: 8.0.into(), width: 1.0, color: if hover { p.accent } else { iced::Color { a: 0.2, ..p.muted } } },
+                ..Default::default()
+            }
+        })
+        .on_press(msg).into()
+    };
+    let tools_tab: Element<'a, Message> = column![
+        sh("Tools", "Configure Alerts, Game Mode, and Utilities."),
+        tool_item("\u{26A0}", iced::Color::from_rgb8(0xE0, 0x60, 0x40), "Alerts", "Per-tile temperature / load thresholds", Message::OpenAlerts),
+        tool_item("\u{1F3AE}", iced::Color::from_rgb8(0x6A, 0x9F, 0xD8), "Game Mode", "Hotkey-snap a compact overlay", Message::OpenGameMode),
+        tool_item("\u{1F527}", iced::Color::from_rgb8(0x88, 0xAA, 0x55), "Utilities", "System tools & snap blocklist", Message::OpenUtilities),
+    ].spacing(8).into();
+
     // ════════════════════════════════════════════
     //  ASSEMBLY  (tabbed)
     // ════════════════════════════════════════════
 
-    let tab_labels = ["Tiles", "Appearance", "Behavior", "Sensors", "Remote", "Updates"];
-    let mut tab_panes = vec![tiles_tab, appearance_tab, behavior_tab, sensors_tab, remote_tab, updates_tab];
+    let tab_labels = ["Tiles", "Appearance", "Behavior", "Sensors", "Tools", "Remote", "Updates"];
+    let mut tab_panes = vec![tiles_tab, appearance_tab, behavior_tab, sensors_tab, tools_tab, remote_tab, updates_tab];
     let active = tab.min(tab_panes.len() - 1);
 
     // Tab strip
@@ -932,22 +978,14 @@ pub fn view<'a>(
         .padding(iced::Padding { top: 3.0, right: 4.0, bottom: 1.0, left: 8.0 })
     ).on_press(Message::DragWindow(win_id));
 
-    // Bottom bar: [?|⚙] split + Reset + Save
-    let split_left = tooltip(button(text("?").size(14).font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
+    // Bottom bar: [?] Help + Reset + Save. (Tools moved to its own top tab.)
+    let help_btn = tooltip(button(text("?").size(14).font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
         .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
     ).padding([4, 12]).style(move |_,_| button::Style {
         background: Some(iced::Background::Color(p.tile)),
-        border: Border { radius: iced::border::Radius { top_left: 7.0, top_right: 0.0, bottom_right: 0.0, bottom_left: 7.0 }, ..Border::default() },
+        border: Border { radius: 7.0.into(), ..Border::default() },
         ..Default::default()
     }).on_press(Message::OpenHelp), tip_box("Help \u{2014} feature guide", p), TipPos::Top);
-    let split_divider = container(Space::new(1, 24)).style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(iced::Color { a: 0.4, ..p.muted })), ..Default::default() });
-    let split_right = tooltip(button(text("\u{2699}").size(13).font(iced::Font::with_name("Segoe UI Symbol"))
-        .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
-    ).padding([4, 12]).style(move |_,_| button::Style {
-        background: Some(iced::Background::Color(p.tile)),
-        border: Border { radius: iced::border::Radius { top_left: 0.0, top_right: 7.0, bottom_right: 7.0, bottom_left: 0.0 }, ..Border::default() },
-        ..Default::default()
-    }).on_press(Message::OpenTools), tip_box("Tools \u{2014} Alerts, Game Mode, Utilities", p), TipPos::Top);
 
     // C# BottomBarDanger: tile fill, IndianRed border + text, radius 6.
     let indian_red = iced::Color::from_rgb(0.804, 0.361, 0.361);
@@ -975,7 +1013,7 @@ pub fn view<'a>(
     let divider = container(Space::new(Length::Fill, 1)).style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(iced::Color { a: 0.3, ..p.muted })), ..Default::default() });
 
     let bottom_bar = container(
-        row![split_left, split_divider, split_right, Space::with_width(8), reset_btn, Space::with_width(Length::Fill), save_btn]
+        row![help_btn, Space::with_width(8), reset_btn, Space::with_width(Length::Fill), save_btn]
             .align_y(iced::Alignment::Center)
     ).width(Length::Fill).padding(iced::Padding { top: 10.0, right: 0.0, bottom: 0.0, left: 0.0 });
 
