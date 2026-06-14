@@ -329,14 +329,8 @@ pub fn view<'a>(
             .on_press(Message::Noop)
     );
 
-    // ── Preset Themes cycler ──
+    // ── Colors cycler (no dice; the single die lives between Skins and Colors) ──
     let preset_cycler = row![
-        button(text("\u{2193}").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-            .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() }).on_press(Message::Noop),
-        Space::with_width(3),
-        button(text("\u{1F3B2}").size(12).font(iced::Font::with_name("Segoe UI Symbol")))
-            .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() }).on_press(Message::ThemeDice),
-        Space::with_width(3),
         pill("\u{2039}".into(), false, Message::ThemePrev),
         button(
             container(row![
@@ -348,33 +342,31 @@ pub fn view<'a>(
         .style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
         .on_press(Message::ThemeNext),
         pill("\u{203A}".into(), false, Message::ThemeNext),
-        Space::with_width(3),
-        button(text("\u{1F4CB}").size(11).font(iced::Font::with_name("Segoe UI Symbol")))
-            .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() }).on_press(Message::Noop),
-    ].align_y(iced::Alignment::Center).spacing(2);
+    ].align_y(iced::Alignment::Center).spacing(3);
 
     // ── Skins box ──
+    // Single die between Skins and Colors rows: left-click randomizes skin +
+    // colours (and fonts if enabled), right-click randomizes skin only.
+    let dice = tooltip(
+        mouse_area(
+            container(text("\u{2684}").size(15).font(iced::Font::with_name("Segoe UI Symbol"))
+                .style(move |_| iced::widget::text::Style { color: Some(p.text) }))
+                .padding([3, 10])
+                .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
+        )
+        .on_press(Message::RandomizeAppearance)
+        .on_right_press(Message::RandomizeSkinOnly),
+        tip_box("Randomize skin + colours. Left-click: rolls a random skin AND colour palette. Right-click: rolls skin only. Fonts roll too if 'Randomize fonts' is on.", p),
+        TipPos::Bottom,
+    );
     let skins_box = container(column![
         text("Skins").size(9).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         row![
-            // ↶ Undo last appearance change (dice roll, theme/skin/font change).
+            // ↺ Undo last appearance change (dice roll, theme/skin/font change).
             tooltip(
-                button(text("\u{21B6}").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+                button(text("\u{21BA}").size(13).font(iced::Font::with_name("Segoe UI Symbol")).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
                     .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() }).on_press(Message::UndoAppearance),
                 tip_box("Undo last change \u{2014} reverts the last appearance change (dice, theme/skin pick, or font change). Up to 5 steps back.", p),
-                TipPos::Bottom,
-            ),
-            // 🎲 Left-click = random skin + colours; right-click = skin only.
-            tooltip(
-                mouse_area(
-                    container(text("\u{1F3B2}").size(11).font(iced::Font::with_name("Segoe UI Symbol"))
-                        .style(move |_| iced::widget::text::Style { color: Some(p.text) }))
-                        .padding([3, 6])
-                        .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() })
-                )
-                .on_press(Message::RandomizeAppearance)
-                .on_right_press(Message::RandomizeSkinOnly),
-                tip_box("Randomize skin + colours. Left-click: rolls a random skin AND colour palette. Right-click: rolls skin only. Fonts roll too if 'Randomize fonts' is on.", p),
                 TipPos::Bottom,
             ),
             Space::with_width(4),
@@ -388,10 +380,10 @@ pub fn view<'a>(
             ).width(Length::Fill).center_x(Length::Fill).padding([4, 8])
             .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() }),
             pill("\u{203A}".into(), false, Message::SkinNext),
-            button(text("\u{1F4CB}").size(11).font(iced::Font::with_name("Segoe UI Symbol")))
-                .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() }).on_press(Message::Noop),
         ].align_y(iced::Alignment::Center).spacing(3),
-        Space::with_height(4),
+        Space::with_height(6),
+        container(dice).center_x(Length::Fill),
+        Space::with_height(6),
         text("Colors").size(9).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         preset_cycler,
     ].spacing(3))
@@ -460,7 +452,6 @@ pub fn view<'a>(
     let appearance = column![
         saved_row,
         Space::with_height(4),
-        fl("Preset Themes"),
         skins_box,
         Space::with_height(6),
         swatch_strip,
@@ -484,10 +475,10 @@ pub fn view<'a>(
             tooltip(
                 row![
                     toggler(settings.randomize_fonts_on_dice).size(14).on_toggle(Message::SetRandomizeFonts).style(crate::style::toggler_style(p)),
-                    text("Allow random fonts with \u{1F3B2} button").size(11)
+                    text("Allow random fonts with die button").size(11)
                         .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
                 ].spacing(6).align_y(iced::Alignment::Center),
-                tip_box("When on, the \u{1F3B2} button also picks random fonts in addition to theme + skin.", p), TipPos::Top,
+                tip_box("When on, the die button also picks random fonts in addition to theme + skin.", p), TipPos::Top,
             ),
         ].spacing(6).align_y(iced::Alignment::Center),
         {
