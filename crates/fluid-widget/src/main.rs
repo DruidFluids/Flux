@@ -1867,16 +1867,17 @@ impl App {
             Message::OpenThemePicker => { self.picker_skins = false; self.open_popup(WindowKind::Picker, popups::PICKER_SIZE) }
             Message::OpenSkinPicker => { self.picker_skins = true; self.open_popup(WindowKind::Picker, popups::PICKER_SIZE) }
             Message::ApplyThemePreset(i) => {
+                // Keep the picker open so the user can try several in a row.
                 self.push_appearance_undo();
                 style::apply_preset(&mut self.settings, i);
                 let _ = self.settings.save();
-                Task::batch([self.close_kind(WindowKind::Picker), self.resize_widget()])
+                self.resize_widget()
             }
             Message::ApplySkin(name) => {
                 self.push_appearance_undo();
                 self.settings.active_skin = name;
                 let _ = self.settings.save();
-                Task::batch([self.close_kind(WindowKind::Picker), self.resize_widget()])
+                self.resize_widget()
             }
             Message::DiskLabelCycle => {
                 // C# cycle: Drive letter > Model > Both.

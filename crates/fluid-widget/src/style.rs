@@ -59,6 +59,29 @@ pub fn inline_btn<'a>(label: impl Into<String>, msg: Message, p: Palette) -> Ele
         .into()
 }
 
+/// The randomize die — the C# single 3D die, drawn as a monochrome outline SVG
+/// and tinted to `color` (so it's outline-only, not the two-dice font glyph or
+/// the colour emoji). An isometric cube (hexagon silhouette + Y edges) with a
+/// pip on each visible face.
+pub fn dice_icon<'a>(color: Color, size: f32) -> Element<'a, Message> {
+    const SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">
+      <g fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+        <polygon points="18,3 32,11 32,25 18,33 4,25 4,11"/>
+        <path d="M18,17 L18,3 M18,17 L32,25 M18,17 L4,25"/>
+      </g>
+      <g fill="#FFFFFF" stroke="none">
+        <circle cx="18" cy="10" r="1.8"/>
+        <circle cx="25" cy="21" r="1.8"/>
+        <circle cx="11" cy="21" r="1.8"/>
+      </g>
+    </svg>"##;
+    iced::widget::svg(iced::widget::svg::Handle::from_memory(SVG))
+        .width(iced::Length::Fixed(size))
+        .height(iced::Length::Fixed(size))
+        .style(move |_, _| iced::widget::svg::Style { color: Some(color) })
+        .into()
+}
+
 /// Wrap any control in the standard tooltip bubble. **Convention:** every
 /// button in the app should be wrapped with this (or pass a tip to a helper that
 /// calls it) so it always has a hint — including new buttons going forward.

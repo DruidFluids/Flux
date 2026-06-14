@@ -1004,7 +1004,11 @@ pub fn picker_view<'a>(skins: bool, settings: &AppSettings, p: Palette, win_id: 
         }
     }
     let title = if skins { "CHOOSE A SKIN" } else { "CHOOSE A THEME" };
-    let body = scrollable(container(col).padding(iced::Padding { top: 4.0, right: 8.0, bottom: 8.0, left: 0.0 })).height(Length::Fill);
+    // Stable id per list so the scroll position is kept while you click around
+    // (and across re-opens within a session).
+    let sid = iced::widget::scrollable::Id::new(if skins { "fluxid-skin-picker" } else { "fluxid-theme-picker" });
+    let body = scrollable(container(col).padding(iced::Padding { top: 4.0, right: 8.0, bottom: 8.0, left: 0.0 }))
+        .id(sid).height(Length::Fill);
     shell(title, win_id, p, body.into())
 }
 
