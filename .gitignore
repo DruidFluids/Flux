@@ -1,2 +1,6 @@
 fluid_src/
 target/
+
+# stray local artifacts (screenshots, build logs)
+/*.png
+/build_output.txt
