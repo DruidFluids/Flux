@@ -2,7 +2,7 @@
 
 use fluid_core::sensor_data::*;
 use fluid_core::settings::AppSettings;
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{button, column, container, row, stack, text, Space};
 use iced::{Border, Color, Element, Length};
 use iced::font::Weight;
 use chrono::{Datelike, Timelike};
@@ -611,7 +611,7 @@ fn tile_container<'a>(content: impl Into<Element<'a, Message>>, p: Palette, w: W
         iced::Background::Color(tile_bg)
     };
 
-    container(body)
+    let tile_el = container(body)
         .width(Length::Fixed(tw))
         .height(Length::Fixed(th))
         .style(move |_| iced::widget::container::Style {
@@ -623,6 +623,38 @@ fn tile_container<'a>(content: impl Into<Element<'a, Message>>, p: Palette, w: W
             },
             shadow,
             ..Default::default()
-        })
-        .into()
+        });
+
+    // Texture overlay (scanlines / grid) for skins that want it — a subtle,
+    // non-interactive SVG pattern clipped to the tile's rounded rect.
+    let texture: u8 = match s.active_skin.as_str() {
+        "Terminal" | "Retro" => 1, // scanlines
+        "Cyberpunk" => 2,          // grid
+        _ => 0,
+    };
+    if texture == 0 || w.flash {
+        return tile_el.into();
+    }
+    let r = skin.tile_radius;
+    let hexof = |c: Color| format!("#{:02X}{:02X}{:02X}", (c.r * 255.0) as u8, (c.g * 255.0) as u8, (c.b * 255.0) as u8);
+    let pat = if texture == 1 {
+        // Horizontal scanlines every 3px.
+        format!("<pattern id=\"t\" width=\"{tw}\" height=\"3\" patternUnits=\"userSpaceOnUse\">\
+                 <rect x=\"0\" y=\"0\" width=\"{tw}\" height=\"1\" fill=\"{c}\" opacity=\"0.10\"/></pattern>",
+            tw = tw, c = hexof(p.text))
+    } else {
+        // 8px grid.
+        format!("<pattern id=\"t\" width=\"8\" height=\"8\" patternUnits=\"userSpaceOnUse\">\
+                 <path d=\"M8 0 H0 V8\" fill=\"none\" stroke=\"{c}\" stroke-width=\"0.5\" opacity=\"0.18\"/></pattern>",
+            c = hexof(p.accent))
+    };
+    let svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{tw}\" height=\"{th}\" viewBox=\"0 0 {tw} {th}\">\
+         <defs>{pat}</defs>\
+         <rect x=\"0\" y=\"0\" width=\"{tw}\" height=\"{th}\" rx=\"{r}\" ry=\"{r}\" fill=\"url(#t)\"/></svg>",
+        tw = tw, th = th, r = r, pat = pat);
+    let overlay = iced::widget::svg(iced::widget::svg::Handle::from_memory(svg.into_bytes()))
+        .width(Length::Fixed(tw)).height(Length::Fixed(th))
+        .style(|_t, _s| iced::widget::svg::Style { color: None });
+    stack![tile_el, overlay].width(Length::Fixed(tw)).height(Length::Fixed(th)).into()
 }
