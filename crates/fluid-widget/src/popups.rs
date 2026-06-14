@@ -1,5 +1,5 @@
 use fluid_core::settings::{AppSettings, SnapPosition, WarnMetric};
-use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, text, text_input, toggler, Space};
+use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, text, text_editor, text_input, toggler, Space};
 use iced::{window, Border, Color, Element, Length};
 use crate::style::Palette;
 use crate::Message;
@@ -170,7 +170,7 @@ pub fn tools_view<'a>(_settings: &AppSettings, p: Palette, win_id: window::Id) -
         Space::with_width(10),
         tool_card("\u{1F3AE}", Color::from_rgb8(0x6A, 0x9F, 0xD8), "Game Mode", "Hotkey snap", Message::OpenGameMode, p),
         Space::with_width(10),
-        tool_card("\u{1F527}", Color::from_rgb8(0x88, 0xAA, 0x55), "Utilities", "System tools", Message::OpenHelp, p),
+        tool_card("\u{1F527}", Color::from_rgb8(0x88, 0xAA, 0x55), "Utilities", "System tools", Message::OpenUtilities, p),
     ];
     let body = container(cards).padding(iced::Padding { top: 10.0, right: 0.0, bottom: 0.0, left: 0.0 });
     shell("TOOLS", win_id, p, body.into())
@@ -423,4 +423,129 @@ pub fn help_view<'a>(_settings: &AppSettings, p: Palette, win_id: window::Id) ->
     }
     let body = scrollable(container(col).padding(iced::Padding { top: 4.0, right: 6.0, bottom: 8.0, left: 0.0 })).height(Length::Fill);
     shell("HELP", win_id, p, body.into())
+}
+
+// ── Utilities (Tweaks) ───────────────────────────────────────────────────────
+
+pub const UTILITIES_SIZE: iced::Size = iced::Size::new(460.0, 560.0);
+pub const WINDOW_PICKER_SIZE: iced::Size = iced::Size::new(420.0, 460.0);
+
+pub fn utilities_view<'a>(blocklist: &'a text_editor::Content, status: &str, p: Palette, win_id: window::Id) -> Element<'a, Message> {
+    // C# InlineBtn: tile fill, 1px border, radius 6; hover accents.
+    let ibtn = |lbl: &str, msg: Message| -> Element<'a, Message> {
+        button(text(lbl.to_string()).size(11))
+            .padding([5, 12])
+            .style(move |_: &iced::Theme, status: button::Status| {
+                let hover = matches!(status, button::Status::Hovered);
+                button::Style {
+                    background: Some(iced::Background::Color(p.tile)),
+                    text_color: if hover { p.accent } else { p.text },
+                    border: Border { radius: 6.0.into(), width: 1.0, color: if hover { p.accent } else { p.muted } },
+                    ..Default::default()
+                }
+            })
+            .on_press(msg).into()
+    };
+    let card = |title: &str, desc: &str, action: Element<'a, Message>| -> Element<'a, Message> {
+        container(column![
+            text(title.to_string()).size(13)
+                .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+            text(desc.to_string()).size(11)
+                .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+            action,
+        ].spacing(8))
+        .width(Length::Fill).padding(iced::Padding { top: 10.0, right: 14.0, bottom: 10.0, left: 14.0 })
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(p.tile)),
+            border: Border { radius: 8.0.into(), ..Border::default() },
+            ..Default::default()
+        })
+        .into()
+    };
+
+    let ct = card(
+        "Chris Titus Win Utility",
+        "Debloat Windows, manage updates, install apps, optimize performance.",
+        row![ibtn("Run Chris Titus Utility", Message::RunChrisTitus), Space::with_width(Length::Fill)].into(),
+    );
+    let mas = card(
+        "Microsoft Activation Scripts (MAS)",
+        "Activate Windows and Microsoft Office via multiple methods.",
+        row![ibtn("Run MAS", Message::RunMassgrave), Space::with_width(Length::Fill)].into(),
+    );
+
+    let editor = text_editor(blocklist)
+        .height(Length::Fixed(72.0))
+        .padding(6)
+        .on_action(Message::BlocklistAction)
+        .style(move |_t: &iced::Theme, _s| iced::widget::text_editor::Style {
+            background: iced::Background::Color(crate::style::field_bg(p)),
+            border: Border { radius: 4.0.into(), width: 1.0, color: Color { a: 0.5, ..p.muted } },
+            icon: p.muted,
+            placeholder: Color { a: 0.5, ..p.muted },
+            value: p.text,
+            selection: p.accent,
+        });
+    let blocklist_card = card(
+        "Window snap blocklist",
+        "Windows with titles matching any line below won't be used as snap targets (substring match, case-insensitive).",
+        column![
+            editor,
+            row![
+                ibtn("Save blocklist", Message::SaveBlocklist),
+                ibtn("Pick window", Message::PickWindow),
+                text(status.to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+            ].spacing(8).align_y(iced::Alignment::Center),
+        ].spacing(6).into(),
+    );
+
+    let disclaimer = container(
+        text("Disclaimer: These tools are maintained by third-party developers and are not bundled with, vetted by, or endorsed by fluidMonitor. Scripts are fetched from the internet and executed with administrator privileges. Use at your own risk.".to_string())
+            .size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) })
+    )
+    .width(Length::Fill).padding(iced::Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
+    .style(move |_| iced::widget::container::Style {
+        background: Some(iced::Background::Color(Color::from_rgba8(0xFF, 0x66, 0x00, 0.19))),
+        border: Border { radius: 6.0.into(), ..Border::default() },
+        ..Default::default()
+    });
+
+    let body = scrollable(
+        column![ct, mas, blocklist_card, disclaimer].spacing(8)
+            .padding(iced::Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 0.0 })
+    ).height(Length::Fill);
+    shell("UTILITIES", win_id, p, body.into())
+}
+
+pub fn window_picker_view<'a>(titles: Vec<String>, p: Palette, win_id: window::Id) -> Element<'a, Message> {
+    let mut col = column![
+        text("Click a window to add its title to the blocklist.".to_string()).size(11)
+            .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+        Space::with_height(4),
+    ].spacing(3);
+    if titles.is_empty() {
+        col = col.push(text("No open windows found.".to_string()).size(11)
+            .style(move |_| iced::widget::text::Style { color: Some(p.muted) }));
+    }
+    for t in titles {
+        let title = t.clone();
+        col = col.push(
+            button(text(title).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }))
+                .width(Length::Fill)
+                .padding(iced::Padding { top: 5.0, right: 10.0, bottom: 5.0, left: 10.0 })
+                .style(move |_: &iced::Theme, status: button::Status| {
+                    let hover = matches!(status, button::Status::Hovered);
+                    button::Style {
+                        background: Some(iced::Background::Color(if hover { p.accent } else { p.tile })),
+                        text_color: if hover { Color::WHITE } else { p.text },
+                        border: Border { radius: 4.0.into(), ..Border::default() },
+                        ..Default::default()
+                    }
+                })
+                .on_press(Message::PickWindowChosen(t))
+        );
+    }
+    let body = scrollable(container(col).padding(iced::Padding { top: 4.0, right: 6.0, bottom: 8.0, left: 0.0 })).height(Length::Fill);
+    shell("PICK WINDOW", win_id, p, body.into())
 }

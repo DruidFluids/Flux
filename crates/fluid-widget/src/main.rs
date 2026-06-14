@@ -99,12 +99,12 @@ fn work_area() -> Option<(f32, f32, f32, f32)> { None }
 // Rects (logical coords) of all visible top-level app windows (excluding the
 // widget itself) so the widget can dock to any window's outer edges.
 #[cfg(target_os = "windows")]
-fn own_window_rects() -> Vec<(f32, f32, f32, f32)> {
+fn own_window_rects(blocklist: &[String]) -> Vec<(f32, f32, f32, f32)> {
     use windows::core::BOOL;
     use windows::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows::Win32::UI::HiDpi::GetDpiForWindow;
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowRect, GetWindowTextLengthW, IsIconic, IsWindowVisible,
+        EnumWindows, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, IsIconic, IsWindowVisible,
     };
 
     let widget = widget_hwnd();
@@ -112,10 +112,13 @@ fn own_window_rects() -> Vec<(f32, f32, f32, f32)> {
         Some(h) => { let d = unsafe { GetDpiForWindow(h) }; if d == 0 { 1.0 } else { d as f32 / 96.0 } }
         None => 1.0,
     };
-    struct Ctx { widget: isize, scale: f32, rects: Vec<(f32, f32, f32, f32)> }
+    // Lowercased blocklist for case-insensitive substring matching.
+    let block: Vec<String> = blocklist.iter().map(|s| s.to_lowercase()).collect();
+    struct Ctx { widget: isize, scale: f32, block: Vec<String>, rects: Vec<(f32, f32, f32, f32)> }
     let mut ctx = Ctx {
         widget: widget.map(|h| h.0 as isize).unwrap_or(0),
         scale,
+        block,
         rects: Vec::new(),
     };
 
@@ -127,6 +130,17 @@ fn own_window_rects() -> Vec<(f32, f32, f32, f32)> {
             && IsWindowVisible(h).as_bool() && !IsIconic(h).as_bool()
             && GetWindowTextLengthW(h) > 0
         {
+            // Skip windows whose title matches any blocklist rule.
+            if !ctx.block.is_empty() {
+                let mut buf = [0u16; 256];
+                let n = GetWindowTextW(h, &mut buf);
+                if n > 0 {
+                    let title = String::from_utf16_lossy(&buf[..n as usize]).to_lowercase();
+                    if ctx.block.iter().any(|b| !b.is_empty() && title.contains(b.as_str())) {
+                        return BOOL(1);
+                    }
+                }
+            }
             let mut r = RECT::default();
             if GetWindowRect(h, &mut r).is_ok() {
                 let w = (r.right - r.left) as f32;
@@ -143,7 +157,48 @@ fn own_window_rects() -> Vec<(f32, f32, f32, f32)> {
     ctx.rects
 }
 #[cfg(not(target_os = "windows"))]
-fn own_window_rects() -> Vec<(f32, f32, f32, f32)> { Vec::new() }
+fn own_window_rects(_blocklist: &[String]) -> Vec<(f32, f32, f32, f32)> { Vec::new() }
+
+// Launch an elevated PowerShell running `inner` (UAC prompt). Used by the
+// Utilities window for the Chris Titus / MAS one-liners.
+#[cfg(target_os = "windows")]
+fn run_powershell_admin(inner: &str) {
+    let arg = format!("Start-Process powershell -ArgumentList '-NoProfile','-Command','{inner}' -Verb RunAs");
+    let _ = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &arg]).spawn();
+}
+#[cfg(not(target_os = "windows"))]
+fn run_powershell_admin(_inner: &str) {}
+
+// Titles of visible top-level windows (for the snap-blocklist Pick Window list).
+#[cfg(target_os = "windows")]
+fn enum_window_titles() -> Vec<String> {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowTextLengthW, GetWindowTextW, IsIconic, IsWindowVisible,
+    };
+    struct Ctx { widget: isize, titles: Vec<String> }
+    let mut ctx = Ctx { widget: widget_hwnd().map(|h| h.0 as isize).unwrap_or(0), titles: Vec::new() };
+    unsafe extern "system" fn cb(h: HWND, lp: LPARAM) -> BOOL {
+        let ctx = &mut *(lp.0 as *mut Ctx);
+        if h.0 as isize != ctx.widget
+            && IsWindowVisible(h).as_bool() && !IsIconic(h).as_bool()
+            && GetWindowTextLengthW(h) > 0
+        {
+            let mut buf = [0u16; 256];
+            let n = GetWindowTextW(h, &mut buf);
+            if n > 0 {
+                let t = String::from_utf16_lossy(&buf[..n as usize]);
+                if !t.starts_with("fluidMonitor") && !ctx.titles.contains(&t) { ctx.titles.push(t); }
+            }
+        }
+        BOOL(1)
+    }
+    unsafe { let _ = EnumWindows(Some(cb), LPARAM(&mut ctx as *mut _ as isize)); }
+    ctx.titles
+}
+#[cfg(not(target_os = "windows"))]
+fn enum_window_titles() -> Vec<String> { Vec::new() }
 
 #[cfg(target_os = "windows")]
 fn set_run_at_startup(on: bool) {
@@ -244,7 +299,7 @@ fn cursor_logical_pos() -> Option<(f32, f32)> {
 fn cursor_logical_pos() -> Option<(f32, f32)> { None }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout }
+enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, WindowPicker }
 
 // Snapshot of all appearance state for the C# "Undo last change" stack
 // (colors + skin + fonts). Up to 5 steps back.
@@ -307,6 +362,9 @@ struct App {
     hotkeys: Option<hotkeys::HotkeyManager>,
     hotkey_rx: Option<std::sync::mpsc::Receiver<hotkeys::HotkeyEvent>>,
     capturing_hotkey: Option<hotkeys::HotkeyTarget>,
+    // ── Utilities (Tweaks) ──
+    blocklist_editor: iced::widget::text_editor::Content,
+    blocklist_status: String,
     add_device_open: bool,
     new_device_name: String,
     new_device_ip: String,
@@ -323,7 +381,10 @@ enum Message {
     WindowClosed(window::Id),
     WindowMoved(window::Id, Point),
     OpenSettings, HideWidget, SaveClose, ResetDefaults, Noop,
-    OpenTools, OpenAlerts, OpenGameMode, OpenHelp, ClosePopup(window::Id),
+    OpenTools, OpenAlerts, OpenGameMode, OpenHelp, OpenUtilities, ClosePopup(window::Id),
+    RunChrisTitus, RunMassgrave,
+    BlocklistAction(iced::widget::text_editor::Action), SaveBlocklist,
+    PickWindow, PickWindowChosen(String),
     ShowWidgetMenu, WidgetMenuSettings, WidgetMenuExit, WindowUnfocused(window::Id),
     ToggleTile(String, bool),
     SetOpacity(f32), SetOrientation(Orientation),
@@ -393,6 +454,8 @@ impl App {
         hotkeys_mgr.set_combo(hotkeys::HotkeyTarget::ClickThrough, &settings.click_through_hotkey);
         hotkeys_mgr.set_combo(hotkeys::HotkeyTarget::GameMode, &settings.game_mode_hotkey);
 
+        let blocklist_text = settings.snap_blocklist.join("\n");
+
         let menu = Menu::new();
         let si = MenuItem::new("Settings", true, None);
         let wi = MenuItem::new("Show Widget", true, None);
@@ -412,6 +475,8 @@ impl App {
             remote_snapshots: HashMap::new(), remote_conn: HashMap::new(),
             popout_device: HashMap::new(), pending_popout: std::collections::VecDeque::new(), remote_expanded,
             hotkeys: Some(hotkeys_mgr), hotkey_rx: Some(hotkey_rx), capturing_hotkey: None,
+            blocklist_editor: iced::widget::text_editor::Content::with_text(&blocklist_text),
+            blocklist_status: String::new(),
             add_device_open: false,
             new_device_name: String::new(), new_device_ip: String::new(), new_device_key: String::new(),
             device_test_status: String::new(), device_test_ok: false,
@@ -664,7 +729,7 @@ impl App {
 
         // Dock to our other windows' outer edges (e.g. the settings window).
         if self.settings.snap_to_windows {
-            for (l2, t2, r2, b2) in own_window_rects() {
+            for (l2, t2, r2, b2) in own_window_rects(&self.settings.snap_blocklist) {
                 // Only consider windows that overlap vertically/horizontally so
                 // we dock side-by-side rather than to a far-away window.
                 let v_overlap = y < b2 && (y + sz.height) > t2;
@@ -864,6 +929,27 @@ impl App {
             Message::OpenAlerts => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::Alerts, popups::ALERTS_SIZE)]),
             Message::OpenGameMode => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::GameMode, popups::GAME_MODE_SIZE)]),
             Message::OpenHelp => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::Help, popups::HELP_SIZE)]),
+            Message::OpenUtilities => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::Utilities, popups::UTILITIES_SIZE)]),
+            Message::RunChrisTitus => { run_powershell_admin("irm christitus.com/win | iex"); Task::none() }
+            Message::RunMassgrave => { run_powershell_admin("irm https://get.activated.win | iex"); Task::none() }
+            Message::BlocklistAction(action) => { self.blocklist_editor.perform(action); Task::none() }
+            Message::SaveBlocklist => {
+                let lines: Vec<String> = self.blocklist_editor.text()
+                    .lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+                let n = lines.len();
+                self.settings.snap_blocklist = lines;
+                let _ = self.settings.save();
+                self.blocklist_status = format!("Saved ({} rule{})", n, if n == 1 { "" } else { "s" });
+                Task::none()
+            }
+            Message::PickWindow => self.open_popup(WindowKind::WindowPicker, popups::WINDOW_PICKER_SIZE),
+            Message::PickWindowChosen(title) => {
+                let text = self.blocklist_editor.text().trim_end().to_string();
+                let combined = if text.is_empty() { title } else { format!("{text}\n{title}") };
+                self.blocklist_editor = iced::widget::text_editor::Content::with_text(&combined);
+                self.blocklist_status = "Window added (click Save)".into();
+                self.close_kind(WindowKind::WindowPicker)
+            }
             Message::ClosePopup(id) => {
                 let _ = self.settings.save();
                 Task::batch([window::close(id), self.resize_widget()])
@@ -1275,6 +1361,8 @@ impl App {
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id, self.capturing_hotkey == Some(hotkeys::HotkeyTarget::GameMode)),
             WindowKind::Help => popups::help_view(&self.settings, p, id),
+            WindowKind::Utilities => popups::utilities_view(&self.blocklist_editor, &self.blocklist_status, p, id),
+            WindowKind::WindowPicker => popups::window_picker_view(enum_window_titles(), p, id),
             WindowKind::WidgetMenu => popups::widget_menu_view(p),
             WindowKind::Popout => self.popout_view(id, p),
             WindowKind::Widget => self.widget_view(id, p),

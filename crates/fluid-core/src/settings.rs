@@ -73,6 +73,9 @@ pub struct AppSettings {
     pub remote_key: String,
     pub remote_devices: Vec<RemoteDevice>,
 
+    #[serde(default)]
+    pub snap_blocklist: Vec<String>,
+
     pub update_check_mode: UpdateMode,
     pub last_update_check: Option<String>,
     pub presets: Vec<PresetSlot>,
@@ -145,6 +148,7 @@ impl Default for AppSettings {
             remote_port: 5199,
             remote_key: String::new(),
             remote_devices: Vec::new(),
+            snap_blocklist: Vec::new(),
             update_check_mode: UpdateMode::Manual,
             last_update_check: None,
             presets: Vec::new(),
