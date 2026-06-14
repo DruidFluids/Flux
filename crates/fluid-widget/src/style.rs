@@ -70,9 +70,15 @@ pub fn dice_icon<'a>(color: Color, size: f32) -> Element<'a, Message> {
         <path d="M18,17 L18,33 M18,17 L32,11 M18,17 L4,11"/>
       </g>
       <g fill="#FFFFFF" stroke="none">
-        <circle cx="18" cy="10" r="1.8"/>
-        <circle cx="25" cy="21" r="1.8"/>
-        <circle cx="11" cy="21" r="1.8"/>
+        <!-- top face: 1 -->
+        <circle cx="18" cy="10" r="1.5"/>
+        <!-- left face: 2 (along the face diagonal) -->
+        <circle cx="8" cy="18" r="1.5"/>
+        <circle cx="14" cy="26" r="1.5"/>
+        <!-- right face: 3 (along the face diagonal) -->
+        <circle cx="28" cy="15" r="1.5"/>
+        <circle cx="25" cy="21" r="1.5"/>
+        <circle cx="22" cy="27" r="1.5"/>
       </g>
     </svg>"##;
     iced::widget::svg(iced::widget::svg::Handle::from_memory(SVG))
