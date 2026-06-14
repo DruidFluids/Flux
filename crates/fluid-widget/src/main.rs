@@ -410,6 +410,34 @@ fn warn_view_for(warnings: &[fluid_core::settings::TileWarning], kind: &str, sna
     WarnView { flash: exceeded && w.flash_enabled && flash_on, accent_override }
 }
 
+// A small glowing connection-status dot: a bright core inside a soft same-colour
+// halo. Green = connected, red = disconnected.
+fn status_dot<'a>(c: Color) -> Element<'a, Message> {
+    container(
+        container(Space::new(6, 6)).style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(c)),
+            border: Border { radius: 3.0.into(), ..Border::default() },
+            ..Default::default()
+        })
+    )
+    .padding(2)
+    .style(move |_| iced::widget::container::Style {
+        background: Some(iced::Background::Color(Color { a: 0.35, ..c })),
+        border: Border { radius: 5.0.into(), ..Border::default() },
+        ..Default::default()
+    })
+    .into()
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let t: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{t}\u{2026}")
+    }
+}
+
 struct App {
     settings: AppSettings,
     snapshot: SensorSnapshot,
@@ -467,6 +495,8 @@ struct App {
     // ── Optional CPU sensor driver (PawnIO) ──
     cpu_driver_installed: bool,
     cpu_dialog: CpuDriverStage,
+    // Which device the widget is showing: None = this PC, Some(id) = a remote.
+    widget_device: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -542,6 +572,7 @@ enum Message {
     ToggleGameModeTile(String, bool),
     // ── Optional CPU sensor driver (PawnIO) ──
     OpenCpuDriver, DismissCpuTempHint,
+    SwitchWidgetDevice(Option<String>), SetShowRemoteStatusDot(bool),
     CpuDriverMoreInfo, CpuDriverBack,
     CpuDriverInstall, CpuDriverUninstall,
     CpuDriverInstallDone(cpu_driver::Outcome),
@@ -603,6 +634,7 @@ impl App {
             device_test_status: String::new(), device_test_ok: false,
             cpu_driver_installed: cpu_driver::is_installed(),
             cpu_dialog: CpuDriverStage::Primary,
+            widget_device: None,
         };
         let size = app.widget_size();
         let position = if app.settings.first_run_complete {
@@ -651,10 +683,18 @@ impl App {
         let tw = self.settings.tile_width * sc;
         let th = self.settings.tile_height * sc;
         let sp = style::skin_style(&self.settings.active_skin).tile_spacing;
+        // The device switcher tabs add a row above the tiles (only when a remote
+        // device exists and we're not in the compact game-mode overlay).
+        let tabs_h = if self.show_device_tabs() { 24.0 } else { 0.0 };
         match self.effective_orientation() {
-            Orientation::Horizontal => Size::new(16.0 + n * tw + (n - 1.0) * sp, 8.0 + 20.0 + 4.0 + th + 8.0),
-            Orientation::Vertical => Size::new(tw + 16.0, 8.0 + 20.0 + 4.0 + n * th + (n - 1.0) * sp + 8.0),
+            Orientation::Horizontal => Size::new(16.0 + n * tw + (n - 1.0) * sp, 8.0 + 20.0 + 4.0 + tabs_h + th + 8.0),
+            Orientation::Vertical => Size::new(tw + 16.0, 8.0 + 20.0 + 4.0 + tabs_h + n * th + (n - 1.0) * sp + 8.0),
         }
+    }
+    // The device switcher shows only when at least one remote device exists and
+    // the widget isn't in game-mode (a compact local-only overlay).
+    fn show_device_tabs(&self) -> bool {
+        !self.game_mode && !self.settings.remote_devices.is_empty()
     }
     fn widget_window(&self) -> Option<window::Id> {
         self.windows.iter().find(|(_, k)| **k == WindowKind::Widget).map(|(id, _)| *id)
@@ -1141,6 +1181,16 @@ impl App {
                 let _ = self.settings.save();
                 Task::none()
             }
+            Message::SwitchWidgetDevice(dev) => {
+                // Ignore unknown ids; None always valid (this PC).
+                self.widget_device = dev.filter(|id| self.settings.remote_devices.iter().any(|d| &d.id == id));
+                Task::none()
+            }
+            Message::SetShowRemoteStatusDot(on) => {
+                self.settings.show_remote_status_dot = on;
+                let _ = self.settings.save();
+                Task::none()
+            }
             Message::CpuDriverMoreInfo => { self.cpu_dialog = CpuDriverStage::Info; Task::none() }
             Message::CpuDriverBack => { self.cpu_dialog = CpuDriverStage::Primary; Task::none() }
             Message::CpuDriverInstall => {
@@ -1448,6 +1498,7 @@ impl App {
             Message::RemoveDevice(id) => {
                 self.settings.remote_devices.retain(|d| d.id != id);
                 self.remote_snapshots.remove(&id); self.remote_conn.remove(&id);
+                if self.widget_device.as_deref() == Some(id.as_str()) { self.widget_device = None; }
                 let _ = self.settings.save();
                 if let Some(r) = &self.remote { r.set_devices(self.settings.remote_devices.clone()); }
                 Task::none()
@@ -1875,17 +1926,77 @@ impl App {
         mouse_area(root).on_press(Message::DragWindow(id)).into()
     }
 
+    // The device switcher strip: "This PC" + one tab per remote device, each
+    // with an optional green/red status dot. Centered above the tiles.
+    fn device_tabs(&self, active_id: Option<&String>, p: Palette) -> Element<'_, Message> {
+        let show_dot = self.settings.show_remote_status_dot;
+        let make_tab = move |label: String, active: bool, dot: Option<bool>, msg: Message| -> Element<'static, Message> {
+            let mut content = row![].spacing(4).align_y(iced::Alignment::Center);
+            if let (true, Some(connected)) = (show_dot, dot) {
+                let c = if connected { Color::from_rgb(0.30, 0.78, 0.45) } else { Color::from_rgb(0.86, 0.30, 0.25) };
+                content = content.push(status_dot(c));
+            }
+            content = content.push(
+                text(label).size(10)
+                    .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                    .style(move |_| iced::widget::text::Style { color: Some(if active { Color::WHITE } else { p.muted }) })
+            );
+            button(content)
+                .padding(iced::Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 })
+                .style(move |_: &iced::Theme, status: button::Status| {
+                    let hover = matches!(status, button::Status::Hovered);
+                    button::Style {
+                        background: Some(iced::Background::Color(if active { p.accent } else if hover { p.tile } else { Color { a: p.tile.a * 0.5, ..p.tile } })),
+                        text_color: if active { Color::WHITE } else { p.muted },
+                        border: Border { radius: 5.0.into(), ..Border::default() },
+                        ..Default::default()
+                    }
+                })
+                .on_press(msg).into()
+        };
+
+        let mut strip = row![].spacing(3).align_y(iced::Alignment::Center);
+        strip = strip.push(make_tab("This PC".into(), active_id.is_none(), None, Message::SwitchWidgetDevice(None)));
+        for d in &self.settings.remote_devices {
+            let connected = self.remote_conn.get(&d.id).copied().unwrap_or(false);
+            let active = active_id == Some(&d.id);
+            strip = strip.push(make_tab(truncate(&d.name, 12), active, Some(connected), Message::SwitchWidgetDevice(Some(d.id.clone()))));
+        }
+        container(strip).width(Length::Fill).center_x(Length::Fill).into()
+    }
+
     fn widget_view(&self, id: window::Id, p: Palette) -> Element<'_, Message> {
         let pulse = self.traffic_pulse();
+
+        // Which device's data are we showing? None = this PC.
+        let active_id: Option<&String> = self.widget_device.as_ref()
+            .filter(|id| self.settings.remote_devices.iter().any(|d| &d.id == *id));
+        let is_remote = active_id.is_some();
+        let snap_owned: SensorSnapshot = match active_id {
+            Some(rid) => self.remote_snapshots.get(rid).cloned().unwrap_or_default(),
+            None => self.snapshot.clone(),
+        };
+        let snap = &snap_owned;
+        let dev = active_id.and_then(|rid| self.settings.remote_devices.iter().find(|d| &d.id == rid));
+        let remote_warns: &[fluid_core::settings::TileWarning] =
+            dev.map(|d| d.popout.warnings.as_slice()).unwrap_or(&[]);
+
         let mut tiles: Vec<Element<'_, Message>> = Vec::new();
         for name in self.current_tiles() {
-            let w = self.warn_view(&name);
+            let w = if is_remote {
+                warn_view_for(remote_warns, &name, snap, self.flash_on)
+            } else {
+                self.warn_view(&name)
+            };
+            // The "turn on temp" hint is about the LOCAL driver, so suppress it
+            // on a remote view by passing driver_installed = true.
+            let cpu_driver = is_remote || self.cpu_driver_installed;
             let el = match name.as_str() {
-                "CPU" => tile::cpu_tile(&self.snapshot.cpu, &self.settings, p, w, self.cpu_driver_installed),
-                "GPU" => tile::gpu_tile(&self.snapshot.gpu, &self.settings, p, w),
-                "RAM" => tile::ram_tile(&self.snapshot.ram, &self.settings, p, w),
-                "Disk" => tile::disk_tile(&self.snapshot.disk, &self.settings, p, w),
-                "Network" => tile::network_tile(&self.snapshot.network, &self.settings, p, w, pulse),
+                "CPU" => tile::cpu_tile(&snap.cpu, &self.settings, p, w, cpu_driver),
+                "GPU" => tile::gpu_tile(&snap.gpu, &self.settings, p, w),
+                "RAM" => tile::ram_tile(&snap.ram, &self.settings, p, w),
+                "Disk" => tile::disk_tile(&snap.disk, &self.settings, p, w),
+                "Network" => tile::network_tile(&snap.network, &self.settings, p, w, pulse),
                 "Clock" => tile::clock_tile(&self.settings, p, w),
                 _ => continue,
             };
@@ -1902,8 +2013,17 @@ impl App {
             ).padding(0).style(|_, _| button::Style { background: None, ..Default::default() }).on_press(msg)
         };
         let header = row![icon_btn("\u{2699}", 15, Message::OpenSettings), Space::with_width(Length::Fill), icon_btn("\u{2715}", 13, Message::HideWidget)].height(20);
+
+        // Device switcher tabs (this PC + each remote), shown only with remotes.
         let widget_border = skin.border_color(&p);
-        let root = container(column![header, Space::with_height(4), body])
+        let mut shell = column![header];
+        if self.show_device_tabs() {
+            shell = shell.push(Space::with_height(2));
+            shell = shell.push(self.device_tabs(active_id, p));
+        }
+        shell = shell.push(Space::with_height(4));
+        shell = shell.push(body);
+        let root = container(shell)
             .width(Length::Fill).height(Length::Fill).padding(8)
             .style(move |_| iced::widget::container::Style {
                 background: Some(iced::Background::Color(p.bg)),

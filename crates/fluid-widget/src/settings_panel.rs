@@ -803,6 +803,16 @@ pub fn view<'a>(
                 row![ibtn("+ Add Device".into(), Message::ShowAddDevice), Space::with_width(Length::Fill)]
             );
         }
+
+        // Widget device-switcher options. The switcher tabs appear on the widget
+        // once a remote device is added.
+        remote_col = remote_col.push(Space::with_height(8));
+        remote_col = remote_col.push(row![
+            toggler(settings.show_remote_status_dot).size(14)
+                .on_toggle(Message::SetShowRemoteStatusDot).style(crate::style::toggler_style(p)),
+            text("Show a green/red status dot on the widget's device tabs").size(11)
+                .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+        ].spacing(6).align_y(iced::Alignment::Center));
     }
 
     let remote = remote_col;

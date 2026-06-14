@@ -96,6 +96,9 @@ pub struct AppSettings {
     /// nudge to install the optional sensor driver). Resets if they later open
     /// the driver dialog from Settings.
     pub cpu_temp_hint_dismissed: bool,
+    /// Show a green/red connection-status dot on the widget's remote-device
+    /// switcher tabs.
+    pub show_remote_status_dot: bool,
 }
 
 impl Default for AppSettings {
@@ -172,6 +175,7 @@ impl Default for AppSettings {
             start_minimized: false,
             first_run_complete: false,
             cpu_temp_hint_dismissed: false,
+            show_remote_status_dot: true,
         }
     }
 }
