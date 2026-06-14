@@ -95,16 +95,15 @@ fn work_area() -> Option<(f32, f32, f32, f32)> {
 #[cfg(not(target_os = "windows"))]
 fn work_area() -> Option<(f32, f32, f32, f32)> { None }
 
-// Rects (logical coords) of our app's OTHER top-level windows (settings/popups)
-// so the widget can dock to its own settings window.
+// Rects (logical coords) of all visible top-level app windows (excluding the
+// widget itself) so the widget can dock to any window's outer edges.
 #[cfg(target_os = "windows")]
 fn own_window_rects() -> Vec<(f32, f32, f32, f32)> {
     use windows::core::BOOL;
     use windows::Win32::Foundation::{HWND, LPARAM, RECT};
-    use windows::Win32::System::Threading::GetCurrentProcessId;
     use windows::Win32::UI::HiDpi::GetDpiForWindow;
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+        EnumWindows, GetWindowRect, GetWindowTextLengthW, IsIconic, IsWindowVisible,
     };
 
     let widget = widget_hwnd();
@@ -112,9 +111,8 @@ fn own_window_rects() -> Vec<(f32, f32, f32, f32)> {
         Some(h) => { let d = unsafe { GetDpiForWindow(h) }; if d == 0 { 1.0 } else { d as f32 / 96.0 } }
         None => 1.0,
     };
-    struct Ctx { pid: u32, widget: isize, scale: f32, rects: Vec<(f32, f32, f32, f32)> }
+    struct Ctx { widget: isize, scale: f32, rects: Vec<(f32, f32, f32, f32)> }
     let mut ctx = Ctx {
-        pid: unsafe { GetCurrentProcessId() },
         widget: widget.map(|h| h.0 as isize).unwrap_or(0),
         scale,
         rects: Vec::new(),
@@ -122,10 +120,11 @@ fn own_window_rects() -> Vec<(f32, f32, f32, f32)> {
 
     unsafe extern "system" fn cb(h: HWND, lp: LPARAM) -> BOOL {
         let ctx = &mut *(lp.0 as *mut Ctx);
-        let mut wpid = 0u32;
-        GetWindowThreadProcessId(h, Some(&mut wpid));
-        if wpid == ctx.pid && h.0 as isize != ctx.widget
+        // Visible, not minimized, has a title (skips tool/helper windows), and
+        // not the widget itself.
+        if h.0 as isize != ctx.widget
             && IsWindowVisible(h).as_bool() && !IsIconic(h).as_bool()
+            && GetWindowTextLengthW(h) > 0
         {
             let mut r = RECT::default();
             if GetWindowRect(h, &mut r).is_ok() {

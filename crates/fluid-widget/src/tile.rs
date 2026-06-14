@@ -248,24 +248,24 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
     let label_size = sz(13, s.indicator_font_offset + s.disk_label_font_offset, s);
     let spacing = s.disk_label_spacing.max(0.0);
 
+    // Fixed right-aligned label column + centered value column, so R:/W: line up
+    // and the values share one centered column across both rows (C# layout).
+    let dline = |lbl: &str, v: String, u: String| -> Element<'a, Message> {
+        row![
+            container(text(lbl.to_string()).size(label_size)
+                .font(named_font(&s.indicator_font, Weight::Bold))
+                .style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+                .width(Length::Fixed(20.0)).align_x(iced::alignment::Horizontal::Right),
+            Space::with_width(spacing),
+            container(line_value(v, u, p, accent, s)).width(Length::Fill).align_x(iced::alignment::Horizontal::Center),
+        ].width(Length::Fill).align_y(iced::Alignment::Center).into()
+    };
     let lines = column![
-        row![
-            text("R:".to_string()).size(label_size)
-                .font(named_font(&s.indicator_font, Weight::Bold))
-                .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
-            Space::with_width(spacing),
-            line_value(rv, ru, p, accent, s),
-        ].align_y(iced::Alignment::Center),
-        row![
-            text("W:".to_string()).size(label_size)
-                .font(named_font(&s.indicator_font, Weight::Bold))
-                .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
-            Space::with_width(spacing),
-            line_value(wv, wu, p, accent, s),
-        ].align_y(iced::Alignment::Center),
+        dline("R:", rv, ru),
+        dline("W:", wv, wu),
     ]
     .spacing(4)
-    .align_x(iced::Alignment::Center);
+    .width(Length::Fill);
 
     tile_container(column![
         header("Disk".into(), p, s),
@@ -334,17 +334,16 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
         }
     };
 
+    let nline = |arrow: Element<'a, Message>, v: String, u: String| -> Element<'a, Message> {
+        row![
+            container(arrow).width(Length::Fixed(20.0)).align_x(iced::alignment::Horizontal::Right),
+            Space::with_width(spacing),
+            container(line_value(v, u, p, accent, s)).width(Length::Fill).align_x(iced::alignment::Horizontal::Center),
+        ].width(Length::Fill).align_y(iced::Alignment::Center).into()
+    };
     let lines = column![
-        row![
-            arrow_el("\u{2193}", down > 0, down_color),
-            Space::with_width(spacing),
-            line_value(dv, du, p, accent, s),
-        ].align_y(iced::Alignment::Center),
-        row![
-            arrow_el("\u{2191}", up > 0, up_color),
-            Space::with_width(spacing),
-            line_value(uv, uu, p, accent, s),
-        ].align_y(iced::Alignment::Center),
+        nline(arrow_el("\u{2193}", down > 0, down_color), dv, du),
+        nline(arrow_el("\u{2191}", up > 0, up_color), uv, uu),
     ]
     .spacing(4)
     .align_x(iced::Alignment::Center);
