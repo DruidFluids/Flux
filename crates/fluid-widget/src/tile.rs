@@ -399,11 +399,12 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
     // Fade / Glow are all identical geometry) — only the colour and, in Glow
     // mode, the bloom/halo layers change. This keeps up/down arrows and all
     // indicator modes pixel-identical.
-    let glow_w = (arrow_size as f32) * 1.85;
+    let glow_w = (arrow_size as f32) * 1.6;
     let col_w = Length::Fixed(glow_w);
 
     let nline = |down_dir: bool, active: bool, col: Color, v: String, u: String| -> Element<'a, Message> {
-        let d = if down_dir { "M16 7 V24 M9 16 L16 24 L23 16" } else { "M16 25 V8 M9 16 L16 8 L23 16" };
+        // Exact vertical mirrors about y=16, so up and down are pixel-identical.
+        let d = if down_dir { "M16 8 V24 M9 16 L16 24 L23 16" } else { "M16 24 V8 M9 16 L16 8 L23 16" };
         let body_hex = format!("#{:02X}{:02X}{:02X}",
             (col.r * 255.0).round() as u8, (col.g * 255.0).round() as u8, (col.b * 255.0).round() as u8);
         let mut layers = String::new();
@@ -411,16 +412,16 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
             // Behind the body: radial bloom + a blurred accent stroke.
             layers.push_str(&format!(
                 "<circle cx=\"16\" cy=\"16\" r=\"16\" fill=\"url(#h)\"/>\
-                 <path d=\"{d}\" stroke=\"{a}\" stroke-width=\"3.4\" opacity=\"0.9\" filter=\"url(#b)\"/>",
+                 <path d=\"{d}\" stroke=\"{a}\" stroke-width=\"4.0\" opacity=\"0.9\" filter=\"url(#b)\"/>",
                 d = d, a = accent_hex));
         }
         // Solid body stroke — present in every mode, identical thickness.
         layers.push_str(&format!(
-            "<path d=\"{d}\" stroke=\"{c}\" stroke-width=\"2.2\" opacity=\"{op:.3}\"/>",
+            "<path d=\"{d}\" stroke=\"{c}\" stroke-width=\"2.8\" opacity=\"{op:.3}\"/>",
             d = d, c = body_hex, op = col.a));
         if glow && active {
             // White-hot core on top for the luminous-tube look.
-            layers.push_str(&format!("<path d=\"{d}\" stroke=\"#EAF5FF\" stroke-width=\"1.1\" opacity=\"0.95\"/>", d = d));
+            layers.push_str(&format!("<path d=\"{d}\" stroke=\"#EAF5FF\" stroke-width=\"1.4\" opacity=\"0.95\"/>", d = d));
         }
         let svg_str = format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\">\
