@@ -214,6 +214,43 @@ pub struct RemoteDevice {
     pub host: String,
     pub port: u16,
     pub key: String,
+    #[serde(default)]
+    pub popout: PopoutSettings,
+}
+
+/// Per-device appearance for a remote machine's Popout window. Mirrors the C#
+/// PopoutSettings. When `sync_colors` is true the popout uses the widget's own
+/// theme; otherwise it uses the colours below.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PopoutSettings {
+    pub sync_colors: bool,
+    pub bg: String,
+    pub tile: String,
+    pub accent: String,
+    pub text: String,
+    pub muted: String,
+    pub opacity: f32,
+    pub show_cpu: bool,
+    pub show_gpu: bool,
+    pub show_ram: bool,
+    pub show_network: bool,
+    pub show_storage: bool,
+    pub cpu_label: String,
+    pub gpu_label: String,
+}
+impl Default for PopoutSettings {
+    fn default() -> Self {
+        Self {
+            sync_colors: true,
+            bg: String::new(), tile: String::new(), accent: String::new(),
+            text: String::new(), muted: String::new(),
+            opacity: 0.9,
+            show_cpu: true, show_gpu: true, show_ram: true,
+            show_network: true, show_storage: true,
+            cpu_label: String::new(), gpu_label: String::new(),
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresetSlot { pub name: String, pub bg: String, pub tile: String, pub accent: String, pub text: String, pub muted: String, pub skin: String }

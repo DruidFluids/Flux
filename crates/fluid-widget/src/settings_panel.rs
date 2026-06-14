@@ -681,6 +681,7 @@ pub fn view<'a>(
         for d in &remote.devices {
             let connected = remote.conn.get(&d.id).copied().unwrap_or(false);
             let id_popout = d.id.clone();
+            let id_config = d.id.clone();
             let id_remove = d.id.clone();
             let row_el = container(row![
                 dot(connected),
@@ -691,6 +692,13 @@ pub fn view<'a>(
                 Space::with_width(Length::Fill),
                 text(d.host.clone()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
                 Space::with_width(8),
+                tooltip(
+                    button(text("\u{2699}").size(13).font(crate::style::ICONS).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+                        .padding(iced::Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
+                        .style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 6.0.into(), width: 1.0, color: p.muted }, ..Default::default() })
+                        .on_press(Message::OpenPopoutConfig(id_config)),
+                    tip_box("Configure this device's popout appearance (colours, tiles, labels).", p), TipPos::Bottom,
+                ),
                 ibtn("Popout".into(), Message::OpenPopout(id_popout)),
                 button(text("\u{2715}").size(11).font(iced::Font::with_name("Segoe UI Symbol"))
                     .style(move |_| iced::widget::text::Style { color: Some(iced::Color::from_rgb8(0xCD, 0x5C, 0x5C)) }))

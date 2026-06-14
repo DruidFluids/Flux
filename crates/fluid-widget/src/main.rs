@@ -311,7 +311,7 @@ fn cursor_logical_pos() -> Option<(f32, f32)> {
 fn cursor_logical_pos() -> Option<(f32, f32)> { None }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, WindowPicker, ThemeStore }
+enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, WindowPicker, ThemeStore, PopoutConfig }
 
 // Snapshot of all appearance state for the C# "Undo last change" stack
 // (colors + skin + fonts). Up to 5 steps back.
@@ -384,6 +384,7 @@ struct App {
     update_available: Option<updates::PendingUpdate>,
     appearance_status: String,
     theme_store_franchise: Option<usize>,
+    config_device: Option<String>,
     add_device_open: bool,
     new_device_name: String,
     new_device_ip: String,
@@ -453,6 +454,9 @@ enum Message {
     SetNewDeviceName(String), SetNewDeviceIp(String), SetNewDeviceKey(String),
     TestDevice, SaveDevice, RemoveDevice(String),
     OpenPopout(String),
+    OpenPopoutConfig(String),
+    PopoutSyncColors(String, bool), PopoutColor(String, u8, String), PopoutOpacity(String, f32),
+    PopoutTile(String, String, bool), PopoutLabel(String, u8, String),
     SetGameModeEnabled(bool),
     SetGameModePosition(SnapPosition), SetGameModeOpacity(f32),
     SetGameModeOrientation(String), SetGameModeClickThrough(bool),
@@ -508,6 +512,7 @@ impl App {
             update_checking: false, update_status: String::new(), update_status_kind: 0, update_available: None,
             appearance_status: String::new(),
             theme_store_franchise: None,
+            config_device: None,
             add_device_open: false,
             new_device_name: String::new(), new_device_ip: String::new(), new_device_key: String::new(),
             device_test_status: String::new(), device_test_ok: false,
@@ -710,6 +715,9 @@ impl App {
             }
         }
     }
+    fn device_mut(&mut self, id: &str) -> Option<&mut fluid_core::settings::RemoteDevice> {
+        self.settings.remote_devices.iter_mut().find(|d| d.id == id)
+    }
     fn build_device_from_form(&self) -> Option<fluid_core::settings::RemoteDevice> {
         let name = self.new_device_name.trim();
         let ip = self.new_device_ip.trim();
@@ -719,14 +727,17 @@ impl App {
         Some(fluid_core::settings::RemoteDevice {
             id: new_device_id(), name: name.to_string(), host: ip.to_string(),
             port: self.settings.remote_port, key: key.to_string(),
+            popout: fluid_core::settings::PopoutSettings::default(),
         })
     }
-    fn popout_size(&self) -> Size {
+    fn popout_size(&self, po: &fluid_core::settings::PopoutSettings) -> Size {
         let tw = self.settings.tile_width;
         let th = self.settings.tile_height;
         let sp = style::skin_style(&self.settings.active_skin).tile_spacing;
-        let n = 5.0; // CPU/GPU/RAM/Network/Disk, stacked vertically
-        Size::new(tw + 24.0, 12.0 + 16.0 + 4.0 + n * th + (n - 1.0) * sp + 12.0)
+        let n = [po.show_cpu, po.show_gpu, po.show_ram, po.show_network, po.show_storage]
+            .iter().filter(|x| **x).count().max(1) as f32;
+        // 6px popout padding each side → window = tile width + 12.
+        Size::new(tw + 12.0, 12.0 + 16.0 + 4.0 + n * th + (n - 1.0) * sp + 12.0)
     }
 
     fn eval_warnings(&mut self) {
@@ -1273,7 +1284,7 @@ impl App {
                 match dev {
                     Some(dev) => {
                         self.pending_popout.push_back(dev.id.clone());
-                        let size = self.popout_size();
+                        let size = self.popout_size(&dev.popout);
                         let (_, t) = window::open(window::Settings {
                             size, position: window::Position::Default, decorations: false, transparent: true,
                             resizable: false, level: window::Level::AlwaysOnTop, ..Default::default()
@@ -1282,6 +1293,55 @@ impl App {
                     }
                     None => Task::none(),
                 }
+            }
+            Message::OpenPopoutConfig(id) => {
+                self.config_device = Some(id);
+                self.open_popup(WindowKind::PopoutConfig, popups::POPOUT_CONFIG_SIZE)
+            }
+            Message::PopoutSyncColors(id, on) => {
+                let main = (self.settings.theme_bg.clone(), self.settings.theme_tile.clone(),
+                    self.settings.theme_accent.clone(), self.settings.theme_text.clone(), self.settings.theme_muted.clone());
+                if let Some(d) = self.device_mut(&id) {
+                    d.popout.sync_colors = on;
+                    // Seed device colours from the current theme when first unsynced.
+                    if !on && d.popout.bg.is_empty() {
+                        d.popout.bg = main.0; d.popout.tile = main.1; d.popout.accent = main.2;
+                        d.popout.text = main.3; d.popout.muted = main.4;
+                    }
+                }
+                let _ = self.settings.save();
+                Task::none()
+            }
+            Message::PopoutColor(id, slot, hex) => {
+                if let Some(d) = self.device_mut(&id) {
+                    match slot { 0 => d.popout.bg = hex, 1 => d.popout.tile = hex, 2 => d.popout.accent = hex,
+                        3 => d.popout.text = hex, _ => d.popout.muted = hex }
+                }
+                let _ = self.settings.save();
+                Task::none()
+            }
+            Message::PopoutOpacity(id, v) => {
+                if let Some(d) = self.device_mut(&id) { d.popout.opacity = v; }
+                let _ = self.settings.save();
+                Task::none()
+            }
+            Message::PopoutTile(id, tile, on) => {
+                if let Some(d) = self.device_mut(&id) {
+                    match tile.as_str() {
+                        "CPU" => d.popout.show_cpu = on, "GPU" => d.popout.show_gpu = on,
+                        "RAM" => d.popout.show_ram = on, "Network" => d.popout.show_network = on,
+                        "Storage" => d.popout.show_storage = on, _ => {}
+                    }
+                }
+                let _ = self.settings.save();
+                Task::none()
+            }
+            Message::PopoutLabel(id, which, v) => {
+                if let Some(d) = self.device_mut(&id) {
+                    if which == 0 { d.popout.cpu_label = v; } else { d.popout.gpu_label = v; }
+                }
+                let _ = self.settings.save();
+                Task::none()
             }
             Message::SkinPrev => {
                 self.push_appearance_undo();
@@ -1547,13 +1607,18 @@ impl App {
             WindowKind::Utilities => popups::utilities_view(&self.blocklist_editor, &self.blocklist_status, p, id),
             WindowKind::WindowPicker => popups::window_picker_view(enum_window_titles(), p, id),
             WindowKind::ThemeStore => popups::theme_store_view(self.theme_store_franchise, p, id),
+            WindowKind::PopoutConfig => {
+                let dev = self.config_device.as_ref()
+                    .and_then(|cid| self.settings.remote_devices.iter().find(|d| &d.id == cid));
+                popups::popout_config_view(dev, p, id)
+            }
             WindowKind::WidgetMenu => popups::widget_menu_view(p),
             WindowKind::Popout => self.popout_view(id, p),
             WindowKind::Widget => self.widget_view(id, p),
         }
     }
 
-    fn popout_view(&self, id: window::Id, p: Palette) -> Element<'_, Message> {
+    fn popout_view(&self, id: window::Id, _p: Palette) -> Element<'_, Message> {
         let dev_id = self.popout_device.get(&id).cloned().unwrap_or_default();
         let dev = self.settings.remote_devices.iter().find(|d| d.id == dev_id);
         let name = dev.map(|d| d.name.clone()).unwrap_or_else(|| "Remote".into());
@@ -1561,15 +1626,26 @@ impl App {
         let snap = self.remote_snapshots.get(&dev_id).cloned().unwrap_or_default();
         let no_warn = tile::WarnView { flash: false, accent_override: None };
 
-        let tiles: Vec<Element<'_, Message>> = vec![
-            tile::cpu_tile(&snap.cpu, &self.settings, p, no_warn),
-            tile::gpu_tile(&snap.gpu, &self.settings, p, no_warn),
-            tile::ram_tile(&snap.ram, &self.settings, p, no_warn),
-            tile::network_tile(&snap.network, &self.settings, p, no_warn, 1.0),
-            tile::disk_tile(&snap.disk, &self.settings, p, no_warn),
-        ];
-        let skin = style::skin_style(&self.settings.active_skin);
-        let body = column(tiles).spacing(skin.tile_spacing);
+        // Build a per-device settings view: its colours (unless synced), opacity,
+        // labels, and tile subset. Tile fns don't borrow `s` into their output.
+        let po = dev.map(|d| d.popout.clone()).unwrap_or_default();
+        let mut s = self.settings.clone();
+        if !po.sync_colors {
+            s.theme_bg = po.bg.clone(); s.theme_tile = po.tile.clone(); s.theme_accent = po.accent.clone();
+            s.theme_text = po.text.clone(); s.theme_muted = po.muted.clone();
+        }
+        s.cpu_custom_name = po.cpu_label.clone();
+        s.gpu_custom_name = po.gpu_label.clone();
+        let p = Palette::from_settings(&s, po.opacity);
+
+        let mut tiles: Vec<Element<'_, Message>> = Vec::new();
+        if po.show_cpu { tiles.push(tile::cpu_tile(&snap.cpu, &s, p, no_warn)); }
+        if po.show_gpu { tiles.push(tile::gpu_tile(&snap.gpu, &s, p, no_warn)); }
+        if po.show_ram { tiles.push(tile::ram_tile(&snap.ram, &s, p, no_warn)); }
+        if po.show_network { tiles.push(tile::network_tile(&snap.network, &s, p, no_warn, 1.0)); }
+        if po.show_storage { tiles.push(tile::disk_tile(&snap.disk, &s, p, no_warn)); }
+        let skin = style::skin_style(&s.active_skin);
+        let body = column(tiles).spacing(skin.tile_spacing).align_x(iced::Alignment::Center);
 
         let label = if connected { name } else { format!("{name}  \u{2022} offline") };
         let header = row![

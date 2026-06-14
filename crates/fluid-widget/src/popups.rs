@@ -1,8 +1,8 @@
 //! Secondary windows: Tools, Alerts, Game Mode, Help, Utilities, the Window
 //! Picker, and the widget right-click context menu.
 
-use fluid_core::settings::{AppSettings, SnapPosition, WarnMetric};
-use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, text, text_editor, text_input, toggler, Space};
+use fluid_core::settings::{AppSettings, RemoteDevice, SnapPosition, WarnMetric};
+use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, slider, text, text_editor, text_input, toggler, Space};
 use iced::{window, Border, Color, Element, Length};
 use crate::style::Palette;
 use crate::Message;
@@ -537,6 +537,106 @@ pub fn window_picker_view<'a>(titles: Vec<String>, p: Palette, win_id: window::I
     }
     let body = scrollable(container(col).padding(iced::Padding { top: 4.0, right: 6.0, bottom: 8.0, left: 0.0 })).height(Length::Fill);
     shell("PICK WINDOW", win_id, p, body.into())
+}
+
+// ── Per-device Popout settings editor ────────────────────────────────────────
+
+pub const POPOUT_CONFIG_SIZE: iced::Size = iced::Size::new(360.0, 540.0);
+
+pub fn popout_config_view<'a>(dev: Option<&'a RemoteDevice>, p: Palette, win_id: window::Id) -> Element<'a, Message> {
+    let dev = match dev {
+        Some(d) => d,
+        None => return shell("POPOUT", win_id, p,
+            text("Device not found.".to_string()).size(11)
+                .style(move |_| iced::widget::text::Style { color: Some(p.muted) }).into()),
+    };
+    let id = dev.id.clone();
+    let po = &dev.popout;
+
+    let section = |t: &str| -> Element<'a, Message> {
+        text(t.to_string()).size(13)
+            .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+            .style(move |_| iced::widget::text::Style { color: Some(p.accent) }).into()
+    };
+
+    let mut col = column![
+        text(format!("Popout appearance for \u{201C}{}\u{201D}", dev.name)).size(11)
+            .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+        Space::with_height(4),
+        section("Colours"),
+    ].spacing(8);
+
+    // Sync toggle
+    let sid = id.clone();
+    col = col.push(row![
+        toggler(po.sync_colors).size(14).on_toggle(move |b| Message::PopoutSyncColors(sid.clone(), b)).style(crate::style::toggler_style(p)),
+        text("Use the widget's theme colours").size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+    ].spacing(6).align_y(iced::Alignment::Center));
+
+    // Per-colour rows (only when not synced)
+    if !po.sync_colors {
+        let color_row = |slot: u8, name: &str, hex: &str| -> Element<'a, Message> {
+            let c = crate::style::parse_hex(hex, p.muted);
+            let cid = id.clone();
+            row![
+                text(name.to_string()).size(11).width(Length::Fixed(80.0))
+                    .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+                container(Space::new(16, 16)).style(move |_| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(c)),
+                    border: Border { radius: 3.0.into(), width: 1.0, color: Color { a: 0.3, ..p.muted } }, ..Default::default()
+                }),
+                Space::with_width(6),
+                text_input("#AARRGGBB", hex).size(11).width(Length::Fixed(150.0))
+                    .on_input(move |s| Message::PopoutColor(cid.clone(), slot, s))
+                    .style(crate::style::dark_input_style(p)),
+            ].spacing(4).align_y(iced::Alignment::Center).into()
+        };
+        col = col.push(color_row(0, "Background", &po.bg));
+        col = col.push(color_row(1, "Tile", &po.tile));
+        col = col.push(color_row(2, "Accent", &po.accent));
+        col = col.push(color_row(3, "Text", &po.text));
+        col = col.push(color_row(4, "Muted", &po.muted));
+    }
+
+    // Opacity
+    let oid = id.clone();
+    col = col.push(section("Opacity"));
+    col = col.push(row![
+        slider(0.3..=1.0, po.opacity, move |v| Message::PopoutOpacity(oid.clone(), v)).step(0.05).width(Length::Fill),
+        Space::with_width(8),
+        text(format!("{:.0}%", po.opacity * 100.0)).size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+    ].spacing(4).align_y(iced::Alignment::Center));
+
+    // Tiles
+    col = col.push(section("Tiles"));
+    let tile_toggle = |name: &'static str, on: bool| -> Element<'a, Message> {
+        let tid = id.clone();
+        row![
+            toggler(on).size(14).on_toggle(move |b| Message::PopoutTile(tid.clone(), name.to_string(), b)).style(crate::style::toggler_style(p)),
+            text(name.to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+        ].spacing(6).align_y(iced::Alignment::Center).width(Length::FillPortion(1)).into()
+    };
+    col = col.push(row![tile_toggle("CPU", po.show_cpu), tile_toggle("GPU", po.show_gpu), tile_toggle("RAM", po.show_ram)].spacing(4));
+    col = col.push(row![tile_toggle("Network", po.show_network), tile_toggle("Storage", po.show_storage), Space::with_width(Length::FillPortion(1))].spacing(4));
+
+    // Labels
+    col = col.push(section("Tile labels"));
+    let cl = id.clone();
+    col = col.push(row![
+        text("CPU".to_string()).size(11).width(Length::Fixed(40.0)).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+        text_input("Auto", &po.cpu_label).size(11).on_input(move |s| Message::PopoutLabel(cl.clone(), 0, s)).style(crate::style::dark_input_style(p)),
+    ].spacing(6).align_y(iced::Alignment::Center));
+    let gl = id.clone();
+    col = col.push(row![
+        text("GPU".to_string()).size(11).width(Length::Fixed(40.0)).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+        text_input("Auto", &po.gpu_label).size(11).on_input(move |s| Message::PopoutLabel(gl.clone(), 1, s)).style(crate::style::dark_input_style(p)),
+    ].spacing(6).align_y(iced::Alignment::Center));
+
+    let body = scrollable(
+        container(col.width(Length::Fill)).width(Length::Fill)
+            .padding(iced::Padding { top: 4.0, right: 8.0, bottom: 8.0, left: 0.0 })
+    ).width(Length::Fill).height(Length::Fill);
+    shell("POPOUT", win_id, p, body.into())
 }
 
 // ── Theme Store (bundled game theme packs) ───────────────────────────────────
