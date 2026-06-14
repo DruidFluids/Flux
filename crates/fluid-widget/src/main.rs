@@ -390,8 +390,8 @@ impl App {
         let th = self.settings.tile_height * sc;
         let sp = style::skin_style(&self.settings.active_skin).tile_spacing;
         match self.effective_orientation() {
-            Orientation::Horizontal => Size::new(16.0 + n * tw + (n - 1.0) * sp, 8.0 + 18.0 + 4.0 + th + 8.0),
-            Orientation::Vertical => Size::new(tw + 16.0, 8.0 + 18.0 + 4.0 + n * th + (n - 1.0) * sp + 8.0),
+            Orientation::Horizontal => Size::new(16.0 + n * tw + (n - 1.0) * sp, 8.0 + 20.0 + 4.0 + th + 8.0),
+            Orientation::Vertical => Size::new(tw + 16.0, 8.0 + 20.0 + 4.0 + n * th + (n - 1.0) * sp + 8.0),
         }
     }
     fn widget_window(&self) -> Option<window::Id> {
@@ -1039,12 +1039,12 @@ impl App {
             Orientation::Vertical => column(tiles).spacing(skin.tile_spacing).into(),
             Orientation::Horizontal => row(tiles).spacing(skin.tile_spacing).into(),
         };
-        let icon_btn = |label: &str, msg: Message| {
-            button(text(label.to_string()).size(11).font(iced::Font::with_name("Segoe UI Symbol"))
+        let icon_btn = |label: &str, sz: u16, msg: Message| {
+            button(text(label.to_string()).size(sz).font(iced::Font::with_name("Segoe UI Symbol"))
                 .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
             ).padding(0).style(|_, _| button::Style { background: None, ..Default::default() }).on_press(msg)
         };
-        let header = row![icon_btn("\u{2699}", Message::OpenSettings), Space::with_width(Length::Fill), icon_btn("\u{2715}", Message::HideWidget)].height(18);
+        let header = row![icon_btn("\u{2699}", 15, Message::OpenSettings), Space::with_width(Length::Fill), icon_btn("\u{2715}", 13, Message::HideWidget)].height(20);
         let widget_border = skin.border_color(&p);
         let root = container(column![header, Space::with_height(4), body])
             .width(Length::Fill).height(Length::Fill).padding(8)
