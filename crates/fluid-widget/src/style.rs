@@ -559,7 +559,8 @@ pub fn skin_names() -> Vec<String> {
 }
 
 /// Create the skins directory (and a commented example + README the first time)
-/// and return its path, so the folder button always opens something useful.
+/// and return its path. Used by the upcoming Download/skins dialog.
+#[allow(dead_code)]
 pub fn ensure_skins_dir() -> std::path::PathBuf {
     let dir = skins_dir();
     let _ = std::fs::create_dir_all(&dir);
@@ -570,6 +571,7 @@ pub fn ensure_skins_dir() -> std::path::PathBuf {
     dir
 }
 
+#[allow(dead_code)]
 const EXAMPLE_SKIN: &str = r#"// Fluxid skin file — copy this to "<YourName>.json" (drop the .txt),
 // edit the values, and restart Fluxid. Skins are pure data: only the
 // fields below are read, all are optional, and values are range-clamped.

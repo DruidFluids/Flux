@@ -78,6 +78,7 @@ pub fn view<'a>(
     update: UpdateView,
     cpu_driver_installed: bool,
     tiles_open: Option<String>,
+    preset_arming: Option<u8>,
 ) -> Element<'a, Message> {
     // ── Style helpers ──
     let sh = |label: &str, tip: &'static str| -> Element<'a, Message> {
@@ -491,13 +492,37 @@ pub fn view<'a>(
         text("Saved Themes").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         Space::with_width(8),
     ].spacing(0).align_y(iced::Alignment::Center);
-    for i in 1..=5u8 {
-        saved_row = saved_row.push(
-            button(text(i.to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }))
-                .padding([3, 8])
-                .style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), width: 1.0, color: p.muted }, ..Default::default() })
-                .on_press(Message::PresetSlotClick(i - 1))
-        );
+    for i in 0..5u8 {
+        let idx = i as usize;
+        let preset = settings.presets.get(idx).filter(|p| !p.accent.is_empty());
+        let armed = preset_arming == Some(i);
+        // Saved slots take the saved theme's accent as their fill (themed square);
+        // armed slots show a save icon; empty slots show a plain number.
+        let (label, fill, fg): (String, iced::Color, iced::Color) = if armed {
+            ("\u{1F4BE}".to_string(), p.accent, iced::Color::WHITE)
+        } else if let Some(pr) = preset {
+            let acc = crate::style::parse_hex(&pr.accent, p.accent);
+            let lum = acc.r * 0.299 + acc.g * 0.587 + acc.b * 0.114;
+            ((i + 1).to_string(), acc, if lum < 0.5 { iced::Color::WHITE } else { iced::Color::BLACK })
+        } else {
+            ((i + 1).to_string(), p.tile, p.text)
+        };
+        let tip = if armed { "Click again to save the current theme here".to_string() }
+            else if preset.is_some() { format!("Apply saved theme {} (right-click to overwrite)", i + 1) }
+            else { format!("Save the current theme to slot {}", i + 1) };
+        let slot = mouse_area(
+            container(text(label).size(11).font(crate::style::ICONS)
+                .style(move |_| iced::widget::text::Style { color: Some(fg) }))
+                .width(Length::Fixed(24.0)).height(Length::Fixed(22.0)).center_x(Length::Fill).center_y(Length::Fill)
+                .style(move |_| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(fill)),
+                    border: Border { radius: 3.0.into(), width: 1.0, color: if armed { p.accent } else { iced::Color { a: 0.5, ..p.muted } } },
+                    ..Default::default()
+                })
+        )
+        .on_press(Message::PresetSlotClick(i))
+        .on_right_press(Message::PresetSlotArm(i));
+        saved_row = saved_row.push(crate::style::with_tip(slot, &tip, p));
         saved_row = saved_row.push(Space::with_width(3));
     }
     saved_row = saved_row.push(Space::with_width(6));
@@ -518,96 +543,86 @@ pub fn view<'a>(
             tip_box("Export the current appearance as a share code to the clipboard.", p), TipPos::Bottom,
         )
     );
-    saved_row = saved_row.push(Space::with_width(3));
-    saved_row = saved_row.push(
-        tooltip(
-            button(text("\u{2193}").size(12).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-                .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() })
-                .on_press(Message::OpenThemeStore),
-            tip_box("Theme Store \u{2014} game-themed color palettes (WoW, Fallout, Witcher, and more).", p), TipPos::Bottom,
-        )
-    );
     if !appearance_status.is_empty() {
         saved_row = saved_row.push(Space::with_width(8));
         saved_row = saved_row.push(text(appearance_status.to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.accent) }));
     }
 
-    // Monochrome icon button (Segoe UI Symbol). Accent-filled when `active`.
-    let icon_btn = |glyph: &str, active: bool, msg: Message| -> Element<'a, Message> {
-        button(text(glyph.to_string()).size(14).font(crate::style::ICONS)
-            .style(move |_| iced::widget::text::Style { color: Some(if active { iced::Color::WHITE } else { p.muted }) }))
-            .padding([4, 8])
-            .style(move |_, _| button::Style {
-                background: Some(iced::Background::Color(if active { p.accent } else { p.tile })),
-                border: Border { radius: 4.0.into(), width: 1.0, color: iced::Color { a: 0.4, ..p.muted } },
-                ..Default::default()
-            })
-            .on_press(msg).into()
-    };
-    // Is the current palette dark? (decides which mode icon is highlighted)
     let is_dark = (p.bg.r * 0.299 + p.bg.g * 0.587 + p.bg.b * 0.114) < 0.5;
 
-    // Die: left-click randomizes skin + colors (+fonts if enabled); right = skin only.
-    let die = tooltip(
+    // Uniform fixed-size cluster button so both rows line up and sizes match.
+    let cbtn = |glyph: &str, active: bool, msg: Message, tip: &str| -> Element<'a, Message> {
+        crate::style::with_tip(
+            button(
+                container(text(glyph.to_string()).size(14).font(crate::style::ICONS)
+                    .style(move |_| iced::widget::text::Style { color: Some(if active { iced::Color::WHITE } else { p.muted }) }))
+                    .center_x(Length::Fill).center_y(Length::Fill)
+            )
+            .width(Length::Fixed(34.0)).height(Length::Fixed(28.0)).padding(0)
+            .style(move |_: &iced::Theme, status: button::Status| {
+                let hover = matches!(status, button::Status::Hovered);
+                button::Style {
+                    background: Some(iced::Background::Color(if active { p.accent } else { p.tile })),
+                    border: Border { radius: 4.0.into(), width: 1.0, color: if hover { p.accent } else { iced::Color { a: 0.4, ..p.muted } } },
+                    ..Default::default()
+                }
+            })
+            .on_press(msg),
+            tip, p)
+    };
+    // Randomize (dice): same size as cbtn; left = skin + colors, right = skin only.
+    let dice: Element<'a, Message> = crate::style::with_tip(
         mouse_area(
             container(text("\u{1F3B2}").size(15).font(crate::style::ICONS)
                 .style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-                .padding([4, 8])
+                .width(Length::Fixed(34.0)).height(Length::Fixed(28.0)).center_x(Length::Fill).center_y(Length::Fill)
                 .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), width: 1.0, color: iced::Color { a: 0.4, ..p.muted } }, ..Default::default() })
         )
-        .on_press(Message::RandomizeAppearance)
-        .on_right_press(Message::RandomizeSkinOnly),
-        tip_box("Randomize skin + colors. Left-click: rolls a random skin AND color palette. Right-click: rolls skin only. Fonts roll too if 'Randomize fonts' is on.", p),
-        TipPos::Bottom,
-    );
+        .on_press(Message::RandomizeAppearance).on_right_press(Message::RandomizeSkinOnly),
+        "Randomize \u{2014} left-click: skin + colors; right-click: skin only", p);
 
-    // ── Colors row: 🌙 ☀ ‹ name › + ──
-    let preset_cycler = row![
-        crate::style::with_tip(icon_btn("\u{1F319}", is_dark, Message::SetColorMode(true)), "Dark color mode", p),
-        crate::style::with_tip(icon_btn("\u{2600}", !is_dark, Message::SetColorMode(false)), "Light color mode", p),
-        Space::with_width(4),
-        crate::style::with_tip(pill("\u{2039}".into(), false, Message::ThemePrev), "Previous theme", p),
-        crate::style::with_tip(button(
+    // The name cycler field (fill) shared by both rows. `round_dot` = colors dot.
+    let name_field = |round_dot: bool, label: String, msg: Message| -> Element<'a, Message> {
+        let (dw, dh, dr): (u16, u16, f32) = if round_dot { (7, 7, 4.0) } else { (2, 14, 0.0) };
+        button(
             container(row![
-                container(Space::new(7, 7)).style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.accent)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() }),
-                Space::with_width(5),
-                text(theme_name).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                container(Space::new(dw, dh)).style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.accent)), border: Border { radius: dr.into(), ..Border::default() }, ..Default::default() }),
+                Space::with_width(6),
+                text(label).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
             ].align_y(iced::Alignment::Center)).center_x(Length::Fill)
         ).width(Length::Fill).padding([4, 6])
         .style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
-        .on_press(Message::ThemeNext), "Next theme", p),
-        crate::style::with_tip(pill("\u{203A}".into(), false, Message::ThemeNext), "Next theme", p),
-        tooltip(icon_btn("+", false, Message::SavePreset),
-            tip_box("Save the current colors + skin as a new preset slot.", p), TipPos::Bottom),
+        .on_press(msg).into()
+    };
+
+    // Top row (Skins): Download · Undo · Randomize | ‹ skin ›
+    let skins_row = row![
+        cbtn("\u{1F4E5}", false, Message::OpenThemeStore, "Download more themes & skins"),
+        cbtn("\u{21BA}", false, Message::UndoAppearance, "Undo the last appearance change (up to 5)"),
+        dice,
+        Space::with_width(4),
+        crate::style::with_tip(pill("\u{2039}".into(), false, Message::SkinPrev), "Previous skin", p),
+        name_field(false, settings.active_skin.clone(), Message::SkinNext),
+        crate::style::with_tip(pill("\u{203A}".into(), false, Message::SkinNext), "Next skin", p),
     ].align_y(iced::Alignment::Center).spacing(3);
 
-    // ── Skins box (Skins row + Colors row), matching the C# layout ──
+    // Bottom row (Colors): Dark · Light · (space) | ‹ theme ›
+    let colors_row = row![
+        cbtn("\u{1F319}", is_dark, Message::SetColorMode(true), "Dark color mode"),
+        cbtn("\u{2600}", !is_dark, Message::SetColorMode(false), "Light color mode"),
+        Space::with_width(34),
+        Space::with_width(4),
+        crate::style::with_tip(pill("\u{2039}".into(), false, Message::ThemePrev), "Previous theme", p),
+        name_field(true, theme_name, Message::ThemeNext),
+        crate::style::with_tip(pill("\u{203A}".into(), false, Message::ThemeNext), "Next theme", p),
+    ].align_y(iced::Alignment::Center).spacing(3);
+
     let skins_box = container(column![
         text("Skins").size(9).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
-        row![
-            tooltip(
-                icon_btn("\u{21BA}", false, Message::UndoAppearance),
-                tip_box("Undo last change \u{2014} reverts the last appearance change (dice, theme/skin pick, or font change). Up to 5 steps back.", p),
-                TipPos::Bottom,
-            ),
-            die,
-            Space::with_width(4),
-            crate::style::with_tip(pill("\u{2039}".into(), false, Message::SkinPrev), "Previous skin", p),
-            container(
-                row![
-                    container(Space::new(2, 14)).style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.accent)), ..Default::default() }),
-                    Space::with_width(6),
-                    text(settings.active_skin.clone()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-                ].align_y(iced::Alignment::Center)
-            ).width(Length::Fill).center_x(Length::Fill).padding([4, 8])
-            .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() }),
-            crate::style::with_tip(pill("\u{203A}".into(), false, Message::SkinNext), "Next skin", p),
-            tooltip(icon_btn("\u{1F4C1}", false, Message::OpenSkinsFolder),
-                tip_box("Open the skins folder. Drop a skin .json in and restart to use it.", p), TipPos::Bottom),
-        ].align_y(iced::Alignment::Center).spacing(3),
+        skins_row,
         Space::with_height(6),
         text("Colors").size(9).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
-        preset_cycler,
+        colors_row,
     ].spacing(3))
     .padding(8)
     .style(move |_| iced::widget::container::Style {

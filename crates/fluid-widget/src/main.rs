@@ -504,6 +504,8 @@ struct App {
     widget_device: Option<String>,
     // Which tile's section is expanded in the Tiles settings tab (accordion).
     tiles_section: Option<String>,
+    // Saved-Themes slot armed for save (click number -> save icon -> click to save).
+    preset_arming: Option<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -515,7 +517,7 @@ enum Message {
     WindowMoved(window::Id, Point),
     OpenSettings, HideWidget, SaveClose, ResetDefaults, Noop,
     OpenAlerts, OpenGameMode, OpenHelp, OpenUtilities, ClosePopup(window::Id),
-    OpenUrl(String), OpenSkinsFolder,
+    OpenUrl(String),
     OpenThemeStore, ApplyPackTheme(usize, usize),
     ThemeStoreOpenFranchise(usize), ThemeStoreBack,
     BlocklistAction(iced::widget::text_editor::Action), SaveBlocklist,
@@ -547,14 +549,13 @@ enum Message {
     SetSyncFonts(bool), SetRandomizeFonts(bool),
     SetFont(u8, String),
     SetUpdateMode(String),
-    SavePreset,
     ExportAppearance, ImportAppearance, ImportAppearanceCode(Option<String>),
     CheckForUpdates,
     UpdateCheckDone(updates::CheckResult),
     DownloadUpdate,
     UpdateDownloadDone(Result<(), String>),
     UpdateLater,
-    PresetSlotClick(u8),
+    PresetSlotClick(u8), PresetSlotArm(u8),
     EditColor(u8),
     SetSettingsTab(usize),
     ArmHotkey(hotkeys::HotkeyTarget),
@@ -646,6 +647,7 @@ impl App {
             cpu_dialog: CpuDriverStage::Primary,
             widget_device: None,
             tiles_section: None,
+            preset_arming: None,
         };
         let size = app.widget_size();
         let position = if app.settings.first_run_complete {
@@ -1004,6 +1006,20 @@ impl App {
             indicator_font: self.settings.indicator_font.clone(),
         }
     }
+    // Save the current colors + skin into preset slot `idx` (padding empty slots
+    // before it so unsaved slots stay blank and render as plain numbers).
+    fn save_appearance_to_slot(&mut self, idx: usize) {
+        let a = self.snapshot_appearance();
+        while self.settings.presets.len() <= idx {
+            self.settings.presets.push(fluid_core::settings::PresetSlot {
+                name: String::new(), bg: String::new(), tile: String::new(),
+                accent: String::new(), text: String::new(), muted: String::new(), skin: String::new(),
+            });
+        }
+        let p = &mut self.settings.presets[idx];
+        p.name = format!("Slot {}", idx + 1);
+        p.bg = a.bg; p.tile = a.tile; p.accent = a.accent; p.text = a.text; p.muted = a.muted; p.skin = a.skin;
+    }
     // Push the current appearance onto the undo stack (cap 5, like C#).
     fn push_appearance_undo(&mut self) {
         let snap = self.snapshot_appearance();
@@ -1283,11 +1299,6 @@ impl App {
                 Task::none()
             }
             Message::OpenUrl(url) => { open_url(&url); Task::none() }
-            Message::OpenSkinsFolder => {
-                let dir = style::ensure_skins_dir();
-                open_url(&dir.to_string_lossy());
-                Task::none()
-            }
             Message::OpenThemeStore => { self.theme_store_franchise = None; self.open_popup(WindowKind::ThemeStore, popups::THEME_STORE_SIZE) }
             Message::ThemeStoreOpenFranchise(i) => { self.theme_store_franchise = Some(i); Task::none() }
             Message::ThemeStoreBack => { self.theme_store_franchise = None; Task::none() }
@@ -1776,20 +1787,6 @@ impl App {
                 Err(e) => { self.update_status = format!("Download failed: {e}"); self.update_status_kind = 2; Task::none() }
             },
             Message::UpdateLater => { self.update_available = None; self.update_status = String::new(); Task::none() }
-            Message::SavePreset => {
-                if self.settings.presets.len() < 5 {
-                    let a = self.snapshot_appearance();
-                    self.settings.presets.push(fluid_core::settings::PresetSlot {
-                        name: format!("Slot {}", self.settings.presets.len() + 1),
-                        bg: a.bg, tile: a.tile, accent: a.accent, text: a.text, muted: a.muted, skin: a.skin,
-                    });
-                    let _ = self.settings.save();
-                    self.appearance_status = "Saved".into();
-                } else {
-                    self.appearance_status = "All 5 slots full".into();
-                }
-                Task::none()
-            }
             Message::ExportAppearance => {
                 self.appearance_status = "Copied to clipboard".into();
                 iced::clipboard::write(self.appearance_share_code())
@@ -1804,7 +1801,17 @@ impl App {
             }
             Message::PresetSlotClick(slot) => {
                 let idx = slot as usize;
-                if idx < self.settings.presets.len() {
+                let saved = self.settings.presets.get(idx).is_some_and(|p| !p.accent.is_empty());
+                if self.preset_arming == Some(slot) {
+                    // Second click on an armed slot → save the current theme there.
+                    self.save_appearance_to_slot(idx);
+                    self.preset_arming = None;
+                    self.appearance_status = "Saved".into();
+                    let _ = self.settings.save();
+                    Task::none()
+                } else if saved {
+                    // Click a saved slot → apply it.
+                    self.preset_arming = None;
                     self.push_appearance_undo();
                     let p = self.settings.presets[idx].clone();
                     self.settings.theme_bg = p.bg;
@@ -1813,27 +1820,17 @@ impl App {
                     self.settings.theme_text = p.text;
                     self.settings.theme_muted = p.muted;
                     self.settings.active_skin = p.skin;
+                    let _ = self.settings.save();
+                    self.resize_widget()
                 } else {
-                    while self.settings.presets.len() <= idx {
-                        self.settings.presets.push(fluid_core::settings::PresetSlot {
-                            name: format!("Slot {}", self.settings.presets.len() + 1),
-                            bg: self.settings.theme_bg.clone(),
-                            tile: self.settings.theme_tile.clone(),
-                            accent: self.settings.theme_accent.clone(),
-                            text: self.settings.theme_text.clone(),
-                            muted: self.settings.theme_muted.clone(),
-                            skin: self.settings.active_skin.clone(),
-                        });
-                    }
-                    let p = &mut self.settings.presets[idx];
-                    p.bg = self.settings.theme_bg.clone();
-                    p.tile = self.settings.theme_tile.clone();
-                    p.accent = self.settings.theme_accent.clone();
-                    p.text = self.settings.theme_text.clone();
-                    p.muted = self.settings.theme_muted.clone();
-                    p.skin = self.settings.active_skin.clone();
+                    // First click on an empty slot → arm it (shows the save icon).
+                    self.preset_arming = Some(slot);
+                    Task::none()
                 }
-                let _ = self.settings.save();
+            }
+            // Right-click a slot → arm it (so a saved slot can be overwritten).
+            Message::PresetSlotArm(slot) => {
+                self.preset_arming = Some(slot);
                 Task::none()
             }
             Message::DiskLabelCycle => {
@@ -1905,7 +1902,7 @@ impl App {
                     status_kind: self.update_status_kind,
                     available: self.update_available.as_ref().map(|u| (u.version.clone(), u.changelog.clone())),
                 };
-                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), remote, update, self.cpu_driver_installed, self.tiles_section.clone())
+                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), remote, update, self.cpu_driver_installed, self.tiles_section.clone(), self.preset_arming)
             }
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id, self.capturing_hotkey == Some(hotkeys::HotkeyTarget::GameMode)),
