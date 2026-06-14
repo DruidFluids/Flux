@@ -71,6 +71,7 @@ pub fn view<'a>(
     fonts: Vec<String>,
     cpu_name: String, gpu_name: String,
     editing_color: Option<u8>,
+    tab: usize,
     capturing_click_through: bool,
     appearance_status: String,
     remote: RemoteView,
@@ -343,21 +344,17 @@ pub fn view<'a>(
         ],
     ].spacing(2);
 
-    let left_col = column![
+    // ── Tabbed layout: one category at a time, so the window stays small and
+    // never needs a scrollbar. ──
+    let tiles_tab: Element<'a, Message> = column![
         temp_row,
-        Space::with_height(4),
+        Space::with_height(6),
         sh("Tiles", "Choose which sensors appear on the widget."), tiles_grid,
-        Space::with_height(4),
+        Space::with_height(6),
         sh("Tile Labels", "Override the auto-detected hardware name shown on each tile."), tile_labels,
-        Space::with_height(4),
+        Space::with_height(6),
         sh("Layout", "Stack tiles vertically (tall) or horizontally (wide)."), layout_pills,
-        Space::with_height(4),
-        sh("Behavior", "Control how the widget behaves on your desktop."), behavior,
-        Space::with_height(4),
-        sh("Network", "Choose which adapter to monitor. Defaults to all adapters combined."), network,
-        Space::with_height(4),
-        sh("Disk", "Pick which physical disk the Disk tile should track. Defaults to the disk holding your system drive; its model shows under the tile header. Changes apply live \u{2014} no restart needed."), disk,
-    ].spacing(3).width(Length::Fixed(300.0));
+    ].spacing(4).into();
 
     // ════════════════════════════════════════════════════════════
     //  RIGHT COLUMN  (Appearance / Font / Remote / Updates)
@@ -829,21 +826,55 @@ pub fn view<'a>(
         ..Default::default()
     });
 
-    let right_col = column![
+    let appearance_tab: Element<'a, Message> = column![
         sh("Appearance", "Customize colors. Click any swatch in the strip to open the color picker."), appearance,
         Space::with_height(6),
         sh("Font", "Pick fonts for Primary numbers, Secondary labels, and Indicators (units). Toggle 'Sync' to lock all three together. Sizes nudge the chosen font up or down."), fonts,
+    ].spacing(4).into();
+
+    let behavior_tab: Element<'a, Message> = column![
+        sh("Behavior", "Control how the widget behaves on your desktop."), behavior,
+    ].spacing(4).into();
+
+    let sensors_tab: Element<'a, Message> = column![
+        sh("Network", "Choose which adapter to monitor. Defaults to all adapters combined."), network,
         Space::with_height(6),
-        remote,
-        Space::with_height(6),
-        sh("Updates", ""), updates,
-    ].spacing(3).width(Length::Fill);
+        sh("Disk", "Pick which physical disk the Disk tile should track. Defaults to the disk holding your system drive; its model shows under the tile header. Changes apply live \u{2014} no restart needed."), disk,
+    ].spacing(4).into();
+
+    let remote_tab: Element<'a, Message> = column![remote].spacing(4).into();
+    let updates_tab: Element<'a, Message> = column![sh("Updates", ""), updates].spacing(4).into();
 
     // ════════════════════════════════════════════
-    //  ASSEMBLY
+    //  ASSEMBLY  (tabbed)
     // ════════════════════════════════════════════
 
-    let columns = row![left_col, Space::with_width(20), right_col];
+    let tab_labels = ["Tiles", "Appearance", "Behavior", "Sensors", "Remote", "Updates"];
+    let mut tab_panes = vec![tiles_tab, appearance_tab, behavior_tab, sensors_tab, remote_tab, updates_tab];
+    let active = tab.min(tab_panes.len() - 1);
+
+    // Tab strip
+    let mut strip = row![].spacing(4);
+    for (i, lbl) in tab_labels.iter().enumerate() {
+        let on = i == active;
+        strip = strip.push(
+            button(text(lbl.to_string()).size(11))
+                .padding(iced::Padding { top: 5.0, right: 10.0, bottom: 5.0, left: 10.0 })
+                .style(move |_: &iced::Theme, status: button::Status| {
+                    let hover = matches!(status, button::Status::Hovered);
+                    button::Style {
+                        background: Some(iced::Background::Color(if on { p.accent } else { p.tile })),
+                        text_color: if on { iced::Color::WHITE } else if hover { p.accent } else { p.muted },
+                        border: Border { radius: 6.0.into(), width: 1.0, color: if on || hover { p.accent } else { iced::Color { a: 0.4, ..p.muted } } },
+                        ..Default::default()
+                    }
+                })
+                .on_press(Message::SetSettingsTab(i)),
+        );
+    }
+
+    let active_pane = container(tab_panes.remove(active)).width(Length::Fill);
+    let columns = column![strip, Space::with_height(10), active_pane].width(Length::Fill);
 
     // 32px caption: "Settings" left, ✕ right, whole bar draggable
     let close_btn = button(
@@ -911,7 +942,12 @@ pub fn view<'a>(
 
     // Caption sits flush in the top-left corner; the body below is inset.
     let body = container(column![
-        scrollable(container(columns).padding(iced::Padding { top: 4.0, right: 6.0, bottom: 8.0, left: 0.0 })).height(Length::Fill),
+        scrollable(container(columns).padding(iced::Padding { top: 4.0, right: 6.0, bottom: 8.0, left: 0.0 }))
+            .height(Length::Fill)
+            // Never show a visible scrollbar; the window is sized to fit the content.
+            .direction(iced::widget::scrollable::Direction::Vertical(
+                iced::widget::scrollable::Scrollbar::new().width(0.0).scroller_width(0.0).margin(0.0),
+            )),
         divider,
         bottom_bar,
     ]).width(Length::Fill).height(Length::Fill)

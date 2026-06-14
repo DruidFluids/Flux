@@ -25,7 +25,6 @@ use tray_icon::{
     TrayIcon, TrayIconBuilder,
 };
 
-const SETTINGS_SIZE: Size = Size::new(720.0, 900.0);
 // Unique title applied to the widget window so click-through targets only it
 // (the iced daemon otherwise gives every window the same title).
 const WIDGET_TITLE: &str = "fluidMonitor Widget";
@@ -313,6 +312,27 @@ fn cursor_logical_pos() -> Option<(f32, f32)> { None }
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, WindowPicker, ThemeStore, PopoutConfig }
 
+// Per-tab settings window height so each category fits snugly with no scrollbar
+// and no big empty gap. The hidden scrollbar is a safety net for slight
+// underestimates.
+fn settings_size_for_tab(tab: usize) -> Size {
+    let h = match tab {
+        0 => 470.0, // Tiles
+        1 => 700.0, // Appearance
+        2 => 610.0, // Behavior
+        3 => 470.0, // Sensors (Network + Disk)
+        4 => 600.0, // Remote
+        _ => 420.0, // Updates
+    };
+    Size::new(560.0, h)
+}
+
+// Keep secondary windows (settings, popups, menus) off the taskbar so only the
+// widget shows a single entry.
+fn no_taskbar() -> iced::window::settings::PlatformSpecific {
+    iced::window::settings::PlatformSpecific { skip_taskbar: true, ..Default::default() }
+}
+
 // Persisted-position key for a popup kind. Widget/Settings keep dedicated
 // fields; the right-click WidgetMenu always opens at the cursor.
 fn kind_key(kind: WindowKind) -> Option<&'static str> {
@@ -366,6 +386,7 @@ struct App {
     font_list: Vec<String>,
     appearance_undo: Vec<Appearance>,
     editing_color: Option<u8>,
+    settings_tab: usize,
     game_mode: bool,
     click_through_applied: bool,
     pending_snap: Option<(window::Id, Point, Instant)>,
@@ -459,6 +480,7 @@ enum Message {
     UpdateLater,
     PresetSlotClick(u8),
     EditColor(u8),
+    SetSettingsTab(usize),
     ArmHotkey(hotkeys::HotkeyTarget),
     HotkeyKeyPressed(iced::keyboard::Key, iced::keyboard::Modifiers),
     ClearHotkey(hotkeys::HotkeyTarget),
@@ -516,7 +538,7 @@ impl App {
         let app = Self {
             settings, snapshot: SensorSnapshot::default(), poller: None,
             windows: BTreeMap::new(), warn_state: HashMap::new(),
-            flash_on: false, anim_t: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, game_mode: false,
+            flash_on: false, anim_t: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, settings_tab: 0, game_mode: false,
             click_through_applied: false,
             pending_snap: None, ignore_next_move: false, snap_right: false, snap_bottom: false,
             _tray: tray, settings_id: sid, show_id: wid, game_id: gid, exit_id: eid,
@@ -610,8 +632,8 @@ impl App {
             _ => window::Position::Default,
         };
         let (_, t) = window::open(window::Settings {
-            size: SETTINGS_SIZE, position: pos, decorations: false, transparent: true, resizable: false,
-            level: window::Level::AlwaysOnTop, ..Default::default()
+            size: settings_size_for_tab(self.settings_tab), position: pos, decorations: false, transparent: true, resizable: false,
+            level: window::Level::AlwaysOnTop, platform_specific: no_taskbar(), ..Default::default()
         });
         t.map(|id| Message::WindowOpened(id, WindowKind::Settings))
     }
@@ -619,7 +641,7 @@ impl App {
         if self.windows.values().any(|k| *k == kind) { return Task::none(); }
         let (_, t) = window::open(window::Settings {
             size, position: self.popup_position(kind), decorations: false, transparent: true,
-            resizable: false, level: window::Level::AlwaysOnTop, ..Default::default()
+            resizable: false, level: window::Level::AlwaysOnTop, platform_specific: no_taskbar(), ..Default::default()
         });
         t.map(move |id| Message::WindowOpened(id, kind))
     }
@@ -1115,7 +1137,7 @@ impl App {
                 let (_, t) = window::open(window::Settings {
                     size: popups::WIDGET_MENU_SIZE, position: window::Position::Specific(pos),
                     decorations: false, transparent: true, resizable: false,
-                    level: window::Level::AlwaysOnTop, ..Default::default()
+                    level: window::Level::AlwaysOnTop, platform_specific: no_taskbar(), ..Default::default()
                 });
                 t.map(|id| Message::WindowOpened(id, WindowKind::WidgetMenu))
             }
@@ -1227,6 +1249,10 @@ impl App {
             Message::SetArrowFontOffset(v) => { self.settings.arrow_font_offset = v as i32; Task::none() }
             Message::SetDiskLabelSpacing(v) => { self.settings.disk_label_spacing = v; Task::none() }
             Message::SetDiskLabelFontOffset(v) => { self.settings.disk_label_font_offset = v as i32; Task::none() }
+            Message::SetSettingsTab(i) => {
+                self.settings_tab = i;
+                self.settings_window().map(|id| window::resize(id, settings_size_for_tab(i))).unwrap_or(Task::none())
+            }
             Message::ArmHotkey(target) => {
                 // Toggle capture: clicking the armed field again disarms it.
                 self.capturing_hotkey = if self.capturing_hotkey == Some(target) { None } else { Some(target) };
@@ -1321,7 +1347,7 @@ impl App {
                         let size = self.popout_size(&dev.popout);
                         let (_, t) = window::open(window::Settings {
                             size, position: self.popup_position(WindowKind::Popout), decorations: false, transparent: true,
-                            resizable: false, level: window::Level::AlwaysOnTop, ..Default::default()
+                            resizable: false, level: window::Level::AlwaysOnTop, platform_specific: no_taskbar(), ..Default::default()
                         });
                         t.map(|wid| Message::WindowOpened(wid, WindowKind::Popout))
                     }
@@ -1639,7 +1665,7 @@ impl App {
                     status_kind: self.update_status_kind,
                     available: self.update_available.as_ref().map(|u| (u.version.clone(), u.changelog.clone())),
                 };
-                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, capturing_ct, self.appearance_status.clone(), remote, update)
+                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), remote, update)
             }
             WindowKind::Tools => popups::tools_view(&self.settings, p, id),
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
