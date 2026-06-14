@@ -217,7 +217,7 @@ struct App {
     windows: BTreeMap<window::Id, WindowKind>,
     warn_state: HashMap<String, (bool, Option<Color>)>,
     flash_on: bool,
-    anim_phase: f32,
+    anim_t: f32,
     font_list: Vec<String>,
     appearance_undo: Vec<Appearance>,
     editing_color: Option<u8>,
@@ -295,7 +295,7 @@ impl App {
         let app = Self {
             settings, snapshot: SensorSnapshot::default(), poller: None,
             windows: BTreeMap::new(), warn_state: HashMap::new(),
-            flash_on: false, anim_phase: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, game_mode: false,
+            flash_on: false, anim_t: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, game_mode: false,
             click_through_applied: false,
             pending_snap: None, ignore_next_move: false, snap_right: false, snap_bottom: false,
             _tray: tray, settings_id: sid, show_id: wid, game_id: gid, exit_id: eid,
@@ -531,8 +531,9 @@ impl App {
             }
             Message::FlashTick => { self.flash_on = !self.flash_on; Task::none() }
             Message::AnimTick => {
-                // 0..1 phase advanced each tick; tiles derive pulse from it.
-                self.anim_phase = (self.anim_phase + 0.05) % 1.0;
+                // Continuous seconds accumulator (~60ms/tick); modes derive their
+                // own-speed waves from it.
+                self.anim_t = (self.anim_t + 0.06) % 3600.0;
                 Task::none()
             }
             Message::TrayPoll => {
@@ -973,15 +974,15 @@ impl App {
             .into()
     }
 
-    // Returns the current network-traffic indicator opacity multiplier (1.0 if
-    // the indicator is static/off). Driven by anim_phase via a sine wave.
+    // Opacity multiplier for the network arrows.
+    //   Blink = quick fade in/out (~0.7s), Fade = very slow fade (~3s),
+    //   Glow = static (handled with a glow halo in the tile), Off = 1.0.
     fn traffic_pulse(&self) -> f32 {
-        let phase = self.anim_phase * std::f32::consts::TAU;
-        let wave = (phase.sin() * 0.5 + 0.5).clamp(0.0, 1.0); // 0..1
+        let tau = std::f32::consts::TAU;
+        let wave = |period: f32| ((self.anim_t / period) * tau).sin() * 0.5 + 0.5;
         match self.settings.network_traffic_indicator.as_str() {
-            "Blink" => 0.35 + 0.65 * wave,
-            "Fade" => 0.25 + 0.75 * wave,
-            "Glow" => 0.5 + 0.5 * wave,
+            "Blink" => 0.30 + 0.70 * wave(0.7),
+            "Fade" => 0.15 + 0.85 * wave(3.0),
             _ => 1.0,
         }
     }
@@ -998,8 +999,8 @@ impl App {
                 _ => Message::TrayPoll,
             }),
         ];
-        // Only run the animation clock when an animated indicator is active.
-        if self.settings.network_traffic_indicator != "Off" {
+        // Only run the animation clock for the animated modes (Glow is static).
+        if matches!(self.settings.network_traffic_indicator.as_str(), "Blink" | "Fade") {
             subs.push(iced::time::every(Duration::from_millis(60)).map(|_| Message::AnimTick));
         }
         Subscription::batch(subs)

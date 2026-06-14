@@ -311,18 +311,36 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
     let arrow_size = sz(16, s.indicator_font_offset + s.arrow_font_offset, s);
     let spacing = s.network_arrow_spacing.max(0.0);
 
+    // Glow mode: static accent arrow with a soft halo (container shadow).
+    let glow = s.network_traffic_indicator == "Glow";
+    let arrow_el = |glyph: &str, active: bool, col: Color| -> Element<'a, Message> {
+        let t = text(glyph.to_string()).size(arrow_size)
+            .font(named_font(&s.indicator_font, Weight::Bold))
+            .style(move |_| iced::widget::text::Style { color: Some(col) });
+        if glow && active {
+            container(t)
+                .style(move |_| iced::widget::container::Style {
+                    shadow: iced::Shadow {
+                        color: Color { a: 0.95, ..accent },
+                        offset: iced::Vector::new(0.0, 0.0),
+                        blur_radius: 16.0,
+                    },
+                    ..Default::default()
+                })
+                .into()
+        } else {
+            t.into()
+        }
+    };
+
     let lines = column![
         row![
-            text("\u{2193}".to_string()).size(arrow_size)
-                .font(named_font(&s.indicator_font, Weight::Bold))
-                .style(move |_| iced::widget::text::Style { color: Some(down_color) }),
+            arrow_el("\u{2193}", down > 0, down_color),
             Space::with_width(spacing),
             line_value(dv, du, p, accent, s),
         ].align_y(iced::Alignment::Center),
         row![
-            text("\u{2191}".to_string()).size(arrow_size)
-                .font(named_font(&s.indicator_font, Weight::Bold))
-                .style(move |_| iced::widget::text::Style { color: Some(up_color) }),
+            arrow_el("\u{2191}", up > 0, up_color),
             Space::with_width(spacing),
             line_value(uv, uu, p, accent, s),
         ].align_y(iced::Alignment::Center),
