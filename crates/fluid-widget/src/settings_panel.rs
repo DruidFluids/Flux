@@ -226,7 +226,7 @@ pub fn view<'a>(
         row![
             text_input("", &settings.click_through_hotkey).size(11).width(150).style(crate::style::dark_input_style(p)),
             text("click to set").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
-            button(text("\u{2715}").size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+            button(text("\u{2715}").size(10).font(crate::style::ICONS).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
                 .padding([2, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
                 .on_press(Message::SetHotkey(String::new())),
         ].spacing(6).align_y(iced::Alignment::Center),

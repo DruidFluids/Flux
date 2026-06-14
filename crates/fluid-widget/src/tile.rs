@@ -264,8 +264,8 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
     // Fixed label column (28) + fixed wide value column (left-aligned), shared
     // with the Network tile so values line up across tiles, never wrap, and
     // never jump. The gap is the spacing slider.
-    let col_w = Length::Fixed(28.0);
-    let value_w = Length::Fixed(110.0 * s.ui_scale);
+    let col_w = Length::Fixed(24.0);
+    let value_w = Length::Fill;
     let dline = |lbl: &str, v: String, u: String| -> Element<'a, Message> {
         row![
             container(text(lbl.to_string()).size(label_size)
@@ -331,22 +331,25 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
     let accent_hex = format!("#{:02X}{:02X}{:02X}",
         (accent.r * 255.0).round() as u8, (accent.g * 255.0).round() as u8, (accent.b * 255.0).round() as u8);
     // Match the Disk tile's columns so values align across tiles.
-    let col_w = Length::Fixed(28.0);
-    let value_w = Length::Fixed(110.0 * s.ui_scale);
-    let glow_w = 28.0_f32;
+    let col_w = Length::Fixed(24.0);
+    let value_w = Length::Fill;
+    let glow_w = 24.0_f32;
 
     let nline = |down_dir: bool, active: bool, col: Color, v: String, u: String| -> Element<'a, Message> {
-        // Glow mode: SVG arrow with layered wide low-opacity strokes for a soft
-        // glow that follows the arrow shape (no box). Other modes: text glyph.
+        // Glow mode: a thin crisp arrow over a soft radial-gradient halo — a
+        // clean neon-style glow (gradients render reliably; no fat strokes/box).
         let arrow: Element<'a, Message> = if glow && active {
-            let d = if down_dir { "M12 6 V17 M7 12 L12 17 L17 12" } else { "M12 18 V7 M7 12 L12 7 L17 12" };
+            let d = if down_dir { "M16 7 V24 M9 16 L16 24 L23 16" } else { "M16 25 V8 M9 16 L16 8 L23 16" };
             let svg_str = format!(
-                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\">\
-                 <g fill=\"none\" stroke=\"{c}\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\
-                 <path d=\"{d}\" stroke-width=\"10\" opacity=\"0.22\"/>\
-                 <path d=\"{d}\" stroke-width=\"7\" opacity=\"0.36\"/>\
-                 <path d=\"{d}\" stroke-width=\"4.4\" opacity=\"0.55\"/>\
-                 <path d=\"{d}\" stroke-width=\"2.6\" opacity=\"1\"/></g></svg>",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\">\
+                 <defs><radialGradient id=\"h\" cx=\"50%\" cy=\"50%\" r=\"50%\">\
+                 <stop offset=\"0%\" stop-color=\"{c}\" stop-opacity=\"0.55\"/>\
+                 <stop offset=\"40%\" stop-color=\"{c}\" stop-opacity=\"0.20\"/>\
+                 <stop offset=\"100%\" stop-color=\"{c}\" stop-opacity=\"0\"/>\
+                 </radialGradient></defs>\
+                 <circle cx=\"16\" cy=\"16\" r=\"16\" fill=\"url(#h)\"/>\
+                 <path d=\"{d}\" fill=\"none\" stroke=\"{c}\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\
+                 </svg>",
                 c = accent_hex, d = d);
             iced::widget::svg(iced::widget::svg::Handle::from_memory(svg_str.into_bytes()))
                 .width(Length::Fixed(glow_w)).height(Length::Fixed(glow_w))
