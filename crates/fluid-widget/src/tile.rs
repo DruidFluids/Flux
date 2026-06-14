@@ -2,7 +2,7 @@
 
 use fluid_core::sensor_data::*;
 use fluid_core::settings::AppSettings;
-use iced::widget::{column, container, row, text, Space};
+use iced::widget::{button, column, container, row, text, Space};
 use iced::{Border, Color, Element, Length};
 use iced::font::Weight;
 use chrono::{Datelike, Timelike};
@@ -109,7 +109,7 @@ fn line_value<'a>(v: String, u: String, p: Palette, accent: Color, s: &AppSettin
     .into()
 }
 
-pub fn cpu_tile<'a>(cpu: &CpuData, s: &AppSettings, p: Palette, w: WarnView) -> Element<'a, Message> {
+pub fn cpu_tile<'a>(cpu: &CpuData, s: &AppSettings, p: Palette, w: WarnView, driver_installed: bool) -> Element<'a, Message> {
     let accent = w.accent_override.unwrap_or(p.accent);
     let name = if !s.cpu_custom_name.is_empty() {
         s.cpu_custom_name.clone()
@@ -128,13 +128,21 @@ pub fn cpu_tile<'a>(cpu: &CpuData, s: &AppSettings, p: Palette, w: WarnView) -> 
         .push(big(format!("{:.0}", cpu.usage_percent), p, s))
         .push(unit_inline("%".into(), accent, s));
 
-    let secondary: Element<'a, Message> = match cpu.clock_mhz {
-        Some(m) => row![
-            small(format!("{:.0}", m), p, s),
-            Space::with_width(3),
-            small_unit("MHz".into(), accent, s),
-        ].align_y(iced::Alignment::End).into(),
-        None => Space::with_height(0).into(),
+    // C# v1.25 "turn on temperature" affordance: when there's no real reading
+    // and the optional sensor driver isn't installed, the tile offers to enable
+    // it (with a small dismiss). Replaces the clock line while shown.
+    let show_hint = cpu.temperature_c.is_none() && !driver_installed && !s.cpu_temp_hint_dismissed;
+    let secondary: Element<'a, Message> = if show_hint {
+        cpu_temp_hint(p, s)
+    } else {
+        match cpu.clock_mhz {
+            Some(m) => row![
+                small(format!("{:.0}", m), p, s),
+                Space::with_width(3),
+                small_unit("MHz".into(), accent, s),
+            ].align_y(iced::Alignment::End).into(),
+            None => Space::with_height(0).into(),
+        }
     };
 
     tile_container(column![
@@ -145,6 +153,48 @@ pub fn cpu_tile<'a>(cpu: &CpuData, s: &AppSettings, p: Palette, w: WarnView) -> 
         Space::with_height(Length::Fill),
         container(secondary).width(Length::Fill).center_x(Length::Fill),
     ], p, w, s)
+}
+
+// The CPU-tile "turn on temperature" nudge: a clickable label that opens the
+// sensor-driver dialog, plus a small "×" to dismiss it. Sized like the
+// secondary line so it fits the tile's reserved bottom slot.
+fn cpu_temp_hint<'a>(p: Palette, s: &AppSettings) -> Element<'a, Message> {
+    let fs = sz(11, s.secondary_font_offset, s);
+    let enable = button(
+        text("Turn on temp").size(fs)
+            .font(named_font(&s.secondary_font, Weight::Normal))
+            .wrapping(iced::widget::text::Wrapping::None)
+            .style(move |_| iced::widget::text::Style { color: Some(p.accent) })
+    )
+    .padding(iced::Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 })
+    .style(move |_: &iced::Theme, status: button::Status| {
+        let hover = matches!(status, button::Status::Hovered);
+        button::Style {
+            background: if hover { Some(iced::Background::Color(Color { a: 0.18, ..p.accent })) } else { None },
+            border: Border { radius: 4.0.into(), ..Border::default() },
+            ..Default::default()
+        }
+    })
+    .on_press(Message::OpenCpuDriver);
+
+    let dismiss = button(
+        text("\u{2715}").size(fs)
+            .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
+    )
+    .padding(iced::Padding { top: 0.0, right: 3.0, bottom: 0.0, left: 3.0 })
+    .style(move |_: &iced::Theme, status: button::Status| {
+        let hover = matches!(status, button::Status::Hovered);
+        button::Style {
+            background: None,
+            text_color: if hover { p.accent } else { p.muted },
+            ..Default::default()
+        }
+    })
+    .on_press(Message::DismissCpuTempHint);
+
+    row![enable, Space::with_width(2), dismiss]
+        .align_y(iced::Alignment::Center)
+        .into()
 }
 
 pub fn gpu_tile<'a>(gpu: &GpuData, s: &AppSettings, p: Palette, w: WarnView) -> Element<'a, Message> {

@@ -92,6 +92,10 @@ pub struct AppSettings {
     pub temperature_unit: TempUnit,
     pub start_minimized: bool,
     pub first_run_complete: bool,
+    /// User dismissed the CPU-tile "turn on temperature" hint (the in-tile
+    /// nudge to install the optional sensor driver). Resets if they later open
+    /// the driver dialog from Settings.
+    pub cpu_temp_hint_dismissed: bool,
 }
 
 impl Default for AppSettings {
@@ -167,6 +171,7 @@ impl Default for AppSettings {
             temperature_unit: TempUnit::Celsius,
             start_minimized: false,
             first_run_complete: false,
+            cpu_temp_hint_dismissed: false,
         }
     }
 }

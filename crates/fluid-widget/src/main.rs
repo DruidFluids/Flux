@@ -517,7 +517,7 @@ enum Message {
     SetGameModeOrientation(String), SetGameModeClickThrough(bool),
     ToggleGameModeTile(String, bool),
     // ── Optional CPU sensor driver (PawnIO) ──
-    OpenCpuDriver,
+    OpenCpuDriver, DismissCpuTempHint,
     CpuDriverMoreInfo, CpuDriverBack,
     CpuDriverInstall, CpuDriverUninstall,
     CpuDriverInstallDone(cpu_driver::Outcome),
@@ -1112,6 +1112,11 @@ impl App {
                 self.cpu_driver_installed = cpu_driver::is_installed();
                 self.cpu_dialog = CpuDriverStage::Primary;
                 self.open_popup(WindowKind::CpuDriver, popups::CPU_DRIVER_SIZE)
+            }
+            Message::DismissCpuTempHint => {
+                self.settings.cpu_temp_hint_dismissed = true;
+                let _ = self.settings.save();
+                Task::none()
             }
             Message::CpuDriverMoreInfo => { self.cpu_dialog = CpuDriverStage::Info; Task::none() }
             Message::CpuDriverBack => { self.cpu_dialog = CpuDriverStage::Primary; Task::none() }
@@ -1792,7 +1797,7 @@ impl App {
         let p = Palette::from_settings(&s, po.opacity);
 
         let mut tiles: Vec<Element<'_, Message>> = Vec::new();
-        if po.show_cpu { tiles.push(tile::cpu_tile(&snap.cpu, &s, p, no_warn)); }
+        if po.show_cpu { tiles.push(tile::cpu_tile(&snap.cpu, &s, p, no_warn, true)); }
         if po.show_gpu { tiles.push(tile::gpu_tile(&snap.gpu, &s, p, no_warn)); }
         if po.show_ram { tiles.push(tile::ram_tile(&snap.ram, &s, p, no_warn)); }
         if po.show_network { tiles.push(tile::network_tile(&snap.network, &s, p, no_warn, 1.0)); }
@@ -1830,7 +1835,7 @@ impl App {
         for name in self.current_tiles() {
             let w = self.warn_view(&name);
             let el = match name.as_str() {
-                "CPU" => tile::cpu_tile(&self.snapshot.cpu, &self.settings, p, w),
+                "CPU" => tile::cpu_tile(&self.snapshot.cpu, &self.settings, p, w, self.cpu_driver_installed),
                 "GPU" => tile::gpu_tile(&self.snapshot.gpu, &self.settings, p, w),
                 "RAM" => tile::ram_tile(&self.snapshot.ram, &self.settings, p, w),
                 "Disk" => tile::disk_tile(&self.snapshot.disk, &self.settings, p, w),
