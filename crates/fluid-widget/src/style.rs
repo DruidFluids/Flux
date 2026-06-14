@@ -232,32 +232,20 @@ pub fn toggler_style(p: Palette) -> impl Fn(&iced::Theme, iced::widget::toggler:
 
 /// C# warning gradient: dist below threshold -> color.
 /// blue(15) -> purple(10) -> red-purple(4) -> bright red(0)
-pub fn gradient_color(dist: f64) -> Color {
-    let stops: [(f64, f32, f32, f32); 4] = [
-        (15.0, 0x00 as f32, 0x66 as f32, 0xCC as f32),
-        (10.0, 0x66 as f32, 0x33 as f32, 0xCC as f32),
-        (4.0,  0xCC as f32, 0x33 as f32, 0x66 as f32),
-        (0.0,  0xFF as f32, 0x22 as f32, 0x00 as f32),
-    ];
-    if dist >= stops[0].0 {
-        return Color::from_rgb(stops[0].1 / 255.0, stops[0].2 / 255.0, stops[0].3 / 255.0);
+/// Gradient unit colour: a fixed cool blue when the value is 15°C+ below the
+/// threshold, shifting through a violet midpoint to the user-chosen `hot` colour
+/// as the value reaches the threshold (`dist` = threshold − value).
+pub fn gradient_color(dist: f64, hot: Color) -> Color {
+    let cool = Color::from_rgb(0x00 as f32 / 255.0, 0x66 as f32 / 255.0, 0xCC as f32 / 255.0);
+    let mid = Color::from_rgb(0x66 as f32 / 255.0, 0x33 as f32 / 255.0, 0xCC as f32 / 255.0);
+    let t = ((15.0 - dist) / 15.0).clamp(0.0, 1.0) as f32;
+    // Two-leg blend: cool→mid for the first half, mid→hot for the second, so the
+    // ramp keeps a pleasing curve regardless of the chosen hot colour.
+    if t < 0.5 {
+        lerp(cool, mid, t * 2.0)
+    } else {
+        lerp(mid, hot, (t - 0.5) * 2.0)
     }
-    if dist <= stops[3].0 {
-        return Color::from_rgb(stops[3].1 / 255.0, stops[3].2 / 255.0, stops[3].3 / 255.0);
-    }
-    for i in 0..3 {
-        let (p1, r1, g1, b1) = stops[i];
-        let (p2, r2, g2, b2) = stops[i + 1];
-        if dist <= p1 && dist >= p2 {
-            let t = ((p1 - dist) / (p1 - p2)) as f32;
-            return Color::from_rgb(
-                (r1 + (r2 - r1) * t) / 255.0,
-                (g1 + (g2 - g1) * t) / 255.0,
-                (b1 + (b2 - b1) * t) / 255.0,
-            );
-        }
-    }
-    Color::from_rgb(1.0, 0.13, 0.0)
 }
 
 /// (name, bg, tile, accent, text, muted) — ported verbatim from ThemeApplier.cs

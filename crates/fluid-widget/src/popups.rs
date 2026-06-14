@@ -135,6 +135,27 @@ pub fn widget_menu_view<'a>(p: Palette) -> Element<'a, Message> {
     .into()
 }
 
+// A colour swatch preview + hex input, shared by the regular and popout alert
+// editors so users can pick flash and gradient colours.
+fn color_field<'a, F>(hex: &str, p: Palette, on_input: F) -> Element<'a, Message>
+where
+    F: Fn(String) -> Message + 'a,
+{
+    let c = crate::style::parse_hex(hex, p.muted);
+    row![
+        container(Space::new(16, 16)).style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(c)),
+            border: Border { radius: 3.0.into(), width: 1.0, color: Color { a: 0.4, ..p.muted } },
+            ..Default::default()
+        }),
+        Space::with_width(6),
+        text_input("#AARRGGBB", hex).size(10).width(112)
+            .font(iced::Font::with_name("Consolas"))
+            .on_input(on_input)
+            .style(crate::style::dark_input_style(p)),
+    ].align_y(iced::Alignment::Center).into()
+}
+
 // ── Tile Alerts (Warnings) ───────────────────────────────────────────────────
 
 pub const ALERTS_SIZE: iced::Size = iced::Size::new(460.0, 560.0);
@@ -147,6 +168,7 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
     let k3 = kind.to_string();
     let k4 = kind.to_string();
     let k5 = kind.to_string();
+    let k6 = kind.to_string();
     let display = format!("{} Tile", kind);
 
     let metrics = vec!["Temperature".to_string(), "Load".to_string()];
@@ -156,6 +178,15 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
     };
     let unit_label = if matches!(w.metric, WarnMetric::Load) { " %" } else { " \u{00B0}C" };
 
+    let grad_color_row: Element<'a, Message> = if w.gradient_mode {
+        row![
+            text("Gradient color".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+            Space::with_width(Length::Fill),
+            color_field(&w.gradient_color, p, move |s| Message::SetWarnGradientColor(k6.clone(), s)),
+        ].spacing(6).align_y(iced::Alignment::Center).into()
+    } else {
+        Space::with_height(0).into()
+    };
     let body = column![
         // Threshold
         row![
@@ -173,22 +204,20 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
                 Message::SetWarnMetric(k2.clone(), m)
             }).text_size(11).width(140).style(crate::style::pick_list_style(p)),
         ].spacing(6).align_y(iced::Alignment::Center),
-        // Flash
+        // Flash + flash colour swatch
         row![
             toggler(w.flash_enabled).size(14).on_toggle(move |on| Message::SetWarnFlash(k3.clone(), on)).style(crate::style::toggler_style(p)),
             text("Flash".to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
             Space::with_width(Length::Fill),
-            text_input("#FFFF3333", &w.flash_color).size(10).width(100)
-                .font(iced::Font::with_name("Consolas"))
-                .on_input(move |s| Message::SetWarnFlashColor(k4.clone(), s))
-                .style(crate::style::dark_input_style(p)),
+            color_field(&w.flash_color, p, move |s| Message::SetWarnFlashColor(k4.clone(), s)),
         ].spacing(6).align_y(iced::Alignment::Center),
-        // Gradient
+        // Gradient + (when on) the gradient hot-colour swatch
         row![
             toggler(w.gradient_mode).size(14).on_toggle(move |on| Message::SetWarnGradient(k5.clone(), on)).style(crate::style::toggler_style(p)),
-            text("Gradient mode \u{2014} unit color shifts blue \u{2192} red by temperature".to_string()).size(10)
+            text("Gradient mode \u{2014} unit color shifts blue \u{2192} your color".to_string()).size(10)
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
         ].spacing(6).align_y(iced::Alignment::Center),
+        grad_color_row,
     ].spacing(8);
 
     // Dim the config when disabled (mimics the C# DataTrigger opacity).
@@ -710,8 +739,17 @@ pub fn popout_config_view<'a>(dev: Option<&'a RemoteDevice>, p: Palette, win_id:
         let w = po.warn(kind).cloned().unwrap_or_default();
         let metric_label = if matches!(w.metric, WarnMetric::Load) { "Load" } else { "Temperature" };
         let unit = if matches!(w.metric, WarnMetric::Load) { " %" } else { " \u{00B0}C" };
-        let (ke, km, kt, kf) = (id.clone(), id.clone(), id.clone(), id.clone());
+        let (ke, km, kt, kf, kfc, kg, kgc) = (id.clone(), id.clone(), id.clone(), id.clone(), id.clone(), id.clone(), id.clone());
         let metrics = vec!["Temperature".to_string(), "Load".to_string()];
+        let gradient_row: Element<'a, Message> = if w.gradient_mode {
+            row![
+                text("Gradient color".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+                Space::with_width(Length::Fill),
+                color_field(&w.gradient_color, p, move |s| Message::PopoutWarnGradientColor(kgc.clone(), kind.to_string(), s)),
+            ].spacing(6).align_y(iced::Alignment::Center).into()
+        } else {
+            Space::with_height(0).into()
+        };
         column![
             row![
                 toggler(w.enabled).size(14).on_toggle(move |b| Message::PopoutWarnEnabled(ke.clone(), kind.to_string(), b)).style(crate::style::toggler_style(p)),
@@ -730,8 +768,15 @@ pub fn popout_config_view<'a>(dev: Option<&'a RemoteDevice>, p: Palette, win_id:
             ].spacing(6).align_y(iced::Alignment::Center),
             row![
                 toggler(w.flash_enabled).size(14).on_toggle(move |b| Message::PopoutWarnFlash(kf.clone(), kind.to_string(), b)).style(crate::style::toggler_style(p)),
-                text("Flash the tile when exceeded".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+                text("Flash".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+                Space::with_width(Length::Fill),
+                color_field(&w.flash_color, p, move |s| Message::PopoutWarnFlashColor(kfc.clone(), kind.to_string(), s)),
             ].spacing(6).align_y(iced::Alignment::Center),
+            row![
+                toggler(w.gradient_mode).size(14).on_toggle(move |b| Message::PopoutWarnGradient(kg.clone(), kind.to_string(), b)).style(crate::style::toggler_style(p)),
+                text("Gradient mode".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+            ].spacing(6).align_y(iced::Alignment::Center),
+            gradient_row,
         ].spacing(4).into()
     };
     col = col.push(warn_block("CPU"));

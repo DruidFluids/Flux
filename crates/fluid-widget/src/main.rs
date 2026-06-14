@@ -405,7 +405,8 @@ fn warn_view_for(warnings: &[fluid_core::settings::TileWarning], kind: &str, sna
     };
     let exceeded = current >= w.threshold;
     let accent_override = if w.gradient_mode && w.metric == WarnMetric::Temperature {
-        temp.and_then(|t| { let dist = w.threshold - t as f64; if dist <= 15.0 { Some(style::gradient_color(dist)) } else { None } })
+        let hot = style::parse_hex(&w.gradient_color, Color::from_rgb(1.0, 0.13, 0.0));
+        temp.and_then(|t| { let dist = w.threshold - t as f64; if dist <= 15.0 { Some(style::gradient_color(dist, hot)) } else { None } })
     } else { None };
     WarnView { flash: exceeded && w.flash_enabled && flash_on, accent_override }
 }
@@ -523,6 +524,7 @@ enum Message {
     SetWarnEnabled(String, bool),
     SetWarnFlash(String, bool), SetWarnGradient(String, bool),
     SetWarnMetric(String, WarnMetric), SetWarnThresholdStr(String, String), SetWarnFlashColor(String, String),
+    SetWarnGradientColor(String, String),
     SetHexColor(u8, String),
     SetTileWidth(f32), SetTileHeight(f32),
     SetPrimaryFontOffset(f32), SetSecondaryFontOffset(f32), SetIndicatorFontOffset(f32),
@@ -568,6 +570,7 @@ enum Message {
     PopoutTile(String, String, bool), PopoutLabel(String, u8, String),
     PopoutWarnEnabled(String, String, bool), PopoutWarnMetric(String, String, WarnMetric),
     PopoutWarnThreshold(String, String, String), PopoutWarnFlash(String, String, bool),
+    PopoutWarnFlashColor(String, String, String), PopoutWarnGradient(String, String, bool), PopoutWarnGradientColor(String, String, String),
     SetGameModeEnabled(bool),
     SetGameModePosition(SnapPosition), SetGameModeOpacity(f32),
     SetGameModeOrientation(String), SetGameModeClickThrough(bool),
@@ -896,7 +899,8 @@ impl App {
             };
             let exceeded = current >= w.threshold;
             let accent_override = if w.gradient_mode && w.metric == WarnMetric::Temperature {
-                temp.and_then(|t| { let dist = w.threshold - t as f64; if dist <= 15.0 { Some(style::gradient_color(dist)) } else { None } })
+                let hot = style::parse_hex(&w.gradient_color, Color::from_rgb(1.0, 0.13, 0.0));
+                temp.and_then(|t| { let dist = w.threshold - t as f64; if dist <= 15.0 { Some(style::gradient_color(dist, hot)) } else { None } })
             } else { None };
             self.warn_state.insert(w.kind.clone(), (exceeded && w.flash_enabled, accent_override));
         }
@@ -1400,7 +1404,8 @@ impl App {
             Message::SetWarnFlash(k, on) => { self.settings.warn_mut(&k).flash_enabled = on; self.eval_warnings(); Task::none() }
             Message::SetWarnGradient(k, on) => { self.settings.warn_mut(&k).gradient_mode = on; self.eval_warnings(); Task::none() }
             Message::SetWarnMetric(k, m) => { self.settings.warn_mut(&k).metric = m; self.eval_warnings(); Task::none() }
-            Message::SetWarnFlashColor(k, s) => { self.settings.warn_mut(&k).flash_color = s; Task::none() }
+            Message::SetWarnFlashColor(k, s) => { self.settings.warn_mut(&k).flash_color = s; let _ = self.settings.save(); Task::none() }
+            Message::SetWarnGradientColor(k, s) => { self.settings.warn_mut(&k).gradient_color = s; let _ = self.settings.save(); Task::none() }
             Message::EditColor(slot) => {
                 self.editing_color = if self.editing_color == Some(slot) { None } else { Some(slot) };
                 Task::none()
@@ -1616,6 +1621,21 @@ impl App {
             }
             Message::PopoutWarnFlash(id, kind, on) => {
                 if let Some(d) = self.device_mut(&id) { d.popout.warn_mut(&kind).flash_enabled = on; }
+                let _ = self.settings.save();
+                Task::none()
+            }
+            Message::PopoutWarnFlashColor(id, kind, s) => {
+                if let Some(d) = self.device_mut(&id) { d.popout.warn_mut(&kind).flash_color = s; }
+                let _ = self.settings.save();
+                Task::none()
+            }
+            Message::PopoutWarnGradient(id, kind, on) => {
+                if let Some(d) = self.device_mut(&id) { d.popout.warn_mut(&kind).gradient_mode = on; }
+                let _ = self.settings.save();
+                Task::none()
+            }
+            Message::PopoutWarnGradientColor(id, kind, s) => {
+                if let Some(d) = self.device_mut(&id) { d.popout.warn_mut(&kind).gradient_color = s; }
                 let _ = self.settings.save();
                 Task::none()
             }

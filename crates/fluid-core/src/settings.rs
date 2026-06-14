@@ -174,8 +174,8 @@ impl Default for AppSettings {
             game_mode_tiles: vec!["CPU".into(),"GPU".into(),"RAM".into()],
             // Matches C#: CPU + GPU temperature warnings @ 85 °C.
             warnings: vec![
-                TileWarning { kind: "CPU".into(), enabled: false, metric: WarnMetric::Temperature, threshold: 85.0, flash_enabled: true, flash_color: "#FFFF3333".into(), gradient_mode: false },
-                TileWarning { kind: "GPU".into(), enabled: false, metric: WarnMetric::Temperature, threshold: 85.0, flash_enabled: true, flash_color: "#FFFF3333".into(), gradient_mode: true },
+                TileWarning { kind: "CPU".into(), enabled: false, metric: WarnMetric::Temperature, threshold: 85.0, flash_enabled: true, flash_color: "#FFFF3333".into(), gradient_mode: false, gradient_color: default_gradient_color() },
+                TileWarning { kind: "GPU".into(), enabled: false, metric: WarnMetric::Temperature, threshold: 85.0, flash_enabled: true, flash_color: "#FFFF3333".into(), gradient_mode: true, gradient_color: default_gradient_color() },
             ],
             remote_enabled: false,
             remote_port: 5199,
@@ -237,9 +237,14 @@ pub enum WarnMetric { #[default] Temperature, Load, UsedGb, Throughput }
 pub struct TileWarning {
     pub kind: String, pub enabled: bool, pub metric: WarnMetric,
     pub threshold: f64, pub flash_enabled: bool, pub flash_color: String, pub gradient_mode: bool,
+    /// The "hot" end of the gradient (the colour the unit shifts toward as the
+    /// value approaches the threshold). The cool end is a fixed blue.
+    #[serde(default = "default_gradient_color")]
+    pub gradient_color: String,
 }
+fn default_gradient_color() -> String { "#FFFF2200".into() }
 impl Default for TileWarning {
-    fn default() -> Self { Self { kind: String::new(), enabled: false, metric: WarnMetric::Temperature, threshold: 85.0, flash_enabled: true, flash_color: "#FFFF3333".into(), gradient_mode: false } }
+    fn default() -> Self { Self { kind: String::new(), enabled: false, metric: WarnMetric::Temperature, threshold: 85.0, flash_enabled: true, flash_color: "#FFFF3333".into(), gradient_mode: false, gradient_color: default_gradient_color() } }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
