@@ -248,8 +248,9 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
     let label_size = sz(13, s.indicator_font_offset + s.disk_label_font_offset, s);
     let spacing = s.disk_label_spacing.max(0.0);
 
-    // Fixed right-aligned label column + centered value column, so R:/W: line up
-    // and the values share one centered column across both rows (C# layout).
+    // Fixed right-aligned label column + left-aligned values, so R:/W: line up
+    // AND every number shares the same left edge. The block shrinks to content
+    // and is centered as a group by the tile container.
     let dline = |lbl: &str, v: String, u: String| -> Element<'a, Message> {
         row![
             container(text(lbl.to_string()).size(label_size)
@@ -257,15 +258,15 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
                 .style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
                 .width(Length::Fixed(20.0)).align_x(iced::alignment::Horizontal::Right),
             Space::with_width(spacing),
-            container(line_value(v, u, p, accent, s)).width(Length::Fill).align_x(iced::alignment::Horizontal::Center),
-        ].width(Length::Fill).align_y(iced::Alignment::Center).into()
+            line_value(v, u, p, accent, s),
+        ].align_y(iced::Alignment::Center).into()
     };
     let lines = column![
         dline("R:", rv, ru),
         dline("W:", wv, wu),
     ]
     .spacing(4)
-    .width(Length::Fill);
+    .align_x(iced::Alignment::Start);
 
     tile_container(column![
         header("Disk".into(), p, s),
@@ -294,14 +295,17 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
     let (dv, du) = fmt::fmt_net(down as f64);
     let (uv, uu) = fmt::fmt_net(up as f64);
 
-    // P6: animated traffic indicator. "Off" = static muted arrows. Other modes
-    // colour active arrows with the accent and pulse their opacity.
+    // Traffic indicator. Off = static muted arrows. Blink/Fade pulse the accent
+    // opacity; Glow is a static brighter (lit) accent — no halo box.
     let indicator_on = s.network_traffic_indicator != "Off";
+    let glow = s.network_traffic_indicator == "Glow";
     let arrow_color = |active: bool| -> Color {
-        if indicator_on && active {
-            Color { a: accent.a * pulse.clamp(0.0, 1.0), ..accent }
-        } else {
+        if !indicator_on || !active {
             p.muted
+        } else if glow {
+            crate::style::lerp(accent, Color::WHITE, 0.5)
+        } else {
+            Color { a: accent.a * pulse.clamp(0.0, 1.0), ..accent }
         }
     };
     let down_color = arrow_color(down > 0);
@@ -311,42 +315,22 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
     let arrow_size = sz(16, s.indicator_font_offset + s.arrow_font_offset, s);
     let spacing = s.network_arrow_spacing.max(0.0);
 
-    // Glow mode: static accent arrow with a soft halo (container shadow).
-    let glow = s.network_traffic_indicator == "Glow";
-    let arrow_el = |glyph: &str, active: bool, col: Color| -> Element<'a, Message> {
-        let t = text(glyph.to_string()).size(arrow_size)
+    let nline = |glyph: &str, col: Color, v: String, u: String| -> Element<'a, Message> {
+        let arrow = text(glyph.to_string()).size(arrow_size)
             .font(named_font(&s.indicator_font, Weight::Bold))
             .style(move |_| iced::widget::text::Style { color: Some(col) });
-        if glow && active {
-            // Soft diffuse halo (no hard box): low opacity + wide blur.
-            container(t)
-                .style(move |_| iced::widget::container::Style {
-                    shadow: iced::Shadow {
-                        color: Color { a: 0.45, ..accent },
-                        offset: iced::Vector::new(0.0, 0.0),
-                        blur_radius: 24.0,
-                    },
-                    ..Default::default()
-                })
-                .into()
-        } else {
-            t.into()
-        }
-    };
-
-    let nline = |arrow: Element<'a, Message>, v: String, u: String| -> Element<'a, Message> {
         row![
             container(arrow).width(Length::Fixed(20.0)).align_x(iced::alignment::Horizontal::Right),
             Space::with_width(spacing),
-            container(line_value(v, u, p, accent, s)).width(Length::Fill).align_x(iced::alignment::Horizontal::Center),
-        ].width(Length::Fill).align_y(iced::Alignment::Center).into()
+            line_value(v, u, p, accent, s),
+        ].align_y(iced::Alignment::Center).into()
     };
     let lines = column![
-        nline(arrow_el("\u{2193}", down > 0, down_color), dv, du),
-        nline(arrow_el("\u{2191}", up > 0, up_color), uv, uu),
+        nline("\u{2193}", down_color, dv, du),
+        nline("\u{2191}", up_color, uv, uu),
     ]
     .spacing(4)
-    .align_x(iced::Alignment::Center);
+    .align_x(iced::Alignment::Start);
 
     tile_container(column![
         header("Network".into(), p, s),
