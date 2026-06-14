@@ -264,7 +264,7 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
     // Fixed label column (28) + fixed wide value column (left-aligned), shared
     // with the Network tile so values line up across tiles, never wrap, and
     // never jump. The gap is the spacing slider.
-    let col_w = Length::Fixed(24.0);
+    let col_w = Length::Fixed(30.0);
     let value_w = Length::Fill;
     let dline = |lbl: &str, v: String, u: String| -> Element<'a, Message> {
         row![
@@ -331,25 +331,31 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
     let accent_hex = format!("#{:02X}{:02X}{:02X}",
         (accent.r * 255.0).round() as u8, (accent.g * 255.0).round() as u8, (accent.b * 255.0).round() as u8);
     // Match the Disk tile's columns so values align across tiles.
-    let col_w = Length::Fixed(24.0);
+    let col_w = Length::Fixed(30.0);
     let value_w = Length::Fill;
-    let glow_w = 24.0_f32;
+    let glow_w = 32.0_f32;
 
     let nline = |down_dir: bool, active: bool, col: Color, v: String, u: String| -> Element<'a, Message> {
-        // Glow mode: a thin crisp arrow over a soft radial-gradient halo — a
-        // clean neon-style glow (gradients render reliably; no fat strokes/box).
+        // Glow mode: neon arrow — a radial bloom + a blurred accent stroke + a
+        // solid accent body + a white-hot core, for a real luminous tube look.
         let arrow: Element<'a, Message> = if glow && active {
             let d = if down_dir { "M16 7 V24 M9 16 L16 24 L23 16" } else { "M16 25 V8 M9 16 L16 8 L23 16" };
             let svg_str = format!(
                 "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\">\
-                 <defs><radialGradient id=\"h\" cx=\"50%\" cy=\"50%\" r=\"50%\">\
-                 <stop offset=\"0%\" stop-color=\"{c}\" stop-opacity=\"0.55\"/>\
-                 <stop offset=\"40%\" stop-color=\"{c}\" stop-opacity=\"0.20\"/>\
+                 <defs>\
+                 <radialGradient id=\"h\" cx=\"50%\" cy=\"50%\" r=\"50%\">\
+                 <stop offset=\"0%\" stop-color=\"{c}\" stop-opacity=\"0.65\"/>\
+                 <stop offset=\"55%\" stop-color=\"{c}\" stop-opacity=\"0.18\"/>\
                  <stop offset=\"100%\" stop-color=\"{c}\" stop-opacity=\"0\"/>\
-                 </radialGradient></defs>\
+                 </radialGradient>\
+                 <filter id=\"b\" x=\"-60%\" y=\"-60%\" width=\"220%\" height=\"220%\"><feGaussianBlur stdDeviation=\"1.6\"/></filter>\
+                 </defs>\
                  <circle cx=\"16\" cy=\"16\" r=\"16\" fill=\"url(#h)\"/>\
-                 <path d=\"{d}\" fill=\"none\" stroke=\"{c}\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\
-                 </svg>",
+                 <g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\
+                 <path d=\"{d}\" stroke=\"{c}\" stroke-width=\"3.4\" opacity=\"0.9\" filter=\"url(#b)\"/>\
+                 <path d=\"{d}\" stroke=\"{c}\" stroke-width=\"2.2\" opacity=\"1\"/>\
+                 <path d=\"{d}\" stroke=\"#EAF5FF\" stroke-width=\"1.1\" opacity=\"0.95\"/>\
+                 </g></svg>",
                 c = accent_hex, d = d);
             iced::widget::svg(iced::widget::svg::Handle::from_memory(svg_str.into_bytes()))
                 .width(Length::Fixed(glow_w)).height(Length::Fixed(glow_w))
