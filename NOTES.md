@@ -22,36 +22,19 @@ Related limitation: **CPU clock** via sysinfo is the base/nominal clock on
 Windows (e.g. a static 4300 MHz), not the live boosting frequency — there's no
 clean driver-free live-clock API. CPU **usage** does update correctly.
 
-## Settings UI — making it less overwhelming (your call on direction)
-The Settings window is a dense two-column scroll of ~9 sections. It's complete
-but a lot at once. Ranked proposals (I held off implementing a big redesign
-since it trades against the earlier "match C# exactly" goal — tell me which to
-pursue):
+## Settings UI redesign — DONE (tabs)
+Rebuilt the Settings window as **tabs** (Tiles · Appearance · Behavior ·
+Sensors · Remote · Updates) — one category at a time. The window resizes to
+each tab so it stays compact, and there is **no scrollbar**. This diverges from
+the C# single-pane layout deliberately, per your "less at once / no scrollbar /
+not too big" feedback. If you'd prefer a different grouping or tab order, say so.
 
-- **A. Category tabs / sidebar** *(biggest win, biggest change)* — a left rail
-  (General · Appearance · Behavior · Sensors · Remote · Updates); show one group
-  at a time. ~70% less on screen, smaller window, but diverges from C#'s single
-  pane and adds a click to reach a setting.
-- **B. Collapsible sections (accordion)** *(recommended balance)* — a chevron on
-  each section header; remember collapsed state; default-collapse the rarely-used
-  ones (Remote, Updates, Disk, Font). Keeps the familiar single pane; user
-  controls density. Remote Monitoring already works this way — just extend it.
-- **C. Progressive "Advanced" disclosure** — hide the fine-tune sliders
-  (font-size offsets, arrow size/spacing, R/W size/spacing, snap distance, muted
-  contrast) behind a small "Advanced ▾" per section. Removes ~8 sliders from the
-  default view; pairs well with B.
-- **D. Visual grouping into cards** *(low risk, cosmetic)* — wrap each section in
-  a faint rounded card (like the Skins/Updates boxes already are) so the eye
-  chunks sections. Helps a bit; adds some visual lines.
-- **E. Spacing/typography polish** *(safe)* — more breathing room between
-  sections, lighter value labels, slightly larger headers.
-
-My suggestion: **B + C** gives the calmest result with the least disruption and
-no hard divergence from C#. Say the word and I'll build it.
-
-## Already done while you were away
-- Light-theme readability fixed (field backgrounds + Alerts/colour-hex inputs).
+## Done recently
+- Settings redesigned into compact tabs; no scrollbar; per-tab sizing.
+- Secondary windows skip the taskbar (only the widget shows one entry).
+- Light-theme readability fixed everywhere (field backgrounds + Alerts/colour-hex inputs + themed sliders).
 - All window titles flush in the top-left corner.
 - CPU temperature °C/°F moved to the top of Settings.
+- Appearance changes (theme/skin/colours/fonts) persist immediately.
 - Popup/sub-windows remember their last position.
 - "colours" → "colors" in user-facing text.
