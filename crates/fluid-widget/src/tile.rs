@@ -198,7 +198,11 @@ fn cpu_temp_hint<'a>(p: Palette, s: &AppSettings) -> Element<'a, Message> {
     // affordance. The leading spacer balances the trailing "x" so the label
     // stays visually centred.
     container(
-        row![Space::with_width(14), enable, dismiss]
+        row![
+            Space::with_width(14),
+            crate::style::with_tip(enable, "Set up accurate CPU temperature (installs the optional signed driver)", p),
+            crate::style::with_tip(dismiss, "Dismiss this hint", p),
+        ]
             .align_y(iced::Alignment::Center)
             .width(Length::Fill)
     )

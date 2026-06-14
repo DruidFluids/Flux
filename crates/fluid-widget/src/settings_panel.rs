@@ -449,7 +449,7 @@ pub fn view<'a>(
         let header = row![
             toggler(vis).size(14).on_toggle(move |on| Message::ToggleTile(internal.clone(), on)).style(crate::style::toggler_style(p)),
             Space::with_width(6),
-            button(row![
+            crate::style::with_tip(button(row![
                 text(disp.to_string()).size(12).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
                     .style(move |_| iced::widget::text::Style { color: Some(if open { p.accent } else { p.text }) }),
                 Space::with_width(Length::Fill),
@@ -466,6 +466,7 @@ pub fn view<'a>(
                 }
             })
             .on_press(Message::ToggleTileSection(nm.clone())),
+                &format!("Expand the {disp} tile's options"), p),
         ].align_y(iced::Alignment::Center);
         tcol = tcol.push(header);
         let body = bodies[i].take().unwrap();
@@ -993,7 +994,7 @@ pub fn view<'a>(
         row![
             driver_status_chip,
             Space::with_width(Length::Fill),
-            crate::style::inline_btn(driver_btn_label, Message::OpenCpuDriver, p),
+            crate::style::inline_btn_tip(driver_btn_label, Message::OpenCpuDriver, "Open the CPU sensor driver dialog (install, verify, or remove)", p),
         ].align_y(iced::Alignment::Center),
     ].spacing(2);
 
@@ -1078,10 +1079,11 @@ pub fn view<'a>(
     let columns = column![strip, Space::with_height(10), active_pane].width(Length::Fill);
 
     // 32px caption: "Settings" left, ✕ right, whole bar draggable
-    let close_btn = button(
+    let close_btn = crate::style::with_tip(button(
         text("\u{2715}").size(16).font(iced::Font::with_name("Segoe UI Symbol"))
             .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
-    ).padding([2, 8]).style(|_,_| button::Style { background: None, ..Default::default() }).on_press(Message::SaveClose);
+    ).padding([2, 8]).style(|_,_| button::Style { background: None, ..Default::default() }).on_press(Message::SaveClose),
+        "Save and close", p);
 
     let caption = mouse_area(
         container(row![
@@ -1105,18 +1107,18 @@ pub fn view<'a>(
 
     // C# BottomBarDanger: tile fill, IndianRed border + text, radius 6.
     let indian_red = iced::Color::from_rgb(0.804, 0.361, 0.361);
-    let reset_btn = button(text("Reset to Defaults").size(12)
+    let reset_btn = crate::style::with_tip(button(text("Reset to Defaults").size(12)
         .style(move |_| iced::widget::text::Style { color: Some(indian_red) })
     ).padding([7, 14]).style(move |_,_| button::Style {
         background: Some(iced::Background::Color(p.tile)),
         text_color: indian_red,
         border: Border { radius: 6.0.into(), width: 1.0, color: indian_red },
         ..Default::default()
-    }).on_press(Message::ResetDefaults);
+    }).on_press(Message::ResetDefaults), "Reset all settings to their defaults", p);
 
     // C# BottomBarPrimary: accent fill, background-coloured text, semibold.
     let bg_opaque = iced::Color { a: 1.0, ..p.bg };
-    let save_btn = button(text("Save and Close").size(12)
+    let save_btn = crate::style::with_tip(button(text("Save and Close").size(12)
         .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
         .style(move |_| iced::widget::text::Style { color: Some(bg_opaque) })
     ).padding([7, 14]).style(move |_,_| button::Style {
@@ -1124,7 +1126,7 @@ pub fn view<'a>(
         text_color: bg_opaque,
         border: Border { radius: 6.0.into(), width: 1.0, color: p.accent },
         ..Default::default()
-    }).on_press(Message::SaveClose);
+    }).on_press(Message::SaveClose), "Save changes and close", p);
 
     let divider = container(Space::new(Length::Fill, 1)).style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(iced::Color { a: 0.3, ..p.muted })), ..Default::default() });
 

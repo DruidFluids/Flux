@@ -1984,11 +1984,16 @@ impl App {
         };
 
         let mut strip = row![].spacing(3).align_y(iced::Alignment::Center);
-        strip = strip.push(make_tab("This PC".into(), active_id.is_none(), None, Message::SwitchWidgetDevice(None)));
+        strip = strip.push(style::with_tip(
+            make_tab("This PC".into(), active_id.is_none(), None, Message::SwitchWidgetDevice(None)),
+            "Show this PC's sensors", p));
         for d in &self.settings.remote_devices {
             let connected = self.remote_conn.get(&d.id).copied().unwrap_or(false);
             let active = active_id == Some(&d.id);
-            strip = strip.push(make_tab(truncate(&d.name, 12), active, Some(connected), Message::SwitchWidgetDevice(Some(d.id.clone()))));
+            let tip = format!("{} \u{2014} {}", d.name, if connected { "connected" } else { "disconnected" });
+            strip = strip.push(style::with_tip(
+                make_tab(truncate(&d.name, 12), active, Some(connected), Message::SwitchWidgetDevice(Some(d.id.clone()))),
+                &tip, p));
         }
         container(strip).width(Length::Fill).center_x(Length::Fill).into()
     }
@@ -2040,7 +2045,11 @@ impl App {
                 .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
             ).padding(0).style(|_, _| button::Style { background: None, ..Default::default() }).on_press(msg)
         };
-        let header = row![icon_btn("\u{2699}", 15, Message::OpenSettings), Space::with_width(Length::Fill), icon_btn("\u{2715}", 13, Message::HideWidget)].height(20);
+        let header = row![
+            style::with_tip(icon_btn("\u{2699}", 15, Message::OpenSettings), "Open settings", p),
+            Space::with_width(Length::Fill),
+            style::with_tip(icon_btn("\u{2715}", 13, Message::HideWidget), "Hide the widget (stays running in the tray)", p),
+        ].height(20);
 
         // Device switcher tabs (this PC + each remote), shown only with remotes.
         let widget_border = skin.border_color(&p);

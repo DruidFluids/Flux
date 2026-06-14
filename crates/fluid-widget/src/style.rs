@@ -59,6 +59,30 @@ pub fn inline_btn<'a>(label: impl Into<String>, msg: Message, p: Palette) -> Ele
         .into()
 }
 
+/// Wrap any control in the standard tooltip bubble. **Convention:** every
+/// button in the app should be wrapped with this (or pass a tip to a helper that
+/// calls it) so it always has a hint — including new buttons going forward.
+pub fn with_tip<'a>(el: impl Into<Element<'a, Message>>, tip: &str, p: Palette) -> Element<'a, Message> {
+    use iced::widget::{container, text as itext, tooltip};
+    let bubble = container(
+        itext(tip.to_string()).size(11)
+            .style(move |_| iced::widget::text::Style { color: Some(p.text) })
+    )
+    .max_width(240)
+    .padding(8)
+    .style(move |_| iced::widget::container::Style {
+        background: Some(iced::Background::Color(p.tile)),
+        border: Border { radius: 6.0.into(), width: 1.0, color: Color { a: 0.4, ..p.muted } },
+        ..Default::default()
+    });
+    tooltip(el, bubble, tooltip::Position::Top).into()
+}
+
+/// `inline_btn` with a tooltip — the preferred constructor for action buttons.
+pub fn inline_btn_tip<'a>(label: impl Into<String>, msg: Message, tip: &str, p: Palette) -> Element<'a, Message> {
+    with_tip(inline_btn(label, msg, p), tip, p)
+}
+
 /// Dark dropdown (pick_list) style.
 pub fn pick_list_style(p: Palette) -> impl Fn(&iced::Theme, iced::widget::pick_list::Status) -> iced::widget::pick_list::Style + Copy {
     let bg = field_bg(p);

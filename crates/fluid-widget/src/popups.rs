@@ -10,11 +10,11 @@ use crate::Message;
 // ── Shared chrome ──────────────────────────────────────────────────────────
 
 fn caption<'a>(title: &str, win_id: window::Id, p: Palette) -> Element<'a, Message> {
-    let close = button(
+    let close = crate::style::with_tip(button(
         text("\u{2715}").size(15).font(iced::Font::with_name("Segoe UI Symbol"))
             .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
     ).padding([2, 8]).style(|_, _| button::Style { background: None, ..Default::default() })
-        .on_press(Message::ClosePopup(win_id));
+        .on_press(Message::ClosePopup(win_id)), "Close", p);
 
     mouse_area(
         container(row![
@@ -121,9 +121,9 @@ pub fn widget_menu_view<'a>(p: Palette) -> Element<'a, Message> {
         });
 
     container(column![
-        item("Settings\u{2026}", Message::WidgetMenuSettings),
+        crate::style::with_tip(item("Settings\u{2026}", Message::WidgetMenuSettings), "Open settings", p),
         divider,
-        item("Exit", Message::WidgetMenuExit),
+        crate::style::with_tip(item("Exit", Message::WidgetMenuExit), "Quit fluidMonitor", p),
     ].spacing(2))
     .width(Length::Fill).height(Length::Fill)
     .padding(4)
