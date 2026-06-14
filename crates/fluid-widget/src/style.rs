@@ -362,6 +362,9 @@ pub fn skin_style(name: &str) -> SkinStyle {
 }
 
 fn builtin_skin_style(name: &str) -> SkinStyle {
+    // Values mirror the C# Styles/Skins/*.xaml exactly. `sheen` = the effective
+    // C# overlay intensity (SkinSheenOpacity × SkinSheenAlpha). Partial C#
+    // borders (e.g. bottom-only) map to a uniform border of the same thickness.
     match name {
         "Default" => SkinStyle {
             tile_radius: 12.0, widget_radius: 16.0,
@@ -370,7 +373,7 @@ fn builtin_skin_style(name: &str) -> SkinStyle {
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
         },
         "Minimal" => SkinStyle {
-            tile_radius: 0.0, widget_radius: 0.0,
+            tile_radius: 0.0, widget_radius: 8.0,
             tile_border: 1.0, widget_border: 0.0, tile_spacing: 2.0,
             border_src: BorderSource::Muted, border_alpha: 1.0,
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
@@ -385,13 +388,13 @@ fn builtin_skin_style(name: &str) -> SkinStyle {
             tile_radius: 14.0, widget_radius: 18.0,
             tile_border: 1.5, widget_border: 0.0, tile_spacing: 10.0,
             border_src: BorderSource::Text, border_alpha: 0.67,
-            accent_bar: 0.0, header_bar: 0.0, sheen: 0.15,
+            accent_bar: 0.0, header_bar: 0.0, sheen: 0.53,
         },
         "Retro" => SkinStyle {
             tile_radius: 4.0, widget_radius: 4.0,
             tile_border: 2.0, widget_border: 2.0, tile_spacing: 6.0,
             border_src: BorderSource::Accent, border_alpha: 1.0,
-            accent_bar: 0.0, header_bar: 4.0, sheen: 0.0,
+            accent_bar: 0.0, header_bar: 20.0, sheen: 0.0,
         },
         "Terminal" => SkinStyle {
             tile_radius: 0.0, widget_radius: 0.0,
@@ -403,7 +406,7 @@ fn builtin_skin_style(name: &str) -> SkinStyle {
             tile_radius: 8.0, widget_radius: 10.0,
             tile_border: 2.0, widget_border: 0.0, tile_spacing: 6.0,
             border_src: BorderSource::Accent, border_alpha: 1.0,
-            accent_bar: 3.0, header_bar: 0.0, sheen: 0.08,
+            accent_bar: 3.0, header_bar: 0.0, sheen: 0.125,
         },
         "Brutalist" => SkinStyle {
             tile_radius: 0.0, widget_radius: 0.0,
@@ -415,10 +418,10 @@ fn builtin_skin_style(name: &str) -> SkinStyle {
             tile_radius: 6.0, widget_radius: 8.0,
             tile_border: 1.0, widget_border: 0.0, tile_spacing: 4.0,
             border_src: BorderSource::Muted, border_alpha: 0.5,
-            accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
+            accent_bar: 0.0, header_bar: 0.0, sheen: 0.12,
         },
         "Neon" => SkinStyle {
-            tile_radius: 0.0, widget_radius: 0.0,
+            tile_radius: 0.0, widget_radius: 2.0,
             tile_border: 1.5, widget_border: 0.0, tile_spacing: 8.0,
             border_src: BorderSource::Accent, border_alpha: 1.0,
             accent_bar: 4.0, header_bar: 0.0, sheen: 0.0,
@@ -427,31 +430,31 @@ fn builtin_skin_style(name: &str) -> SkinStyle {
             tile_radius: 16.0, widget_radius: 20.0,
             tile_border: 0.0, widget_border: 0.0, tile_spacing: 8.0,
             border_src: BorderSource::Transparent, border_alpha: 0.0,
-            accent_bar: 0.0, header_bar: 0.0, sheen: 0.2,
+            accent_bar: 0.0, header_bar: 0.0, sheen: 0.126,
         },
         "Cyberpunk" => SkinStyle {
             tile_radius: 0.0, widget_radius: 0.0,
             tile_border: 1.0, widget_border: 0.0, tile_spacing: 3.0,
             border_src: BorderSource::Accent, border_alpha: 0.9,
-            accent_bar: 4.0, header_bar: 0.0, sheen: 0.0,
+            accent_bar: 5.0, header_bar: 0.0, sheen: 0.0,
         },
         "Paper" => SkinStyle {
-            tile_radius: 4.0, widget_radius: 6.0,
+            tile_radius: 4.0, widget_radius: 8.0,
             tile_border: 0.0, widget_border: 0.0, tile_spacing: 8.0,
             border_src: BorderSource::Transparent, border_alpha: 0.0,
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
         },
         "Ink" => SkinStyle {
-            tile_radius: 0.0, widget_radius: 0.0,
+            tile_radius: 0.0, widget_radius: 2.0,
             tile_border: 2.0, widget_border: 0.0, tile_spacing: 4.0,
             border_src: BorderSource::Text, border_alpha: 0.8,
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
         },
         "Aurora" => SkinStyle {
-            tile_radius: 12.0, widget_radius: 14.0,
+            tile_radius: 12.0, widget_radius: 16.0,
             tile_border: 0.0, widget_border: 0.0, tile_spacing: 8.0,
             border_src: BorderSource::Transparent, border_alpha: 0.0,
-            accent_bar: 0.0, header_bar: 0.0, sheen: 0.12,
+            accent_bar: 0.0, header_bar: 0.0, sheen: 0.18,
         },
         "Compact" => SkinStyle {
             tile_radius: 4.0, widget_radius: 6.0,
@@ -548,3 +551,86 @@ const EXAMPLE_SKIN: &str = r#"// fluidMonitor skin file — copy this to "<YourN
 //   "sheen": 0.1
 // }
 "#;
+
+// ── Game theme packs (bundled, data-only) ────────────────────────────────────
+//
+// Franchise colour palettes ported verbatim from the C# app's /themes. Each
+// theme is colours + a paired skin (`category`). Embedded at compile time and
+// parsed with serde — pure data, no code, no network.
+
+#[derive(serde::Deserialize, Clone)]
+pub struct PackTheme {
+    pub name: String,
+    pub bg: String,
+    pub tile: String,
+    pub accent: String,
+    pub text: String,
+    pub muted: String,
+    #[serde(default)]
+    pub category: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ThemePackFile {
+    franchise: String,
+    themes: Vec<PackTheme>,
+}
+
+pub struct ThemePack {
+    pub franchise: String,
+    pub themes: Vec<PackTheme>,
+}
+
+const THEME_PACK_JSON: &[&str] = &[
+    include_str!("../themes/amnesia.json"),
+    include_str!("../themes/baldurs-gate-3.json"),
+    include_str!("../themes/borderlands.json"),
+    include_str!("../themes/crash-bandicoot.json"),
+    include_str!("../themes/cyberpunk-2077.json"),
+    include_str!("../themes/dayz.json"),
+    include_str!("../themes/doom.json"),
+    include_str!("../themes/fallout.json"),
+    include_str!("../themes/hades.json"),
+    include_str!("../themes/helldivers.json"),
+    include_str!("../themes/hollow-knight.json"),
+    include_str!("../themes/league-of-legends.json"),
+    include_str!("../themes/mass-effect.json"),
+    include_str!("../themes/minecraft.json"),
+    include_str!("../themes/no-mans-sky.json"),
+    include_str!("../themes/persona-5.json"),
+    include_str!("../themes/runescape.json"),
+    include_str!("../themes/spore.json"),
+    include_str!("../themes/spyro.json"),
+    include_str!("../themes/stardew-valley.json"),
+    include_str!("../themes/stronghold-2.json"),
+    include_str!("../themes/valheim.json"),
+    include_str!("../themes/witcher.json"),
+    include_str!("../themes/world-of-tanks.json"),
+    include_str!("../themes/wow.json"),
+];
+
+/// All bundled game theme packs, sorted by franchise. Parsed once.
+pub fn theme_packs() -> &'static Vec<ThemePack> {
+    static PACKS: OnceLock<Vec<ThemePack>> = OnceLock::new();
+    PACKS.get_or_init(|| {
+        let mut packs: Vec<ThemePack> = THEME_PACK_JSON
+            .iter()
+            .filter_map(|j| serde_json::from_str::<ThemePackFile>(j).ok())
+            .map(|f| ThemePack { franchise: f.franchise, themes: f.themes })
+            .collect();
+        packs.sort_by_key(|p| p.franchise.to_lowercase());
+        packs
+    })
+}
+
+/// Apply a pack theme: its five colours plus its paired skin (`category`).
+pub fn apply_pack_theme(s: &mut AppSettings, t: &PackTheme) {
+    s.theme_bg = t.bg.clone();
+    s.theme_tile = t.tile.clone();
+    s.theme_accent = t.accent.clone();
+    s.theme_text = t.text.clone();
+    s.theme_muted = t.muted.clone();
+    if !t.category.trim().is_empty() {
+        s.active_skin = t.category.clone();
+    }
+}

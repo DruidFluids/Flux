@@ -311,7 +311,7 @@ fn cursor_logical_pos() -> Option<(f32, f32)> {
 fn cursor_logical_pos() -> Option<(f32, f32)> { None }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, WindowPicker }
+enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, WindowPicker, ThemeStore }
 
 // Snapshot of all appearance state for the C# "Undo last change" stack
 // (colors + skin + fonts). Up to 5 steps back.
@@ -383,6 +383,7 @@ struct App {
     update_status_kind: u8, // 0 neutral, 1 good (green), 2 bad (red)
     update_available: Option<updates::PendingUpdate>,
     appearance_status: String,
+    theme_store_franchise: Option<usize>,
     add_device_open: bool,
     new_device_name: String,
     new_device_ip: String,
@@ -401,6 +402,8 @@ enum Message {
     OpenSettings, HideWidget, SaveClose, ResetDefaults, Noop,
     OpenTools, OpenAlerts, OpenGameMode, OpenHelp, OpenUtilities, ClosePopup(window::Id),
     OpenUrl(String), OpenSkinsFolder,
+    OpenThemeStore, ApplyPackTheme(usize, usize),
+    ThemeStoreOpenFranchise(usize), ThemeStoreBack,
     BlocklistAction(iced::widget::text_editor::Action), SaveBlocklist,
     PickWindow, PickWindowChosen(String),
     ShowWidgetMenu, WidgetMenuSettings, WidgetMenuExit, WindowUnfocused(window::Id),
@@ -504,6 +507,7 @@ impl App {
             blocklist_status: String::new(),
             update_checking: false, update_status: String::new(), update_status_kind: 0, update_available: None,
             appearance_status: String::new(),
+            theme_store_franchise: None,
             add_device_open: false,
             new_device_name: String::new(), new_device_ip: String::new(), new_device_key: String::new(),
             device_test_status: String::new(), device_test_ok: false,
@@ -1022,6 +1026,20 @@ impl App {
                 open_url(&dir.to_string_lossy());
                 Task::none()
             }
+            Message::OpenThemeStore => { self.theme_store_franchise = None; self.open_popup(WindowKind::ThemeStore, popups::THEME_STORE_SIZE) }
+            Message::ThemeStoreOpenFranchise(i) => { self.theme_store_franchise = Some(i); Task::none() }
+            Message::ThemeStoreBack => { self.theme_store_franchise = None; Task::none() }
+            Message::ApplyPackTheme(pack_idx, theme_idx) => {
+                if let Some(pack) = style::theme_packs().get(pack_idx) {
+                    if let Some(theme) = pack.themes.get(theme_idx) {
+                        self.push_appearance_undo();
+                        style::apply_pack_theme(&mut self.settings, theme);
+                        let _ = self.settings.save();
+                        return self.resize_widget();
+                    }
+                }
+                Task::none()
+            }
             Message::BlocklistAction(action) => { self.blocklist_editor.perform(action); Task::none() }
             Message::SaveBlocklist => {
                 let lines: Vec<String> = self.blocklist_editor.text()
@@ -1528,6 +1546,7 @@ impl App {
             WindowKind::Help => popups::help_view(&self.settings, p, id),
             WindowKind::Utilities => popups::utilities_view(&self.blocklist_editor, &self.blocklist_status, p, id),
             WindowKind::WindowPicker => popups::window_picker_view(enum_window_titles(), p, id),
+            WindowKind::ThemeStore => popups::theme_store_view(self.theme_store_franchise, p, id),
             WindowKind::WidgetMenu => popups::widget_menu_view(p),
             WindowKind::Popout => self.popout_view(id, p),
             WindowKind::Widget => self.widget_view(id, p),

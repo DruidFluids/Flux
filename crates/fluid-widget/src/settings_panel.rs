@@ -393,6 +393,15 @@ pub fn view<'a>(
             tip_box("Export the current appearance as a share code to the clipboard.", p), TipPos::Bottom,
         )
     );
+    saved_row = saved_row.push(Space::with_width(3));
+    saved_row = saved_row.push(
+        tooltip(
+            button(text("\u{2193}").size(12).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+                .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() })
+                .on_press(Message::OpenThemeStore),
+            tip_box("Theme Store \u{2014} game-themed colour palettes (WoW, Fallout, Witcher, and more).", p), TipPos::Bottom,
+        )
+    );
     if !appearance_status.is_empty() {
         saved_row = saved_row.push(Space::with_width(8));
         saved_row = saved_row.push(text(appearance_status.to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.accent) }));
