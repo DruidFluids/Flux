@@ -81,6 +81,10 @@ pub struct AppSettings {
     /// don't re-prompt for elevation on every enable.
     #[serde(default)]
     pub remote_firewall_configured: bool,
+    /// Last on-screen position of each popup/sub-window, keyed by window kind,
+    /// so they reopen where the user left them.
+    #[serde(default)]
+    pub popup_positions: std::collections::HashMap<String, (f64, f64)>,
 
     pub update_check_mode: UpdateMode,
     pub last_update_check: Option<String>,
@@ -156,6 +160,7 @@ impl Default for AppSettings {
             remote_devices: Vec::new(),
             snap_blocklist: Vec::new(),
             remote_firewall_configured: false,
+            popup_positions: std::collections::HashMap::new(),
             update_check_mode: UpdateMode::Manual,
             last_update_check: None,
             presets: Vec::new(),

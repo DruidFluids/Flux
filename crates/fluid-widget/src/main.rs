@@ -313,6 +313,23 @@ fn cursor_logical_pos() -> Option<(f32, f32)> { None }
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, WindowPicker, ThemeStore, PopoutConfig }
 
+// Persisted-position key for a popup kind. Widget/Settings keep dedicated
+// fields; the right-click WidgetMenu always opens at the cursor.
+fn kind_key(kind: WindowKind) -> Option<&'static str> {
+    match kind {
+        WindowKind::Tools => Some("tools"),
+        WindowKind::Alerts => Some("alerts"),
+        WindowKind::GameMode => Some("gamemode"),
+        WindowKind::Help => Some("help"),
+        WindowKind::Utilities => Some("utilities"),
+        WindowKind::WindowPicker => Some("windowpicker"),
+        WindowKind::ThemeStore => Some("themestore"),
+        WindowKind::PopoutConfig => Some("popoutconfig"),
+        WindowKind::Popout => Some("popout"),
+        WindowKind::Widget | WindowKind::Settings | WindowKind::WidgetMenu => None,
+    }
+}
+
 // Snapshot of all appearance state for the C# "Undo last change" stack
 // (colors + skin + fonts). Up to 5 steps back.
 #[derive(Clone)]
@@ -601,10 +618,17 @@ impl App {
     fn open_popup(&self, kind: WindowKind, size: Size) -> Task<Message> {
         if self.windows.values().any(|k| *k == kind) { return Task::none(); }
         let (_, t) = window::open(window::Settings {
-            size, position: window::Position::Centered, decorations: false, transparent: true,
+            size, position: self.popup_position(kind), decorations: false, transparent: true,
             resizable: false, level: window::Level::AlwaysOnTop, ..Default::default()
         });
         t.map(move |id| Message::WindowOpened(id, kind))
+    }
+    // Remembered position for a popup kind, falling back to centered.
+    fn popup_position(&self, kind: WindowKind) -> window::Position {
+        kind_key(kind)
+            .and_then(|k| self.settings.popup_positions.get(k))
+            .map(|(x, y)| window::Position::Specific(Point::new(*x as f32, *y as f32)))
+            .unwrap_or(window::Position::Centered)
     }
     fn close_kind(&self, kind: WindowKind) -> Task<Message> {
         let ids: Vec<_> = self.windows.iter().filter(|(_, k)| **k == kind).map(|(id, _)| *id).collect();
@@ -1019,7 +1043,13 @@ impl App {
                         self.settings.settings_window_x = Some(pos.x as f64);
                         self.settings.settings_window_y = Some(pos.y as f64); let _ = self.settings.save();
                     }
-                    _ => {}
+                    Some(&k) => {
+                        if let Some(key) = kind_key(k) {
+                            self.settings.popup_positions.insert(key.to_string(), (pos.x as f64, pos.y as f64));
+                            let _ = self.settings.save();
+                        }
+                    }
+                    None => {}
                 }
                 Task::none()
             }
@@ -1286,7 +1316,7 @@ impl App {
                         self.pending_popout.push_back(dev.id.clone());
                         let size = self.popout_size(&dev.popout);
                         let (_, t) = window::open(window::Settings {
-                            size, position: window::Position::Default, decorations: false, transparent: true,
+                            size, position: self.popup_position(WindowKind::Popout), decorations: false, transparent: true,
                             resizable: false, level: window::Level::AlwaysOnTop, ..Default::default()
                         });
                         t.map(|wid| Message::WindowOpened(wid, WindowKind::Popout))

@@ -7,9 +7,14 @@ use iced::{Border, Color, Element};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-/// A darker field colour (dropdowns / inputs) derived from the theme background.
+/// Field colour (dropdowns / inputs) derived from the theme background, so it
+/// stays readable on both dark and light themes: dark themes get a clearly
+/// darker field, light themes a subtly darker one (a muddy mid-tone from a flat
+/// ×0.5 would be unreadable on light backgrounds).
 pub fn field_bg(p: Palette) -> Color {
-    Color { r: p.bg.r * 0.5, g: p.bg.g * 0.5, b: p.bg.b * 0.5, a: 1.0 }
+    let lum = 0.299 * p.bg.r + 0.587 * p.bg.g + 0.114 * p.bg.b;
+    let f = if lum < 0.5 { 0.5 } else { 0.88 };
+    Color { r: p.bg.r * f, g: p.bg.g * f, b: p.bg.b * f, a: 1.0 }
 }
 
 /// C# `InlineBtn`: tile fill, 1px border, radius 6; hover accents text + border.

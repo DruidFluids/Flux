@@ -23,7 +23,9 @@ fn caption<'a>(title: &str, win_id: window::Id, p: Palette) -> Element<'a, Messa
                 .style(move |_| iced::widget::text::Style { color: Some(p.accent) }),
             Space::with_width(Length::Fill),
             close,
-        ].align_y(iced::Alignment::Center)).width(Length::Fill).height(32).padding([0, 6])
+        ].align_y(iced::Alignment::Center))
+        .width(Length::Fill)
+        .padding(iced::Padding { top: 3.0, right: 4.0, bottom: 1.0, left: 6.0 })
     ).on_press(Message::DragWindow(win_id)).into()
 }
 
@@ -73,9 +75,13 @@ fn primary_btn<'a>(label_text: &str, msg: Message, p: Palette) -> Element<'a, Me
 }
 
 fn shell<'a>(title: &str, win_id: window::Id, p: Palette, body: Element<'a, Message>) -> Element<'a, Message> {
-    container(column![caption(title, win_id, p), body])
+    // Caption is flush in the top-left corner; only the body is inset.
+    container(column![
+        caption(title, win_id, p),
+        container(body).width(Length::Fill).height(Length::Fill)
+            .padding(iced::Padding { top: 4.0, right: 16.0, bottom: 12.0, left: 16.0 }),
+    ])
         .width(Length::Fill).height(Length::Fill)
-        .padding(iced::Padding { top: 0.0, right: 16.0, bottom: 12.0, left: 16.0 })
         .style(move |_| iced::widget::container::Style {
             background: Some(iced::Background::Color(p.bg)),
             border: Border { radius: 10.0.into(), width: 1.0, color: Color { a: 0.4, ..p.muted } },
@@ -563,14 +569,14 @@ pub fn popout_config_view<'a>(dev: Option<&'a RemoteDevice>, p: Palette, win_id:
         text(format!("Popout appearance for \u{201C}{}\u{201D}", dev.name)).size(11)
             .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         Space::with_height(4),
-        section("Colours"),
+        section("Colors"),
     ].spacing(8);
 
     // Sync toggle
     let sid = id.clone();
     col = col.push(row![
         toggler(po.sync_colors).size(14).on_toggle(move |b| Message::PopoutSyncColors(sid.clone(), b)).style(crate::style::toggler_style(p)),
-        text("Use the widget's theme colours").size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+        text("Use the widget's theme colors").size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
     ].spacing(6).align_y(iced::Alignment::Center));
 
     // Per-colour rows (only when not synced)

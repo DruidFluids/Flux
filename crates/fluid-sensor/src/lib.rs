@@ -149,6 +149,65 @@ fn wmi_cpu_temp() -> Option<f32> {
     })
 }
 
+// Accurate CPU package temperature from LibreHardwareMonitor / OpenHardwareMonitor
+// if either is running (they expose a WMI `Sensor` class). This needs no driver
+// of our own — we just read their data. Prefers "CPU Package", else the hottest
+// CPU core. The connection result is cached (incl. "not available") so we don't
+// probe a missing namespace every poll.
+#[cfg(windows)]
+fn lhm_cpu_temp() -> Option<f32> {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use wmi::{COMLibrary, Variant, WMIConnection};
+    thread_local! {
+        // Outer None = not yet probed; inner None = no hardware-monitor present.
+        static CONN: RefCell<Option<Option<WMIConnection>>> = const { RefCell::new(None) };
+    }
+    CONN.with(|cell| {
+        let mut guard = cell.borrow_mut();
+        if guard.is_none() {
+            let mut conn = None;
+            for ns in ["root\\LibreHardwareMonitor", "root\\OpenHardwareMonitor"] {
+                let com = unsafe { COMLibrary::assume_initialized() };
+                if let Ok(c) = WMIConnection::with_namespace_path(ns, com) {
+                    // Confirm the Sensor class actually exists in this namespace.
+                    if c.raw_query::<HashMap<String, Variant>>("SELECT Name FROM Sensor").is_ok() {
+                        conn = Some(c);
+                        break;
+                    }
+                }
+            }
+            *guard = Some(conn);
+        }
+        let conn = guard.as_ref().unwrap().as_ref()?;
+        let rows: Vec<HashMap<String, Variant>> = conn
+            .raw_query("SELECT Name, Value FROM Sensor WHERE SensorType = 'Temperature'")
+            .ok()?;
+        let mut package: Option<f32> = None;
+        let mut core_max: Option<f32> = None;
+        for row in rows {
+            let name = match row.get("Name") {
+                Some(Variant::String(s)) => s.to_lowercase(),
+                _ => continue,
+            };
+            let val: f32 = match row.get("Value") {
+                Some(Variant::R4(f)) => *f,
+                Some(Variant::R8(f)) => *f as f32,
+                _ => continue,
+            };
+            if !(0.0..=150.0).contains(&val) || !name.contains("cpu") {
+                continue;
+            }
+            if name.contains("package") {
+                package = Some(val);
+            } else if name.contains("core") || name.contains("tctl") {
+                core_max = Some(core_max.map_or(val, |m: f32| m.max(val)));
+            }
+        }
+        package.or(core_max)
+    })
+}
+
 // RAM type + rated speed via WMI Win32_PhysicalMemory (root\CIMV2). Static for
 // the machine, so the result is cached after the first successful read.
 #[cfg(windows)]
@@ -370,6 +429,11 @@ impl SensorPoller {
 
         #[cfg(windows)]
         {
+            // Prefer an accurate package/core reading from a running hardware
+            // monitor; fall back to the coarse ACPI thermal zone.
+            if let Some(t) = lhm_cpu_temp() {
+                return Some(t);
+            }
             if let Some(t) = wmi_cpu_temp() {
                 return Some(t);
             }

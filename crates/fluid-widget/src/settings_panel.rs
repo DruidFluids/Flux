@@ -344,7 +344,9 @@ pub fn view<'a>(
     ].spacing(2);
 
     let left_col = column![
-        sh("Tiles", "Choose which sensors appear on the widget."), tiles_grid, temp_row,
+        temp_row,
+        Space::with_height(4),
+        sh("Tiles", "Choose which sensors appear on the widget."), tiles_grid,
         Space::with_height(4),
         sh("Tile Labels", "Override the auto-detected hardware name shown on each tile."), tile_labels,
         Space::with_height(4),
@@ -399,7 +401,7 @@ pub fn view<'a>(
             button(text("\u{2193}").size(12).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
                 .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() })
                 .on_press(Message::OpenThemeStore),
-            tip_box("Theme Store \u{2014} game-themed colour palettes (WoW, Fallout, Witcher, and more).", p), TipPos::Bottom,
+            tip_box("Theme Store \u{2014} game-themed color palettes (WoW, Fallout, Witcher, and more).", p), TipPos::Bottom,
         )
     );
     if !appearance_status.is_empty() {
@@ -422,7 +424,7 @@ pub fn view<'a>(
     // Is the current palette dark? (decides which mode icon is highlighted)
     let is_dark = (p.bg.r * 0.299 + p.bg.g * 0.587 + p.bg.b * 0.114) < 0.5;
 
-    // Die: left-click randomizes skin + colours (+fonts if enabled); right = skin only.
+    // Die: left-click randomizes skin + colors (+fonts if enabled); right = skin only.
     let die = tooltip(
         mouse_area(
             container(text("\u{1F3B2}").size(15).font(crate::style::ICONS)
@@ -432,7 +434,7 @@ pub fn view<'a>(
         )
         .on_press(Message::RandomizeAppearance)
         .on_right_press(Message::RandomizeSkinOnly),
-        tip_box("Randomize skin + colours. Left-click: rolls a random skin AND colour palette. Right-click: rolls skin only. Fonts roll too if 'Randomize fonts' is on.", p),
+        tip_box("Randomize skin + colors. Left-click: rolls a random skin AND color palette. Right-click: rolls skin only. Fonts roll too if 'Randomize fonts' is on.", p),
         TipPos::Bottom,
     );
 
@@ -453,7 +455,7 @@ pub fn view<'a>(
         .on_press(Message::ThemeNext),
         pill("\u{203A}".into(), false, Message::ThemeNext),
         tooltip(icon_btn("+", false, Message::SavePreset),
-            tip_box("Save the current colours + skin as a new preset slot.", p), TipPos::Bottom),
+            tip_box("Save the current colors + skin as a new preset slot.", p), TipPos::Bottom),
     ].align_y(iced::Alignment::Center).spacing(3);
 
     // ── Skins box (Skins row + Colors row), matching the C# layout ──
@@ -697,7 +699,7 @@ pub fn view<'a>(
                         .padding(iced::Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
                         .style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 6.0.into(), width: 1.0, color: p.muted }, ..Default::default() })
                         .on_press(Message::OpenPopoutConfig(id_config)),
-                    tip_box("Configure this device's popout appearance (colours, tiles, labels).", p), TipPos::Bottom,
+                    tip_box("Configure this device's popout appearance (colors, tiles, labels).", p), TipPos::Bottom,
                 ),
                 ibtn("Popout".into(), Message::OpenPopout(id_popout)),
                 button(text("\u{2715}").size(11).font(iced::Font::with_name("Segoe UI Symbol"))
@@ -854,7 +856,9 @@ pub fn view<'a>(
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
             Space::with_width(Length::Fill),
             close_btn,
-        ].align_y(iced::Alignment::Center)).width(Length::Fill).height(32).padding([0, 6])
+        ].align_y(iced::Alignment::Center))
+        .width(Length::Fill)
+        .padding(iced::Padding { top: 3.0, right: 4.0, bottom: 1.0, left: 8.0 })
     ).on_press(Message::DragWindow(win_id));
 
     // Bottom bar: [?|⚙] split + Reset + Save
@@ -904,16 +908,16 @@ pub fn view<'a>(
             .align_y(iced::Alignment::Center)
     ).width(Length::Fill).padding(iced::Padding { top: 10.0, right: 0.0, bottom: 0.0, left: 0.0 });
 
-    let content = column![
-        caption,
+    // Caption sits flush in the top-left corner; the body below is inset.
+    let body = container(column![
         scrollable(container(columns).padding(iced::Padding { top: 4.0, right: 6.0, bottom: 8.0, left: 0.0 })).height(Length::Fill),
         divider,
         bottom_bar,
-    ];
+    ]).width(Length::Fill).height(Length::Fill)
+        .padding(iced::Padding { top: 4.0, right: 20.0, bottom: 10.0, left: 20.0 });
 
-    container(content)
+    container(column![caption, body])
         .width(Length::Fill).height(Length::Fill)
-        .padding(iced::Padding { top: 0.0, right: 20.0, bottom: 10.0, left: 20.0 })
         .style(move |_| iced::widget::container::Style {
             background: Some(iced::Background::Color(p.bg)),
             ..Default::default()
