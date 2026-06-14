@@ -580,9 +580,15 @@ fn tile_container<'a>(content: impl Into<Element<'a, Message>>, p: Palette, w: W
         bg
     };
 
-    // Subtle drop shadow for depth (P10). Skins that draw their own hard edges
-    // (Brutalist / Terminal / Sharp / Ink) opt out for a flatter look.
-    let shadow = if matches!(s.active_skin.as_str(), "Brutalist" | "Terminal" | "Sharp" | "Ink" | "Minimal") {
+    // Shadow: bold skins get an accent-tinted outer GLOW; the hard-edged flat
+    // skins opt out; everyone else gets a subtle drop shadow for depth.
+    let shadow = if skin.glow > 0.0 {
+        iced::Shadow {
+            color: Color { a: 0.60 * skin.glow, ..p.accent },
+            offset: iced::Vector::new(0.0, 0.0),
+            blur_radius: 6.0 + skin.glow * 16.0,
+        }
+    } else if matches!(s.active_skin.as_str(), "Brutalist" | "Terminal" | "Sharp" | "Ink" | "Minimal") {
         iced::Shadow::default()
     } else {
         iced::Shadow {
@@ -592,11 +598,24 @@ fn tile_container<'a>(content: impl Into<Element<'a, Message>>, p: Palette, w: W
         }
     };
 
+    // Background: gradient skins fade from a lighter top to an accent-tinted
+    // bottom; everyone else is a flat fill. (Flashing alerts stay solid red.)
+    let bg_fill: iced::Background = if skin.gradient > 0.0 && !w.flash {
+        let top = crate::style::lerp(tile_bg, Color::WHITE, skin.gradient * 0.10);
+        let bottom = crate::style::lerp(tile_bg, p.accent, skin.gradient * 0.22);
+        let g = iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
+            .add_stop(0.0, top)
+            .add_stop(1.0, bottom);
+        iced::Background::Gradient(iced::Gradient::Linear(g))
+    } else {
+        iced::Background::Color(tile_bg)
+    };
+
     container(body)
         .width(Length::Fixed(tw))
         .height(Length::Fixed(th))
         .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(tile_bg)),
+            background: Some(bg_fill),
             border: Border {
                 radius: skin.tile_radius.into(),
                 width: skin.tile_border,

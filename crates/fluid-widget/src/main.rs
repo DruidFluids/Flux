@@ -2128,11 +2128,19 @@ impl App {
         }
         shell = shell.push(Space::with_height(4));
         shell = shell.push(body);
+        // Bold skins glow the whole widget frame too (accent-tinted bloom).
+        let frame_shadow = if skin.glow > 0.0 {
+            iced::Shadow { color: Color { a: 0.45 * skin.glow, ..p.accent }, offset: iced::Vector::new(0.0, 0.0), blur_radius: 8.0 + skin.glow * 18.0 }
+        } else {
+            iced::Shadow::default()
+        };
         let root = container(shell)
             .width(Length::Fill).height(Length::Fill).padding(8)
             .style(move |_| iced::widget::container::Style {
                 background: Some(iced::Background::Color(p.bg)),
-                border: Border { radius: skin.widget_radius.into(), width: skin.widget_border, color: widget_border }, ..Default::default()
+                border: Border { radius: skin.widget_radius.into(), width: skin.widget_border, color: widget_border },
+                shadow: frame_shadow,
+                ..Default::default()
             });
         mouse_area(root)
             .on_press(Message::DragWindow(id))

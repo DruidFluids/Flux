@@ -345,6 +345,14 @@ pub struct SkinStyle {
     pub accent_bar: f32,
     pub header_bar: f32,
     pub sheen: f32,
+    /// Outer glow intensity (0..1) — renders an accent-tinted bloom around tiles
+    /// and the widget frame. The big "bold skin" differentiator.
+    #[serde(default)]
+    pub glow: f32,
+    /// Background gradient strength (0..1) — fades the tile fill toward a lighter
+    /// top and an accent-tinted bottom for depth/colour.
+    #[serde(default)]
+    pub gradient: f32,
 }
 
 impl Default for SkinStyle {
@@ -355,6 +363,7 @@ impl Default for SkinStyle {
             tile_border: 0.0, widget_border: 0.0, tile_spacing: 6.0,
             border_src: BorderSource::Transparent, border_alpha: 0.0,
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
+            glow: 0.0, gradient: 0.0,
         }
     }
 }
@@ -382,6 +391,8 @@ impl SkinStyle {
         self.accent_bar = self.accent_bar.clamp(0.0, 10.0);
         self.header_bar = self.header_bar.clamp(0.0, 10.0);
         self.sheen = self.sheen.clamp(0.0, 1.0);
+        self.glow = self.glow.clamp(0.0, 1.0);
+        self.gradient = self.gradient.clamp(0.0, 1.0);
         self
     }
 }
@@ -405,101 +416,120 @@ fn builtin_skin_style(name: &str) -> SkinStyle {
     // C# overlay intensity (SkinSheenOpacity × SkinSheenAlpha). Partial C#
     // borders (e.g. bottom-only) map to a uniform border of the same thickness.
     match name {
+        // ── Clean / minimal set ──
         "Default" => SkinStyle {
             tile_radius: 12.0, widget_radius: 16.0,
             tile_border: 0.0, widget_border: 0.0, tile_spacing: 6.0,
             border_src: BorderSource::Transparent, border_alpha: 0.0,
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
+            glow: 0.0, gradient: 0.15,
         },
         "Minimal" => SkinStyle {
             tile_radius: 0.0, widget_radius: 8.0,
             tile_border: 1.0, widget_border: 0.0, tile_spacing: 2.0,
             border_src: BorderSource::Muted, border_alpha: 1.0,
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
+            glow: 0.0, gradient: 0.0,
         },
         "Sharp" => SkinStyle {
             tile_radius: 0.0, widget_radius: 0.0,
             tile_border: 1.0, widget_border: 1.0, tile_spacing: 2.0,
             border_src: BorderSource::Muted, border_alpha: 1.0,
             accent_bar: 3.0, header_bar: 0.0, sheen: 0.0,
-        },
-        "Glassmorphism" => SkinStyle {
-            tile_radius: 14.0, widget_radius: 18.0,
-            tile_border: 1.5, widget_border: 0.0, tile_spacing: 10.0,
-            border_src: BorderSource::Text, border_alpha: 0.67,
-            accent_bar: 0.0, header_bar: 0.0, sheen: 0.53,
-        },
-        "Retro" => SkinStyle {
-            tile_radius: 4.0, widget_radius: 4.0,
-            tile_border: 2.0, widget_border: 2.0, tile_spacing: 6.0,
-            border_src: BorderSource::Accent, border_alpha: 1.0,
-            accent_bar: 0.0, header_bar: 20.0, sheen: 0.0,
-        },
-        "Terminal" => SkinStyle {
-            tile_radius: 0.0, widget_radius: 0.0,
-            tile_border: 1.0, widget_border: 1.0, tile_spacing: 1.0,
-            border_src: BorderSource::Accent, border_alpha: 0.6,
-            accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
-        },
-        "Holographic" => SkinStyle {
-            tile_radius: 8.0, widget_radius: 10.0,
-            tile_border: 2.0, widget_border: 0.0, tile_spacing: 6.0,
-            border_src: BorderSource::Accent, border_alpha: 1.0,
-            accent_bar: 3.0, header_bar: 0.0, sheen: 0.125,
+            glow: 0.0, gradient: 0.0,
         },
         "Brutalist" => SkinStyle {
             tile_radius: 0.0, widget_radius: 0.0,
             tile_border: 3.0, widget_border: 3.0, tile_spacing: 4.0,
             border_src: BorderSource::Text, border_alpha: 1.0,
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
-        },
-        "Carbon" => SkinStyle {
-            tile_radius: 6.0, widget_radius: 8.0,
-            tile_border: 1.0, widget_border: 0.0, tile_spacing: 4.0,
-            border_src: BorderSource::Muted, border_alpha: 0.5,
-            accent_bar: 0.0, header_bar: 0.0, sheen: 0.12,
-        },
-        "Neon" => SkinStyle {
-            tile_radius: 0.0, widget_radius: 2.0,
-            tile_border: 1.5, widget_border: 0.0, tile_spacing: 8.0,
-            border_src: BorderSource::Accent, border_alpha: 1.0,
-            accent_bar: 4.0, header_bar: 0.0, sheen: 0.0,
-        },
-        "Frosted" => SkinStyle {
-            tile_radius: 16.0, widget_radius: 20.0,
-            tile_border: 0.0, widget_border: 0.0, tile_spacing: 8.0,
-            border_src: BorderSource::Transparent, border_alpha: 0.0,
-            accent_bar: 0.0, header_bar: 0.0, sheen: 0.126,
-        },
-        "Cyberpunk" => SkinStyle {
-            tile_radius: 0.0, widget_radius: 0.0,
-            tile_border: 1.0, widget_border: 0.0, tile_spacing: 3.0,
-            border_src: BorderSource::Accent, border_alpha: 0.9,
-            accent_bar: 5.0, header_bar: 0.0, sheen: 0.0,
+            glow: 0.0, gradient: 0.0,
         },
         "Paper" => SkinStyle {
             tile_radius: 4.0, widget_radius: 8.0,
             tile_border: 0.0, widget_border: 0.0, tile_spacing: 8.0,
             border_src: BorderSource::Transparent, border_alpha: 0.0,
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
+            glow: 0.0, gradient: 0.0,
         },
         "Ink" => SkinStyle {
             tile_radius: 0.0, widget_radius: 2.0,
             tile_border: 2.0, widget_border: 0.0, tile_spacing: 4.0,
             border_src: BorderSource::Text, border_alpha: 0.8,
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
-        },
-        "Aurora" => SkinStyle {
-            tile_radius: 12.0, widget_radius: 16.0,
-            tile_border: 0.0, widget_border: 0.0, tile_spacing: 8.0,
-            border_src: BorderSource::Transparent, border_alpha: 0.0,
-            accent_bar: 0.0, header_bar: 0.0, sheen: 0.18,
+            glow: 0.0, gradient: 0.0,
         },
         "Compact" => SkinStyle {
             tile_radius: 4.0, widget_radius: 6.0,
             tile_border: 0.0, widget_border: 0.0, tile_spacing: 2.0,
             border_src: BorderSource::Transparent, border_alpha: 0.0,
             accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
+            glow: 0.0, gradient: 0.0,
+        },
+        "Carbon" => SkinStyle {
+            tile_radius: 6.0, widget_radius: 8.0,
+            tile_border: 1.0, widget_border: 0.0, tile_spacing: 4.0,
+            border_src: BorderSource::Muted, border_alpha: 0.5,
+            accent_bar: 0.0, header_bar: 0.0, sheen: 0.12,
+            glow: 0.0, gradient: 0.28,
+        },
+        // ── Soft / glassy set ──
+        "Glassmorphism" => SkinStyle {
+            tile_radius: 14.0, widget_radius: 18.0,
+            tile_border: 1.5, widget_border: 0.0, tile_spacing: 10.0,
+            border_src: BorderSource::Text, border_alpha: 0.67,
+            accent_bar: 0.0, header_bar: 0.0, sheen: 0.53,
+            glow: 0.18, gradient: 0.5,
+        },
+        "Frosted" => SkinStyle {
+            tile_radius: 16.0, widget_radius: 20.0,
+            tile_border: 0.0, widget_border: 0.0, tile_spacing: 8.0,
+            border_src: BorderSource::Transparent, border_alpha: 0.0,
+            accent_bar: 0.0, header_bar: 0.0, sheen: 0.126,
+            glow: 0.12, gradient: 0.42,
+        },
+        "Aurora" => SkinStyle {
+            tile_radius: 12.0, widget_radius: 16.0,
+            tile_border: 0.0, widget_border: 0.0, tile_spacing: 8.0,
+            border_src: BorderSource::Transparent, border_alpha: 0.0,
+            accent_bar: 0.0, header_bar: 0.0, sheen: 0.18,
+            glow: 0.3, gradient: 0.72,
+        },
+        "Retro" => SkinStyle {
+            tile_radius: 4.0, widget_radius: 4.0,
+            tile_border: 2.0, widget_border: 2.0, tile_spacing: 6.0,
+            border_src: BorderSource::Accent, border_alpha: 1.0,
+            accent_bar: 0.0, header_bar: 20.0, sheen: 0.0,
+            glow: 0.0, gradient: 0.2,
+        },
+        // ── Bold / glowing set ──
+        "Neon" => SkinStyle {
+            tile_radius: 0.0, widget_radius: 2.0,
+            tile_border: 1.5, widget_border: 0.0, tile_spacing: 8.0,
+            border_src: BorderSource::Accent, border_alpha: 1.0,
+            accent_bar: 4.0, header_bar: 0.0, sheen: 0.0,
+            glow: 1.0, gradient: 0.0,
+        },
+        "Cyberpunk" => SkinStyle {
+            tile_radius: 0.0, widget_radius: 0.0,
+            tile_border: 1.0, widget_border: 0.0, tile_spacing: 3.0,
+            border_src: BorderSource::Accent, border_alpha: 0.9,
+            accent_bar: 5.0, header_bar: 0.0, sheen: 0.0,
+            glow: 0.8, gradient: 0.35,
+        },
+        "Holographic" => SkinStyle {
+            tile_radius: 8.0, widget_radius: 10.0,
+            tile_border: 2.0, widget_border: 0.0, tile_spacing: 6.0,
+            border_src: BorderSource::Accent, border_alpha: 1.0,
+            accent_bar: 3.0, header_bar: 0.0, sheen: 0.125,
+            glow: 0.7, gradient: 0.5,
+        },
+        "Terminal" => SkinStyle {
+            tile_radius: 0.0, widget_radius: 0.0,
+            tile_border: 1.0, widget_border: 1.0, tile_spacing: 1.0,
+            border_src: BorderSource::Accent, border_alpha: 0.6,
+            accent_bar: 0.0, header_bar: 0.0, sheen: 0.0,
+            glow: 0.35, gradient: 0.0,
         },
         _ => builtin_skin_style("Default"),
     }
