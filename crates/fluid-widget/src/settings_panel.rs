@@ -194,8 +194,15 @@ pub fn view<'a>(
     let driver_status: Element<'a, Message> = button(
         text(status_label).size(11).style(move |_| iced::widget::text::Style { color: Some(status_color) })
     )
-    .padding(iced::Padding { top: 1.0, right: 4.0, bottom: 1.0, left: 4.0 })
-    .style(|_: &iced::Theme, _: button::Status| button::Style { background: None, ..Default::default() })
+    .padding(iced::Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+    .style(move |_: &iced::Theme, status: button::Status| {
+        let hover = matches!(status, button::Status::Hovered);
+        button::Style {
+            background: if hover { Some(iced::Background::Color(p.tile)) } else { None },
+            border: Border { radius: 4.0.into(), width: if hover { 1.0 } else { 0.0 }, color: iced::Color { a: 0.6, ..p.muted } },
+            ..Default::default()
+        }
+    })
     .on_press(Message::OpenCpuDriver).into();
     let temp_row: Element<'a, Message> = row![
         text("CPU temperature").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),

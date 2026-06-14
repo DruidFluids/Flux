@@ -16,5 +16,7 @@ windows = { version = "0.62.2", features = [
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
     "Win32_System_Com",
+    "Win32_System_LibraryLoader",
 ] }
 wmi = "0.15"
+winreg = "0.56.0"

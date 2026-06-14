@@ -7,6 +7,10 @@ use nvml_wrapper::enum_wrappers::device::TemperatureSensor;
 use sysinfo::{Components, CpuRefreshKind, Disks, MemoryRefreshKind, Networks, RefreshKind, System};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+// Optional accurate CPU temperature via the user-installed PawnIO driver.
+#[cfg(windows)]
+mod pawnio;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum GpuBackend {
     Nvml,
@@ -433,7 +437,12 @@ impl SensorPoller {
 
         #[cfg(windows)]
         {
-            // Prefer an accurate package/core reading from a running hardware
+            // Most accurate + self-contained: the user-installed PawnIO driver
+            // (reads the CPU's own thermal MSR/SMN registers directly).
+            if let Some(t) = pawnio::cpu_temp() {
+                return Some(t);
+            }
+            // Otherwise prefer an accurate reading from a running hardware
             // monitor; fall back to the coarse ACPI thermal zone.
             if let Some(t) = lhm_cpu_temp() {
                 return Some(t);
