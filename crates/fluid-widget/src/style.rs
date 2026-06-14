@@ -67,7 +67,7 @@ pub fn dice_icon<'a>(color: Color, size: f32) -> Element<'a, Message> {
     const SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">
       <g fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
         <polygon points="18,3 32,11 32,25 18,33 4,25 4,11"/>
-        <path d="M18,17 L18,3 M18,17 L32,25 M18,17 L4,25"/>
+        <path d="M18,17 L18,33 M18,17 L32,11 M18,17 L4,11"/>
       </g>
       <g fill="#FFFFFF" stroke="none">
         <circle cx="18" cy="10" r="1.8"/>
