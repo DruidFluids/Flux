@@ -29,10 +29,18 @@ fn main() -> iced::Result {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    iced::daemon(App::title, App::update, App::view)
+    let mut app = iced::daemon(App::title, App::update, App::view)
         .subscription(App::subscription)
-        .theme(App::theme)
-        .run_with(App::new)
+        .theme(App::theme);
+    // Load Segoe UI Symbol so the monochrome icon glyphs (die, folder, moon,
+    // sun, undo) render — the same font the C# app uses for these icons.
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(bytes) = std::fs::read("C:\\Windows\\Fonts\\seguisym.ttf") {
+            app = app.font(bytes);
+        }
+    }
+    app.run_with(App::new)
 }
 
 fn make_tray_icon() -> tray_icon::Icon {
@@ -241,7 +249,7 @@ enum Message {
     ToggleTile(String, bool),
     SetOpacity(f32), SetOrientation(Orientation),
     SetFahrenheit(bool), SetSnap(bool),
-    ThemePrev, ThemeNext, ThemeDice,
+    ThemePrev, ThemeNext, ThemeDice, SetColorMode(bool),
     SetWarnEnabled(String, bool),
     SetWarnFlash(String, bool), SetWarnGradient(String, bool),
     SetWarnMetric(String, WarnMetric), SetWarnThresholdStr(String, String), SetWarnFlashColor(String, String),
@@ -691,6 +699,13 @@ impl App {
                 if let Some(cur) = style::match_preset(&self.settings) { if idx == cur { idx = (idx + 1) % n; } }
                 style::apply_preset(&mut self.settings, idx); Task::none()
             }
+            // Moon / sun toggles: apply the Dark / Light default palette (presets
+            // 0 and 1 in THEME_PRESETS).
+            Message::SetColorMode(dark) => {
+                self.push_appearance_undo();
+                style::apply_preset(&mut self.settings, if dark { 0 } else { 1 });
+                Task::none()
+            }
             Message::SetWarnEnabled(k, on) => { self.settings.warn_mut(&k).enabled = on; self.eval_warnings(); Task::none() }
             Message::SetWarnThresholdStr(k, s) => {
                 let v: f64 = s.trim().parse().unwrap_or(0.0);
@@ -903,7 +918,11 @@ impl App {
         };
         let p = Palette::from_settings(&self.settings, opacity);
         match kind {
-            WindowKind::Settings => settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), self.editing_color),
+            WindowKind::Settings => {
+                let cpu_name = fmt::shorten(&self.snapshot.cpu.name);
+                let gpu_name = fmt::shorten(&self.snapshot.gpu.name);
+                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color)
+            }
             WindowKind::Tools => popups::tools_view(&self.settings, p, id),
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id),

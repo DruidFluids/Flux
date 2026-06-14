@@ -3,6 +3,54 @@ use iced::Color;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
+/// A darker field colour (dropdowns / inputs) derived from the theme background.
+pub fn field_bg(p: Palette) -> Color {
+    Color { r: p.bg.r * 0.5, g: p.bg.g * 0.5, b: p.bg.b * 0.5, a: 1.0 }
+}
+
+/// Dark dropdown (pick_list) style.
+pub fn pick_list_style(p: Palette) -> impl Fn(&iced::Theme, iced::widget::pick_list::Status) -> iced::widget::pick_list::Style + Copy {
+    let bg = field_bg(p);
+    move |_t, status| {
+        let hover = matches!(status, iced::widget::pick_list::Status::Hovered | iced::widget::pick_list::Status::Opened);
+        iced::widget::pick_list::Style {
+            text_color: p.text,
+            placeholder_color: p.muted,
+            handle_color: p.muted,
+            background: iced::Background::Color(bg),
+            border: iced::Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: if hover { p.accent } else { Color { a: 0.4, ..p.muted } },
+            },
+        }
+    }
+}
+
+/// Dark text-input style (hotkey field, etc.).
+pub fn dark_input_style(p: Palette) -> impl Fn(&iced::Theme, iced::widget::text_input::Status) -> iced::widget::text_input::Style + Copy {
+    let bg = field_bg(p);
+    move |_t, status| {
+        let focused = matches!(status, iced::widget::text_input::Status::Focused);
+        iced::widget::text_input::Style {
+            background: iced::Background::Color(bg),
+            border: iced::Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: if focused { p.accent } else { Color { a: 0.4, ..p.muted } },
+            },
+            icon: p.muted,
+            placeholder: Color { a: 0.6, ..p.muted },
+            value: p.text,
+            selection: Color { a: 0.3, ..p.accent },
+        }
+    }
+}
+
+/// Monochrome icon glyphs (die, folder, moon, sun, undo, arrows) — Segoe UI
+/// Symbol, loaded at startup. Same font the C# app uses for these icons.
+pub const ICONS: iced::Font = iced::Font::with_name("Segoe UI Symbol");
+
 fn font_cache() -> &'static Mutex<HashMap<String, &'static str>> {
     static C: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
     C.get_or_init(|| Mutex::new(HashMap::new()))

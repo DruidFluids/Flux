@@ -15,6 +15,7 @@ pub fn view<'a>(
     settings: &AppSettings, p: Palette, win_id: iced::window::Id,
     theme_name: String, disks: Vec<String>, adapters: Vec<String>,
     fonts: Vec<String>,
+    cpu_name: String, gpu_name: String,
     editing_color: Option<u8>,
 ) -> Element<'a, Message> {
     // ── Style helpers ──
@@ -123,10 +124,10 @@ pub fn view<'a>(
     let gpu_auto = settings.gpu_custom_name.is_empty();
     // C# LineInput: underline-only text field (transparent, bottom border),
     // dimmed while "Auto" is selected.
-    let name_input = |value: &str, auto: bool, on_input: fn(String) -> Message| -> Element<'a, Message> {
+    let name_input = |value: &str, placeholder: &str, auto: bool, on_input: fn(String) -> Message| -> Element<'a, Message> {
         let line = if auto { iced::Color { a: 0.35, ..p.muted } } else { p.muted };
         column![
-            text_input("auto-detected", value).size(11)
+            text_input(placeholder, value).size(11)
                 .padding(iced::Padding { top: 2.0, right: 2.0, bottom: 3.0, left: 2.0 })
                 .on_input(on_input)
                 .style(move |_t, _s| iced::widget::text_input::Style {
@@ -152,7 +153,7 @@ pub fn view<'a>(
     let tile_labels = column![
         row![
             label_cell("CPU"),
-            name_input(&settings.cpu_custom_name, cpu_auto, Message::SetCpuName),
+            name_input(&settings.cpu_custom_name, &cpu_name, cpu_auto, Message::SetCpuName),
             Space::with_width(8),
             pill("Auto".into(), cpu_auto, Message::SetCpuName(String::new())),
             Space::with_width(4),
@@ -160,7 +161,7 @@ pub fn view<'a>(
         ].spacing(0).align_y(iced::Alignment::Center),
         row![
             label_cell("GPU"),
-            name_input(&settings.gpu_custom_name, gpu_auto, Message::SetGpuName),
+            name_input(&settings.gpu_custom_name, &gpu_name, gpu_auto, Message::SetGpuName),
             Space::with_width(8),
             pill("Auto".into(), gpu_auto, Message::SetGpuName(String::new())),
             Space::with_width(4),
@@ -223,7 +224,7 @@ pub fn view<'a>(
         Space::with_height(4),
         fl("Click-through hotkey"),
         row![
-            text_input("", &settings.click_through_hotkey).size(11).width(150),
+            text_input("", &settings.click_through_hotkey).size(11).width(150).style(crate::style::dark_input_style(p)),
             text("click to set").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
             button(text("\u{2715}").size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
                 .padding([2, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
@@ -261,7 +262,7 @@ pub fn view<'a>(
         ],
         Space::with_height(4),
         row![
-            column![fl("Monitor adapter"), pick_list(adapters, selected_adapter, Message::SetAdapter).text_size(11).width(Length::Fill)].width(Length::FillPortion(1)).spacing(2),
+            column![fl("Monitor adapter"), pick_list(adapters, selected_adapter, Message::SetAdapter).text_size(11).width(Length::Fill).style(crate::style::pick_list_style(p))].width(Length::FillPortion(1)).spacing(2),
             Space::with_width(12),
             pslider("Arrow size", signed(settings.arrow_font_offset), -5.0, 10.0, settings.arrow_font_offset as f32, 0.0, 1.0, Message::SetArrowFontOffset),
         ],
@@ -278,7 +279,7 @@ pub fn view<'a>(
         ],
         Space::with_height(4),
         row![
-            column![fl("Monitor disk"), pick_list(disks, selected_disk, Message::SetDisk).text_size(11).width(Length::Fill)].width(Length::FillPortion(1)).spacing(2),
+            column![fl("Monitor disk"), pick_list(disks, selected_disk, Message::SetDisk).text_size(11).width(Length::Fill).style(crate::style::pick_list_style(p))].width(Length::FillPortion(1)).spacing(2),
             Space::with_width(12),
             pslider("R: / W: size", signed(settings.disk_label_font_offset), -5.0, 10.0, settings.disk_label_font_offset as f32, 0.0, 1.0, Message::SetDiskLabelFontOffset),
         ],
@@ -329,8 +330,40 @@ pub fn view<'a>(
             .on_press(Message::Noop)
     );
 
-    // ── Colors cycler (no dice; the single die lives between Skins and Colors) ──
+    // Monochrome icon button (Segoe UI Symbol). Accent-filled when `active`.
+    let icon_btn = |glyph: &str, active: bool, msg: Message| -> Element<'a, Message> {
+        button(text(glyph.to_string()).size(14).font(crate::style::ICONS)
+            .style(move |_| iced::widget::text::Style { color: Some(if active { iced::Color::WHITE } else { p.muted }) }))
+            .padding([4, 8])
+            .style(move |_, _| button::Style {
+                background: Some(iced::Background::Color(if active { p.accent } else { p.tile })),
+                border: Border { radius: 4.0.into(), width: 1.0, color: iced::Color { a: 0.4, ..p.muted } },
+                ..Default::default()
+            })
+            .on_press(msg).into()
+    };
+    // Is the current palette dark? (decides which mode icon is highlighted)
+    let is_dark = (p.bg.r * 0.299 + p.bg.g * 0.587 + p.bg.b * 0.114) < 0.5;
+
+    // Die: left-click randomizes skin + colours (+fonts if enabled); right = skin only.
+    let die = tooltip(
+        mouse_area(
+            container(text("\u{1F3B2}").size(15).font(crate::style::ICONS)
+                .style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+                .padding([4, 8])
+                .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), width: 1.0, color: iced::Color { a: 0.4, ..p.muted } }, ..Default::default() })
+        )
+        .on_press(Message::RandomizeAppearance)
+        .on_right_press(Message::RandomizeSkinOnly),
+        tip_box("Randomize skin + colours. Left-click: rolls a random skin AND colour palette. Right-click: rolls skin only. Fonts roll too if 'Randomize fonts' is on.", p),
+        TipPos::Bottom,
+    );
+
+    // ── Colors row: 🌙 ☀ ‹ name › + ──
     let preset_cycler = row![
+        icon_btn("\u{1F319}", is_dark, Message::SetColorMode(true)),
+        icon_btn("\u{2600}", !is_dark, Message::SetColorMode(false)),
+        Space::with_width(4),
         pill("\u{2039}".into(), false, Message::ThemePrev),
         button(
             container(row![
@@ -342,33 +375,19 @@ pub fn view<'a>(
         .style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
         .on_press(Message::ThemeNext),
         pill("\u{203A}".into(), false, Message::ThemeNext),
+        icon_btn("+", false, Message::Noop),
     ].align_y(iced::Alignment::Center).spacing(3);
 
-    // ── Skins box ──
-    // Single die between Skins and Colors rows: left-click randomizes skin +
-    // colours (and fonts if enabled), right-click randomizes skin only.
-    let dice = tooltip(
-        mouse_area(
-            container(text("\u{2684}").size(15).font(iced::Font::with_name("Segoe UI Symbol"))
-                .style(move |_| iced::widget::text::Style { color: Some(p.text) }))
-                .padding([3, 10])
-                .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
-        )
-        .on_press(Message::RandomizeAppearance)
-        .on_right_press(Message::RandomizeSkinOnly),
-        tip_box("Randomize skin + colours. Left-click: rolls a random skin AND colour palette. Right-click: rolls skin only. Fonts roll too if 'Randomize fonts' is on.", p),
-        TipPos::Bottom,
-    );
+    // ── Skins box (Skins row + Colors row), matching the C# layout ──
     let skins_box = container(column![
         text("Skins").size(9).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         row![
-            // ↺ Undo last appearance change (dice roll, theme/skin/font change).
             tooltip(
-                button(text("\u{21BA}").size(13).font(iced::Font::with_name("Segoe UI Symbol")).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-                    .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() }).on_press(Message::UndoAppearance),
+                icon_btn("\u{21BA}", false, Message::UndoAppearance),
                 tip_box("Undo last change \u{2014} reverts the last appearance change (dice, theme/skin pick, or font change). Up to 5 steps back.", p),
                 TipPos::Bottom,
             ),
+            die,
             Space::with_width(4),
             pill("\u{2039}".into(), false, Message::SkinPrev),
             container(
@@ -380,9 +399,8 @@ pub fn view<'a>(
             ).width(Length::Fill).center_x(Length::Fill).padding([4, 8])
             .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() }),
             pill("\u{203A}".into(), false, Message::SkinNext),
+            icon_btn("\u{1F4C1}", false, Message::Noop),
         ].align_y(iced::Alignment::Center).spacing(3),
-        Space::with_height(6),
-        container(dice).center_x(Length::Fill),
         Space::with_height(6),
         text("Colors").size(9).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         preset_cycler,
@@ -412,7 +430,11 @@ pub fn view<'a>(
                 .padding(0)
                 .style(move |_, _| button::Style {
                     background: Some(iced::Background::Color(c)),
-                    border: Border { radius: 6.0.into(), width: if is_accent { 2.0 } else { 0.0 }, color: p.text },
+                    border: Border {
+                        radius: 6.0.into(),
+                        width: if is_accent { 2.0 } else { 1.0 },
+                        color: if is_accent { p.text } else { iced::Color { a: 0.35, ..p.muted } },
+                    },
                     ..Default::default()
                 })
                 .on_press(Message::EditColor(slot)),
@@ -496,7 +518,7 @@ pub fn view<'a>(
                 pick_list(o, Some(sel), move |s: String| {
                     let name = if s == FONT_DEFAULT { String::new() } else { s };
                     Message::SetFont(slot, name)
-                }).text_size(11).width(Length::Fill).into()
+                }).text_size(11).width(Length::Fill).style(crate::style::pick_list_style(p)).into()
             };
             row![
                 column![fl("Primary font"), font_picker(0, &settings.primary_font)].width(Length::FillPortion(1)).spacing(2),
