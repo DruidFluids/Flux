@@ -1161,19 +1161,22 @@ impl App {
                 self.push_appearance_undo();
                 let n = style::THEME_PRESETS.len();
                 let idx = style::match_preset(&self.settings).map(|i| (i + n - 1) % n).unwrap_or(n - 1);
-                style::apply_preset(&mut self.settings, idx); Task::none()
+                style::apply_preset(&mut self.settings, idx);
+                let _ = self.settings.save(); Task::none()
             }
             Message::ThemeNext => {
                 self.push_appearance_undo();
                 let n = style::THEME_PRESETS.len();
                 let idx = style::match_preset(&self.settings).map(|i| (i + 1) % n).unwrap_or(0);
-                style::apply_preset(&mut self.settings, idx); Task::none()
+                style::apply_preset(&mut self.settings, idx);
+                let _ = self.settings.save(); Task::none()
             }
             // Moon / sun toggles: apply the Dark / Light default palette (presets
             // 0 and 1 in THEME_PRESETS).
             Message::SetColorMode(dark) => {
                 self.push_appearance_undo();
                 style::apply_preset(&mut self.settings, if dark { 0 } else { 1 });
+                let _ = self.settings.save();
                 Task::none()
             }
             Message::SetWarnEnabled(k, on) => { self.settings.warn_mut(&k).enabled = on; self.eval_warnings(); Task::none() }
@@ -1191,6 +1194,7 @@ impl App {
             }
             Message::SetHexColor(slot, v) => {
                 match slot { 0 => self.settings.theme_bg = v, 1 => self.settings.theme_tile = v, 2 => self.settings.theme_accent = v, 3 => self.settings.theme_text = v, _ => self.settings.theme_muted = v }
+                let _ = self.settings.save();
                 Task::none()
             }
             Message::SetTileWidth(v) => { self.settings.tile_width = v; self.resize_widget() }
@@ -1378,6 +1382,7 @@ impl App {
                 let skins = style::skin_names();
                 let cur = skins.iter().position(|s| *s == self.settings.active_skin).unwrap_or(0);
                 self.settings.active_skin = skins[(cur + skins.len() - 1) % skins.len()].to_string();
+                let _ = self.settings.save();
                 self.resize_widget()
             }
             Message::SkinNext => {
@@ -1385,6 +1390,7 @@ impl App {
                 let skins = style::skin_names();
                 let cur = skins.iter().position(|s| *s == self.settings.active_skin).unwrap_or(0);
                 self.settings.active_skin = skins[(cur + 1) % skins.len()].to_string();
+                let _ = self.settings.save();
                 self.resize_widget()
             }
             // C# OnRandomizeAppearance (left-click skin dice): random skin AND a
@@ -1414,6 +1420,7 @@ impl App {
                         self.settings.indicator_font = Some(fl[(r / 19) % fl.len()].clone());
                     }
                 }
+                let _ = self.settings.save();
                 self.resize_widget()
             }
             // C# OnRandomizeSkinOnly (right-click skin dice): random skin, keep
@@ -1424,6 +1431,7 @@ impl App {
                 let mut idx = nanos() % skins.len();
                 if skins[idx] == self.settings.active_skin { idx = (idx + 1) % skins.len(); }
                 self.settings.active_skin = skins[idx].to_string();
+                let _ = self.settings.save();
                 self.resize_widget()
             }
             // C# OnUndoAppearance: revert the last appearance change (up to 5).
@@ -1431,10 +1439,11 @@ impl App {
                 if let Some(prev) = self.appearance_undo.pop() {
                     self.restore_appearance(prev);
                 }
+                let _ = self.settings.save();
                 self.resize_widget()
             }
-            Message::SetSyncFonts(on) => { self.settings.sync_fonts = on; Task::none() }
-            Message::SetRandomizeFonts(on) => { self.settings.randomize_fonts_on_dice = on; Task::none() }
+            Message::SetSyncFonts(on) => { self.settings.sync_fonts = on; let _ = self.settings.save(); Task::none() }
+            Message::SetRandomizeFonts(on) => { self.settings.randomize_fonts_on_dice = on; let _ = self.settings.save(); Task::none() }
             Message::SetFont(slot, name) => {
                 let val = if name.is_empty() { None } else { Some(name) };
                 if self.settings.sync_fonts {
@@ -1448,6 +1457,7 @@ impl App {
                         _ => self.settings.indicator_font = val,
                     }
                 }
+                let _ = self.settings.save();
                 Task::none()
             }
             Message::SetUpdateMode(mode) => {
@@ -1557,6 +1567,7 @@ impl App {
                     p.muted = self.settings.theme_muted.clone();
                     p.skin = self.settings.active_skin.clone();
                 }
+                let _ = self.settings.save();
                 Task::none()
             }
             Message::DiskLabelCycle => {
