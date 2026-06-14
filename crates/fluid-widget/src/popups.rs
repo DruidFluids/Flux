@@ -436,6 +436,121 @@ pub fn help_view<'a>(_settings: &AppSettings, p: Palette, win_id: window::Id) ->
     shell("HELP", win_id, p, body.into())
 }
 
+// ── Optional CPU sensor driver (PawnIO) ─────────────────────────────────────
+//
+// Mirrors the C# CpuTempDialog: a pitch + "More info" + Install, a progress
+// panel during the download/verify/elevated install, and a result panel that
+// either confirms success or offers a manual-download fallback. When the driver
+// is already present the primary panel becomes a "remove" manager instead.
+
+pub const CPU_DRIVER_SIZE: iced::Size = iced::Size::new(470.0, 420.0);
+
+pub fn cpu_driver_view<'a>(
+    stage: &crate::CpuDriverStage,
+    installed: bool,
+    p: Palette,
+    win_id: window::Id,
+) -> Element<'a, Message> {
+    use crate::CpuDriverStage as S;
+    let heading = |t: &str, color: Color| -> Element<'a, Message> {
+        text(t.to_string()).size(14)
+            .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+            .style(move |_| iced::widget::text::Style { color: Some(color) }).into()
+    };
+    let para = |t: &str| -> Element<'a, Message> {
+        text(t.to_string()).size(11)
+            .style(move |_| iced::widget::text::Style { color: Some(p.text) }).into()
+    };
+    let muted = |t: &str| -> Element<'a, Message> {
+        text(t.to_string()).size(11)
+            .style(move |_| iced::widget::text::Style { color: Some(p.muted) }).into()
+    };
+    let ibtn = |lbl: &str, msg: Message| crate::style::inline_btn(lbl, msg, p);
+    let red = Color::from_rgb(0.90, 0.33, 0.24);
+
+    let body: Element<'a, Message> = match stage {
+        S::Primary if installed => column![
+            heading("CPU temperature sensor", p.accent),
+            para("The optional sensor driver (PawnIO) is installed, so your CPU temperature reads directly from the hardware."),
+            Space::with_height(6),
+            muted("You can remove it at any time \u{2014} the rest of the widget is unaffected."),
+            Space::with_height(Length::Fill),
+            row![
+                ibtn("Remove driver", Message::CpuDriverUninstall),
+                Space::with_width(Length::Fill),
+                primary_btn("Close", Message::ClosePopup(win_id), p),
+            ].align_y(iced::Alignment::Center),
+        ].spacing(6).height(Length::Fill).into(),
+
+        S::Primary => column![
+            heading("Turn on CPU temperature", p.accent),
+            para("Reading the CPU's die temperature needs a small hardware-sensor driver. fluidMonitor uses PawnIO \u{2014} a free, open-source, Microsoft-signed driver built specifically for safe sensor access."),
+            Space::with_height(4),
+            muted("fluidMonitor never bundles the driver. It downloads the official signed installer, verifies its signature, then runs it. You'll see one Windows permission prompt (driver installs require it). Everything else on the widget works without this."),
+            Space::with_height(Length::Fill),
+            row![
+                ibtn("More info", Message::CpuDriverMoreInfo),
+                Space::with_width(Length::Fill),
+                ibtn("Cancel", Message::ClosePopup(win_id)),
+                Space::with_width(8),
+                primary_btn("Install", Message::CpuDriverInstall, p),
+            ].align_y(iced::Alignment::Center),
+        ].spacing(6).height(Length::Fill).into(),
+
+        S::Info => column![
+            heading("About the sensor driver", p.accent),
+            para("PawnIO is an open-source kernel driver for hardware monitoring. Unlike older sensor drivers, it only runs cryptographically-signed, sandboxed modules \u{2014} which makes it far safer than the legacy alternatives."),
+            Space::with_height(6),
+            muted("Review it yourself \u{2014} these open in your browser:"),
+            row![
+                ibtn("Home page", Message::OpenUrl(crate::cpu_driver::HOME_PAGE_URL.into())),
+                ibtn("Source code", Message::OpenUrl(crate::cpu_driver::SOURCE_URL.into())),
+                ibtn("Direct download", Message::OpenUrl(crate::cpu_driver::DOWNLOAD_URL.into())),
+            ].spacing(8),
+            Space::with_height(Length::Fill),
+            row![
+                ibtn("Back", Message::CpuDriverBack),
+                Space::with_width(Length::Fill),
+                primary_btn("Close", Message::ClosePopup(win_id), p),
+            ].align_y(iced::Alignment::Center),
+        ].spacing(6).height(Length::Fill).into(),
+
+        S::Progress(msg) => column![
+            Space::with_height(Length::Fill),
+            container(text(msg.clone()).size(12)
+                .style(move |_| iced::widget::text::Style { color: Some(p.text) }))
+                .center_x(Length::Fill),
+            Space::with_height(8),
+            container(muted("Follow the Windows permission prompt if it appears."))
+                .center_x(Length::Fill),
+            Space::with_height(Length::Fill),
+        ].into(),
+
+        S::Done { ok, title, body: b, show_fallback } => {
+            let mut col = column![
+                heading(title, if *ok { p.accent } else { red }),
+                para(b),
+            ].spacing(8);
+            if *show_fallback {
+                col = col.push(Space::with_height(4));
+                col = col.push(muted("If automatic setup keeps failing, you can download and run the official installer yourself, then reopen this dialog."));
+                col = col.push(row![
+                    ibtn("Open download", Message::OpenUrl(crate::cpu_driver::DOWNLOAD_URL.into())),
+                    ibtn("Home page", Message::OpenUrl(crate::cpu_driver::HOME_PAGE_URL.into())),
+                ].spacing(8));
+            }
+            col = col.push(Space::with_height(Length::Fill));
+            col = col.push(row![
+                Space::with_width(Length::Fill),
+                primary_btn("Done", Message::ClosePopup(win_id), p),
+            ]);
+            col.height(Length::Fill).into()
+        }
+    };
+
+    shell("CPU TEMPERATURE", win_id, p, body)
+}
+
 // ── Utilities (Tweaks) ───────────────────────────────────────────────────────
 
 pub const UTILITIES_SIZE: iced::Size = iced::Size::new(460.0, 430.0);

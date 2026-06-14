@@ -76,6 +76,7 @@ pub fn view<'a>(
     appearance_status: String,
     remote: RemoteView,
     update: UpdateView,
+    cpu_driver_installed: bool,
 ) -> Element<'a, Message> {
     // ── Style helpers ──
     let sh = |label: &str, tip: &'static str| -> Element<'a, Message> {
@@ -171,8 +172,39 @@ pub fn view<'a>(
     let tiles_grid = column![row(t_r0).spacing(4), row(t_r1).spacing(4)].spacing(6);
 
     let fahrenheit = settings.temperature_unit == TempUnit::Fahrenheit;
+    // Optional CPU-temp sensor driver (PawnIO): an "i" badge opens the manage
+    // dialog, and an Active/Inactive chip reflects whether the driver is present.
+    let info_badge: Element<'a, Message> = button(
+        container(text("i").size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+            .center_x(Length::Fixed(15.0)).center_y(Length::Fixed(15.0))
+    )
+    .padding(0)
+    .style(move |_: &iced::Theme, status: button::Status| {
+        let hover = matches!(status, button::Status::Hovered);
+        button::Style {
+            background: None,
+            text_color: if hover { p.accent } else { p.muted },
+            border: Border { radius: 8.0.into(), width: 1.0, color: if hover { p.accent } else { iced::Color { a: 0.6, ..p.muted } } },
+            ..Default::default()
+        }
+    })
+    .on_press(Message::OpenCpuDriver).into();
+    let status_color = if cpu_driver_installed { p.accent } else { p.muted };
+    let status_label = if cpu_driver_installed { "Active" } else { "Inactive" };
+    let driver_status: Element<'a, Message> = button(
+        text(status_label).size(11).style(move |_| iced::widget::text::Style { color: Some(status_color) })
+    )
+    .padding(iced::Padding { top: 1.0, right: 4.0, bottom: 1.0, left: 4.0 })
+    .style(|_: &iced::Theme, _: button::Status| button::Style { background: None, ..Default::default() })
+    .on_press(Message::OpenCpuDriver).into();
     let temp_row: Element<'a, Message> = row![
         text("CPU temperature").size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+        Space::with_width(6),
+        tooltip(info_badge,
+            tip_box("Optional: install a free, signed sensor driver (PawnIO) so CPU die temperature can be read. Click for details.", p),
+            TipPos::Top),
+        Space::with_width(2),
+        driver_status,
         Space::with_width(Length::Fill),
         seg("\u{00B0}C".into(), !fahrenheit, Message::SetFahrenheit(false)),
         seg("\u{00B0}F".into(), fahrenheit, Message::SetFahrenheit(true)),

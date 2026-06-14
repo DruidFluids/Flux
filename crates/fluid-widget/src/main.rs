@@ -10,6 +10,7 @@ mod fonts;
 mod hotkeys;
 mod updates;
 mod firewall;
+mod cpu_driver;
 
 use fluid_core::sensor_data::SensorSnapshot;
 use fluid_core::settings::{AppSettings, Orientation, SnapPosition, TempUnit, WarnMetric};
@@ -310,7 +311,7 @@ fn cursor_logical_pos() -> Option<(f32, f32)> {
 fn cursor_logical_pos() -> Option<(f32, f32)> { None }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, WindowPicker, ThemeStore, PopoutConfig }
+enum WindowKind { Widget, Settings, Tools, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, WindowPicker, ThemeStore, PopoutConfig, CpuDriver }
 
 // Per-tab settings window height so each category fits snugly with no scrollbar
 // and no big empty gap. The hidden scrollbar is a safety net for slight
@@ -345,9 +346,21 @@ fn kind_key(kind: WindowKind) -> Option<&'static str> {
         WindowKind::WindowPicker => Some("windowpicker"),
         WindowKind::ThemeStore => Some("themestore"),
         WindowKind::PopoutConfig => Some("popoutconfig"),
+        WindowKind::CpuDriver => Some("cpudriver"),
         WindowKind::Popout => Some("popout"),
         WindowKind::Widget | WindowKind::Settings | WindowKind::WidgetMenu => None,
     }
+}
+
+// Which panel the optional-CPU-driver (PawnIO) dialog is showing. Mirrors the
+// C# CpuTempDialog panels: Primary (pitch / manage), Info (links), Progress,
+// and Done (success or failed-with-fallback).
+#[derive(Debug, Clone)]
+enum CpuDriverStage {
+    Primary,
+    Info,
+    Progress(String),
+    Done { ok: bool, title: String, body: String, show_fallback: bool },
 }
 
 // Snapshot of all appearance state for the C# "Undo last change" stack
@@ -429,6 +442,9 @@ struct App {
     new_device_key: String,
     device_test_status: String,
     device_test_ok: bool,
+    // ── Optional CPU sensor driver (PawnIO) ──
+    cpu_driver_installed: bool,
+    cpu_dialog: CpuDriverStage,
 }
 
 #[derive(Debug, Clone)]
@@ -500,6 +516,12 @@ enum Message {
     SetGameModePosition(SnapPosition), SetGameModeOpacity(f32),
     SetGameModeOrientation(String), SetGameModeClickThrough(bool),
     ToggleGameModeTile(String, bool),
+    // ── Optional CPU sensor driver (PawnIO) ──
+    OpenCpuDriver,
+    CpuDriverMoreInfo, CpuDriverBack,
+    CpuDriverInstall, CpuDriverUninstall,
+    CpuDriverInstallDone(cpu_driver::Outcome),
+    CpuDriverUninstallDone(cpu_driver::Outcome),
 }
 
 impl App {
@@ -555,6 +577,8 @@ impl App {
             add_device_open: false,
             new_device_name: String::new(), new_device_ip: String::new(), new_device_key: String::new(),
             device_test_status: String::new(), device_test_ok: false,
+            cpu_driver_installed: cpu_driver::is_installed(),
+            cpu_dialog: CpuDriverStage::Primary,
         };
         let size = app.widget_size();
         let position = if app.settings.first_run_complete {
@@ -1083,6 +1107,63 @@ impl App {
             Message::OpenGameMode => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::GameMode, popups::GAME_MODE_SIZE)]),
             Message::OpenHelp => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::Help, popups::HELP_SIZE)]),
             Message::OpenUtilities => Task::batch([self.close_kind(WindowKind::Tools), self.open_popup(WindowKind::Utilities, popups::UTILITIES_SIZE)]),
+            // ── Optional CPU sensor driver (PawnIO) ──
+            Message::OpenCpuDriver => {
+                self.cpu_driver_installed = cpu_driver::is_installed();
+                self.cpu_dialog = CpuDriverStage::Primary;
+                self.open_popup(WindowKind::CpuDriver, popups::CPU_DRIVER_SIZE)
+            }
+            Message::CpuDriverMoreInfo => { self.cpu_dialog = CpuDriverStage::Info; Task::none() }
+            Message::CpuDriverBack => { self.cpu_dialog = CpuDriverStage::Primary; Task::none() }
+            Message::CpuDriverInstall => {
+                self.cpu_dialog = CpuDriverStage::Progress("Downloading and verifying the sensor driver…".into());
+                Task::perform(cpu_driver::install(), Message::CpuDriverInstallDone)
+            }
+            Message::CpuDriverUninstall => {
+                self.cpu_dialog = CpuDriverStage::Progress("Removing the sensor driver…".into());
+                Task::perform(cpu_driver::uninstall(), Message::CpuDriverUninstallDone)
+            }
+            Message::CpuDriverInstallDone(outcome) => {
+                self.cpu_driver_installed = cpu_driver::is_installed();
+                self.cpu_dialog = match outcome.result {
+                    cpu_driver::InstallResult::Installed | cpu_driver::InstallResult::AlreadyPresent =>
+                        CpuDriverStage::Done {
+                            ok: true,
+                            title: "CPU temperature is on".into(),
+                            body: "The sensor driver is installed. Your CPU temperature now appears on the widget.".into(),
+                            show_fallback: false,
+                        },
+                    // User declined the UAC prompt — back out, no error.
+                    cpu_driver::InstallResult::Cancelled => CpuDriverStage::Primary,
+                    cpu_driver::InstallResult::Failed => CpuDriverStage::Done {
+                        ok: false,
+                        title: "Automatic setup didn't finish".into(),
+                        body: if outcome.detail.is_empty() { "The automatic install didn't complete.".into() } else { outcome.detail },
+                        show_fallback: true,
+                    },
+                };
+                Task::none()
+            }
+            Message::CpuDriverUninstallDone(outcome) => {
+                self.cpu_driver_installed = cpu_driver::is_installed();
+                self.cpu_dialog = match outcome.result {
+                    cpu_driver::InstallResult::Installed | cpu_driver::InstallResult::AlreadyPresent =>
+                        CpuDriverStage::Done {
+                            ok: true,
+                            title: "Sensor driver removed".into(),
+                            body: "The CPU sensor driver was removed. CPU temperature returns to the opt-in hint.".into(),
+                            show_fallback: false,
+                        },
+                    cpu_driver::InstallResult::Cancelled => CpuDriverStage::Primary,
+                    cpu_driver::InstallResult::Failed => CpuDriverStage::Done {
+                        ok: false,
+                        title: "Couldn't remove the driver".into(),
+                        body: if outcome.detail.is_empty() { "The uninstaller didn't complete.".into() } else { outcome.detail },
+                        show_fallback: false,
+                    },
+                };
+                Task::none()
+            }
             Message::OpenUrl(url) => { open_url(&url); Task::none() }
             Message::OpenSkinsFolder => {
                 let dir = style::ensure_skins_dir();
@@ -1665,7 +1746,7 @@ impl App {
                     status_kind: self.update_status_kind,
                     available: self.update_available.as_ref().map(|u| (u.version.clone(), u.changelog.clone())),
                 };
-                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), remote, update)
+                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), remote, update, self.cpu_driver_installed)
             }
             WindowKind::Tools => popups::tools_view(&self.settings, p, id),
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
@@ -1679,6 +1760,7 @@ impl App {
                     .and_then(|cid| self.settings.remote_devices.iter().find(|d| &d.id == cid));
                 popups::popout_config_view(dev, p, id)
             }
+            WindowKind::CpuDriver => popups::cpu_driver_view(&self.cpu_dialog, self.cpu_driver_installed, p, id),
             WindowKind::WidgetMenu => popups::widget_menu_view(p),
             WindowKind::Popout => self.popout_view(id, p),
             WindowKind::Widget => self.widget_view(id, p),
