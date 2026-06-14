@@ -276,6 +276,77 @@ fn ram_info_cached() -> (u32, String) {
     }).clone()
 }
 
+// Physical-disk model for a drive letter (e.g. "C:") via WMI association walk
+// LogicalDisk -> Partition -> DiskDrive.Model, mirroring the C# service. sysinfo
+// only exposes the volume label (usually empty on Windows), so the tile's
+// "Model" label needs this. Cached per thread (models don't change at runtime).
+#[cfg(windows)]
+fn disk_model_for(mount: &str) -> Option<String> {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    thread_local! {
+        static MAP: RefCell<Option<HashMap<String, String>>> = const { RefCell::new(None) };
+    }
+    let letter = mount.trim_end_matches('\\').to_uppercase();
+    if letter.is_empty() {
+        return None;
+    }
+    MAP.with(|cell| {
+        let mut g = cell.borrow_mut();
+        if g.is_none() {
+            *g = Some(build_disk_model_map());
+        }
+        g.as_ref().unwrap().get(&letter).cloned()
+    })
+}
+
+#[cfg(windows)]
+fn build_disk_model_map() -> std::collections::HashMap<String, String> {
+    use std::collections::HashMap;
+    use wmi::{COMLibrary, Variant, WMIConnection};
+    let mut map: HashMap<String, String> = HashMap::new();
+    let com = unsafe { COMLibrary::assume_initialized() };
+    let conn = match WMIConnection::with_namespace_path("root\\CIMV2", com) {
+        Ok(c) => c,
+        Err(_) => return map,
+    };
+    let str_of = |row: &HashMap<String, Variant>, k: &str| -> Option<String> {
+        match row.get(k) {
+            Some(Variant::String(s)) => Some(s.clone()),
+            _ => None,
+        }
+    };
+    let logicals: Vec<HashMap<String, Variant>> = conn
+        .raw_query("SELECT DeviceID FROM Win32_LogicalDisk WHERE DriveType = 3")
+        .unwrap_or_default();
+    for ld in &logicals {
+        let Some(letter) = str_of(ld, "DeviceID") else { continue };
+        // LogicalDisk -> Partition(s)
+        let q_parts = format!(
+            "ASSOCIATORS OF {{Win32_LogicalDisk.DeviceID='{letter}'}} WHERE AssocClass=Win32_LogicalDiskToPartition"
+        );
+        let parts: Vec<HashMap<String, Variant>> = conn.raw_query(&q_parts).unwrap_or_default();
+        'outer: for part in &parts {
+            let Some(pid) = str_of(part, "DeviceID") else { continue };
+            // Partition -> DiskDrive(s) (has Model)
+            let q_drives = format!(
+                "ASSOCIATORS OF {{Win32_DiskPartition.DeviceID='{pid}'}} WHERE AssocClass=Win32_DiskDriveToDiskPartition"
+            );
+            let drives: Vec<HashMap<String, Variant>> = conn.raw_query(&q_drives).unwrap_or_default();
+            for drive in &drives {
+                if let Some(model) = str_of(drive, "Model") {
+                    let model = model.trim().to_string();
+                    if !model.is_empty() {
+                        map.insert(letter.to_uppercase(), model);
+                        break 'outer;
+                    }
+                }
+            }
+        }
+    }
+    map
+}
+
 #[cfg(target_os = "linux")]
 fn linux_cpu_temp() -> Option<f32> {
     use std::fs;
@@ -571,9 +642,18 @@ impl SensorPoller {
             let total = d.total_space() as f32 / (1024.0 * 1024.0 * 1024.0);
             let available = d.available_space() as f32 / (1024.0 * 1024.0 * 1024.0);
             let usage = d.usage();
+            let mount = d.mount_point().to_string_lossy().to_string();
+            // Prefer the physical-disk model (WMI on Windows); fall back to the
+            // volume label sysinfo provides.
+            let name = {
+                #[cfg(windows)]
+                { disk_model_for(&mount).unwrap_or_else(|| d.name().to_string_lossy().to_string()) }
+                #[cfg(not(windows))]
+                { d.name().to_string_lossy().to_string() }
+            };
             DriveInfo {
-                name: d.name().to_string_lossy().to_string(),
-                mount: d.mount_point().to_string_lossy().to_string(),
+                name,
+                mount,
                 total_gb: total,
                 used_gb: total - available,
                 read_bytes_sec: usage.read_bytes,
