@@ -510,10 +510,8 @@ pub fn view<'a>(
         let internal = intern.to_string();
         let nm = disp.to_string();
         let nm2 = disp.to_string();
-        // Soft chevron (open V, matches the ‹ › nav glyphs): down = "expand for
-        // more", up = "collapse".
-        let chev = if open { "\u{2303}" } else { "\u{2304}" };
-        let chev_col = if open { p.accent } else { p.text };
+        // Soft, custom-drawn expand chevron (rounded strokes, not a font glyph).
+        let chev_col = if open { p.accent } else { p.muted };
         let lblcol = if open { p.accent } else { p.text };
         // The label fills the row width and is the expand click-target.
         let expand = button(
@@ -535,9 +533,8 @@ pub fn view<'a>(
         })
         .on_press(Message::ToggleTileSection(nm.clone()));
         let chev_btn = crate::style::with_tip(
-            button(text(chev.to_string()).size(16).font(crate::style::ICONS)
-                .style(move |_| iced::widget::text::Style { color: Some(chev_col) }))
-                .padding(iced::Padding { top: 5.0, right: 10.0, bottom: 5.0, left: 10.0 })
+            button(crate::style::expand_chevron(open, chev_col, 18.0))
+                .padding(iced::Padding { top: 7.0, right: 9.0, bottom: 7.0, left: 9.0 })
                 .style(|_: &iced::Theme, _: button::Status| button::Style { background: None, ..Default::default() })
                 .on_press(Message::ToggleTileSection(nm2.clone())),
             if open { "Collapse options" } else { "Expand for more options" }, p);
@@ -819,7 +816,7 @@ pub fn view<'a>(
     };
 
     let appearance = column![
-        saved_row,
+        container(saved_row).width(Length::Fill).center_x(Length::Fill),
         Space::with_height(4),
         skins_box,
         Space::with_height(6),
@@ -1075,7 +1072,8 @@ pub fn view<'a>(
         .padding(16)
         .style(move |_| iced::widget::container::Style {
             background: Some(iced::Background::Color(iced::Color { a: 1.0, ..p.bg })),
-            border: Border { radius: 16.0.into(), width: 1.0, color: hairline },
+            // Echo the window's 20px rounding (a touch tighter as it's inset).
+            border: Border { radius: 18.0.into(), width: 1.0, color: hairline },
             ..Default::default()
         });
     let columns = column![strip_bar, Space::with_height(12), active_pane].width(Length::Fill);

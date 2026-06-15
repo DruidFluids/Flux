@@ -289,7 +289,20 @@ pub const GAME_MODE_SIZE: iced::Size = iced::Size::new(460.0, 640.0);
 
 fn pos_cell<'a>(settings: &AppSettings, pos: SnapPosition, glyph: &str, label_text: &str, p: Palette) -> Element<'a, Message> {
     let active = settings.game_mode_position == pos;
-    pill(format!("{} {}", glyph, label_text), active, Message::SetGameModePosition(pos), p)
+    // Fills its grid column so the 3x3 position grid lines up (the old
+    // content-width pills left the rows ragged and pushed "Right" to the edge).
+    button(
+        container(text(format!("{} {}", glyph, label_text)).size(11).font(iced::Font::with_name("Segoe UI Symbol"))
+            .style(move |_| iced::widget::text::Style { color: Some(if active { Color::WHITE } else { p.text }) }))
+            .center_x(Length::Fill)
+    )
+    .width(Length::FillPortion(1)).padding([5, 6])
+    .style(move |_: &iced::Theme, _: button::Status| button::Style {
+        background: Some(iced::Background::Color(if active { p.accent } else { p.tile })),
+        border: Border { radius: 4.0.into(), ..Border::default() },
+        ..Default::default()
+    })
+    .on_press(Message::SetGameModePosition(pos)).into()
 }
 
 pub fn game_mode_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id, capturing: bool) -> Element<'a, Message> {
@@ -312,25 +325,19 @@ pub fn game_mode_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id
     let pos_grid = column![
         row![
             pos_cell(s, SnapPosition::TopLeft, "\u{2196}", "Top L", p),
-            Space::with_width(6),
             pos_cell(s, SnapPosition::TopCenter, "\u{2191}", "Top C", p),
-            Space::with_width(6),
             pos_cell(s, SnapPosition::TopRight, "\u{2197}", "Top R", p),
-        ].spacing(0),
+        ].spacing(6),
         row![
             pos_cell(s, SnapPosition::LeftCenter, "\u{2190}", "Left", p),
-            Space::with_width(6),
             empty,
-            Space::with_width(6),
             pos_cell(s, SnapPosition::RightCenter, "\u{2192}", "Right", p),
-        ].spacing(0),
+        ].spacing(6),
         row![
             pos_cell(s, SnapPosition::BottomLeft, "\u{2199}", "Bot L", p),
-            Space::with_width(6),
             pos_cell(s, SnapPosition::BottomCenter, "\u{2193}", "Bot C", p),
-            Space::with_width(6),
             pos_cell(s, SnapPosition::BottomRight, "\u{2198}", "Bot R", p),
-        ].spacing(0),
+        ].spacing(6),
     ].spacing(6);
 
     let orient_pills = row![

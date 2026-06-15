@@ -2,10 +2,62 @@
 
 use crate::Message;
 use fluid_core::settings::AppSettings;
+use iced::widget::canvas::{self, path, Frame, LineCap, LineJoin, Stroke};
 use iced::widget::{button, text};
 use iced::{Border, Color, Element};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+
+/// A soft, custom-drawn expand chevron with rounded caps/joins — a smooth stroke
+/// rather than a (sharp) font glyph. Points down (⌄) when collapsed = "expand
+/// for more", up (⌃) when open = "collapse".
+struct ExpandChevron {
+    open: bool,
+    color: Color,
+}
+impl canvas::Program<Message> for ExpandChevron {
+    type State = ();
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &iced::Renderer,
+        _theme: &iced::Theme,
+        bounds: iced::Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = Frame::new(renderer, bounds.size());
+        let (w, h) = (bounds.width, bounds.height);
+        let (cx, cy) = (w / 2.0, h / 2.0);
+        let half = w.min(h) * 0.30; // horizontal reach
+        let amp = half * 0.52; // vertical amplitude — flatter = softer/less pointy
+        let (y_out, y_in) = if self.open {
+            (cy + amp / 2.0, cy - amp / 2.0)
+        } else {
+            (cy - amp / 2.0, cy + amp / 2.0)
+        };
+        let mut b = path::Builder::new();
+        b.move_to(iced::Point::new(cx - half, y_out));
+        b.line_to(iced::Point::new(cx, y_in));
+        b.line_to(iced::Point::new(cx + half, y_out));
+        frame.stroke(
+            &b.build(),
+            Stroke::default()
+                .with_width((w * 0.10).clamp(2.0, 3.2))
+                .with_color(self.color)
+                .with_line_cap(LineCap::Round)
+                .with_line_join(LineJoin::Round),
+        );
+        vec![frame.into_geometry()]
+    }
+}
+
+/// The soft expand chevron as a fixed-size element.
+pub fn expand_chevron<'a>(open: bool, color: Color, size: f32) -> Element<'a, Message> {
+    canvas::Canvas::new(ExpandChevron { open, color })
+        .width(iced::Length::Fixed(size))
+        .height(iced::Length::Fixed(size))
+        .into()
+}
 
 /// Field colour (dropdowns / inputs) derived from the theme background, so it
 /// stays readable on both dark and light themes: dark themes get a clearly
