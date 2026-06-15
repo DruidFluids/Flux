@@ -120,11 +120,14 @@ fn work_area() -> Option<(f32, f32, f32, f32)> { None }
 fn own_window_rects(blocklist: &[String]) -> Vec<(f32, f32, f32, f32)> {
     use windows::core::BOOL;
     use windows::Win32::Foundation::{HWND, LPARAM, RECT};
+    use windows::Win32::System::Threading::GetCurrentProcessId;
     use windows::Win32::UI::HiDpi::GetDpiForWindow;
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, IsIconic, IsWindowVisible,
+        EnumWindows, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+        IsIconic, IsWindowVisible,
     };
 
+    let own_pid = unsafe { GetCurrentProcessId() };
     let widget = widget_hwnd();
     let scale = match widget {
         Some(h) => { let d = unsafe { GetDpiForWindow(h) }; if d == 0 { 1.0 } else { d as f32 / 96.0 } }
@@ -132,9 +135,10 @@ fn own_window_rects(blocklist: &[String]) -> Vec<(f32, f32, f32, f32)> {
     };
     // Lowercased blocklist for case-insensitive substring matching.
     let block: Vec<String> = blocklist.iter().map(|s| s.to_lowercase()).collect();
-    struct Ctx { widget: isize, scale: f32, block: Vec<String>, rects: Vec<(f32, f32, f32, f32)> }
+    struct Ctx { widget: isize, own_pid: u32, scale: f32, block: Vec<String>, rects: Vec<(f32, f32, f32, f32)> }
     let mut ctx = Ctx {
         widget: widget.map(|h| h.0 as isize).unwrap_or(0),
+        own_pid,
         scale,
         block,
         rects: Vec::new(),
@@ -142,9 +146,15 @@ fn own_window_rects(blocklist: &[String]) -> Vec<(f32, f32, f32, f32)> {
 
     unsafe extern "system" fn cb(h: HWND, lp: LPARAM) -> BOOL {
         let ctx = &mut *(lp.0 as *mut Ctx);
+        // Only dock to Fluxid's OWN windows (settings/popups), never arbitrary
+        // third-party windows — snapping to any window near the cursor (e.g. one
+        // centered on screen) is surprising. Filter by owning process id.
+        let mut wpid = 0u32;
+        GetWindowThreadProcessId(h, Some(&mut wpid));
         // Visible, not minimized, has a title (skips tool/helper windows), and
         // not the widget itself.
-        if h.0 as isize != ctx.widget
+        if wpid == ctx.own_pid
+            && h.0 as isize != ctx.widget
             && IsWindowVisible(h).as_bool() && !IsIconic(h).as_bool()
             && GetWindowTextLengthW(h) > 0
         {

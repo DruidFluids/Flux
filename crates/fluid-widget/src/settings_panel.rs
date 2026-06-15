@@ -215,7 +215,7 @@ pub fn view<'a>(
         Space::with_width(6),
         tooltip(info_badge,
             tip_box("Optional: install a free, signed sensor driver (PawnIO) so CPU die temperature can be read. Click for details.", p),
-            TipPos::Top),
+            TipPos::FollowCursor),
         Space::with_width(2),
         driver_status,
         Space::with_width(Length::Fill),
@@ -294,7 +294,7 @@ pub fn view<'a>(
                 text(label_text.to_string()).size(11)
                     .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
             ].spacing(6).align_y(iced::Alignment::Center).width(Length::FillPortion(1)),
-            tip_box(tip, p), TipPos::Top,
+            tip_box(tip, p), TipPos::FollowCursor,
         ).into()
     };
 
@@ -364,7 +364,7 @@ pub fn view<'a>(
     let selected_adapter = if adapters.contains(&adapter_value) { Some(adapter_value) } else { Some("All adapters".to_string()) };
     let network = column![
         row![
-            column![fl("Traffic indicator"), tooltip(cycle_btn(traffic_label, Message::TrafficCycle), tip_box("Click to cycle: Off > Blink > Fade > Glow", p), TipPos::Top)].width(Length::FillPortion(1)).spacing(2),
+            column![fl("Traffic indicator"), tooltip(cycle_btn(traffic_label, Message::TrafficCycle), tip_box("Click to cycle: Off > Blink > Fade > Glow", p), TipPos::FollowCursor)].width(Length::FillPortion(1)).spacing(2),
             Space::with_width(12),
             pslider("Arrow position", format!("{:.0}px", settings.network_arrow_spacing.min(8.0)), 0.0, 8.0, settings.network_arrow_spacing.min(8.0), 5.0, 1.0, Message::SetArrowSpacing),
         ],
@@ -381,7 +381,7 @@ pub fn view<'a>(
     let selected_disk = if disks.contains(&settings.selected_disk_mount) { Some(settings.selected_disk_mount.clone()) } else { disks.first().cloned() };
     let disk = column![
         row![
-            column![fl("Tile label"), tooltip(cycle_btn(disk_label_text, Message::DiskLabelCycle), tip_box("Click to cycle: Drive letter, Model, Both", p), TipPos::Top)].width(Length::FillPortion(1)).spacing(2),
+            column![fl("Tile label"), tooltip(cycle_btn(disk_label_text, Message::DiskLabelCycle), tip_box("Click to cycle: Drive letter, Model, Both", p), TipPos::FollowCursor)].width(Length::FillPortion(1)).spacing(2),
             Space::with_width(12),
             pslider("R: / W: position", format!("{:.0}px", settings.disk_label_spacing.min(14.0)), 0.0, 14.0, settings.disk_label_spacing.min(14.0), 8.0, 1.0, Message::SetDiskLabelSpacing),
         ],
@@ -485,7 +485,7 @@ pub fn view<'a>(
                 text(disp.to_string()).size(12).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
                     .style(move |_| iced::widget::text::Style { color: Some(if open { p.accent } else { p.text }) }),
                 Space::with_width(Length::Fill),
-                text(chev.to_string()).size(10)
+                text(chev.to_string()).size(10).font(crate::style::ICONS)
                     .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
             ].align_y(iced::Alignment::Center))
             .width(Length::Fill).padding(iced::Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 6.0 })
@@ -566,7 +566,7 @@ pub fn view<'a>(
             button(text("\u{2199}").size(12).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
                 .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() })
                 .on_press(Message::ImportAppearance),
-            tip_box("Import appearance from a share code on the clipboard.", p), TipPos::Bottom,
+            tip_box("Import appearance from a share code on the clipboard.", p), TipPos::FollowCursor,
         )
     );
     saved_row = saved_row.push(Space::with_width(3));
@@ -575,7 +575,7 @@ pub fn view<'a>(
             button(text("\u{2197}").size(12).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
                 .padding([3, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 3.0.into(), ..Border::default() }, ..Default::default() })
                 .on_press(Message::ExportAppearance),
-            tip_box("Export the current appearance as a share code to the clipboard.", p), TipPos::Bottom,
+            tip_box("Export the current appearance as a share code to the clipboard.", p), TipPos::FollowCursor,
         )
     );
     if !appearance_status.is_empty() {
@@ -781,7 +781,7 @@ pub fn view<'a>(
                     toggler(settings.sync_fonts).size(14).on_toggle(Message::SetSyncFonts).style(crate::style::toggler_style(p)),
                     text("Sync fonts").size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
                 ].spacing(6).align_y(iced::Alignment::Center),
-                tip_box("When on, changing Primary font also sets Secondary and Indicator to the same font.", p), TipPos::Top,
+                tip_box("When on, changing Primary font also sets Secondary and Indicator to the same font.", p), TipPos::FollowCursor,
             ),
             Space::with_width(16),
             tooltip(
@@ -790,7 +790,7 @@ pub fn view<'a>(
                     text("Allow random fonts with die button").size(11)
                         .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
                 ].spacing(6).align_y(iced::Alignment::Center),
-                tip_box("When on, the die button also picks random fonts in addition to theme + skin.", p), TipPos::Top,
+                tip_box("When on, the die button also picks random fonts in addition to theme + skin.", p), TipPos::FollowCursor,
             ),
         ].spacing(6).align_y(iced::Alignment::Center),
         {
@@ -1048,7 +1048,7 @@ pub fn view<'a>(
         background: Some(iced::Background::Color(p.tile)),
         border: Border { radius: 7.0.into(), ..Border::default() },
         ..Default::default()
-    }).on_press(Message::OpenHelp), tip_box("Help \u{2014} feature guide", p), TipPos::Top);
+    }).on_press(Message::OpenHelp), tip_box("Help \u{2014} feature guide", p), TipPos::FollowCursor);
 
     // C# BottomBarDanger: tile fill, IndianRed border + text, radius 6.
     let indian_red = iced::Color::from_rgb(0.804, 0.361, 0.361);
@@ -1231,7 +1231,7 @@ fn qmark<'a>(p: Palette, tip: &str) -> Element<'a, Message> {
     if tip.is_empty() {
         bubble.into()
     } else {
-        tooltip(bubble, tip_box(tip, p), TipPos::Bottom).into()
+        tooltip(bubble, tip_box(tip, p), TipPos::FollowCursor).into()
     }
 }
 

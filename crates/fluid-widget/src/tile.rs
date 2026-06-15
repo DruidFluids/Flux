@@ -56,13 +56,20 @@ fn fit_name(name: String, s: &AppSettings) -> String {
     format!("{}\u{2026}", t.trim_end())
 }
 
+// One subheader line's reserved height — keeps the subheader row the same height
+// in every tile (even when a tile has no subheader text) so the primary value
+// below it lands at the same vertical position across tiles.
+fn sub_line_h(s: &AppSettings) -> f32 {
+    sz(11, s.secondary_font_offset, s) as f32 * 1.45
+}
+
 // SubHeader: SecondaryFontSize (11+secondaryOffset), muted (0.8), secondary
-// font. Collapses when empty (matches the C# Text="" trigger).
+// font. Always reserves one line of height (even when empty) so primary values
+// stay aligned tile-to-tile.
 fn sub_header<'a>(label: String, p: Palette, s: &AppSettings) -> Element<'a, Message> {
-    if label.trim().is_empty() {
-        return Space::with_height(0).into();
-    }
-    container(
+    let content: Element<'a, Message> = if label.trim().is_empty() {
+        Space::with_height(0).into()
+    } else {
         text(label).size(sz(11, s.secondary_font_offset, s))
             .font(named_font(&s.secondary_font, Weight::Normal))
             // Clip long hardware / disk-model names to one line instead of
@@ -70,7 +77,28 @@ fn sub_header<'a>(label: String, p: Palette, s: &AppSettings) -> Element<'a, Mes
             // shove the centered value rows around.
             .wrapping(iced::widget::text::Wrapping::None)
             .style(move |_| iced::widget::text::Style { color: Some(Color { a: p.muted.a * 0.8, ..p.muted }) })
-    ).width(Length::Fill).center_x(Length::Fill).into()
+            .into()
+    };
+    container(content)
+        .width(Length::Fill)
+        .height(Length::Fixed(sub_line_h(s)))
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .into()
+}
+
+// Wrap a tile's secondary content in a fixed two-line zone, top-aligned, so the
+// primary value above it centers identically in every tile (a tile with one
+// secondary line and one with two both reserve the same space) — this is what
+// keeps CPU temp / GPU temp / RAM in line, especially horizontally.
+fn secondary_zone<'a>(content: impl Into<Element<'a, Message>>, s: &AppSettings) -> Element<'a, Message> {
+    let line = sz(13, s.secondary_font_offset, s) as f32 * 1.4;
+    container(content.into())
+        .width(Length::Fill)
+        .height(Length::Fixed((line * 2.0).ceil()))
+        .center_x(Length::Fill)
+        .align_y(iced::alignment::Vertical::Top)
+        .into()
 }
 
 // Primary value: PrimaryFontSize (18+primaryOffset), Bold, text, primary font.
@@ -213,7 +241,7 @@ pub fn cpu_tile<'a>(cpu: &CpuData, s: &AppSettings, p: Palette, w: WarnView, dri
         Space::with_height(Length::Fill),
         container(primary).width(Length::Fill).center_x(Length::Fill),
         Space::with_height(Length::Fill),
-        container(secondary).width(Length::Fill).center_x(Length::Fill),
+        secondary_zone(secondary, s),
     ], p, w, s)
 }
 
@@ -321,7 +349,7 @@ pub fn gpu_tile<'a>(gpu: &GpuData, s: &AppSettings, p: Palette, w: WarnView) -> 
         Space::with_height(Length::Fill),
         container(primary).width(Length::Fill).center_x(Length::Fill),
         Space::with_height(Length::Fill),
-        container(sec).width(Length::Fill).center_x(Length::Fill),
+        secondary_zone(sec, s),
     ], p, w, s)
 }
 
@@ -364,7 +392,7 @@ pub fn ram_tile<'a>(ram: &RamData, s: &AppSettings, p: Palette, w: WarnView) -> 
         Space::with_height(Length::Fill),
         container(primary).width(Length::Fill).center_x(Length::Fill),
         Space::with_height(Length::Fill),
-        container(secondary).width(Length::Fill).center_x(Length::Fill),
+        secondary_zone(secondary, s),
     ], p, w, s)
 }
 

@@ -313,5 +313,27 @@ no matter what — the rounded look was the *tiles*), switched to OS-level round
   uninstall now queries for it (no elevation) and, if present, deletes it
   elevated (one UAC) — no stale inbound allow rule left behind.
 
+### Round 7 — snap-to-centerline fix, tooltip follow-cursor, tile glyphs + alignment
+- **Snap-to-"centerline" bug**: `own_window_rects` (window-snap targets) actually
+  enumerated EVERY visible window >120px, so the widget docked to any nearby
+  third-party window — including one centered on screen. Filtered to Fluxid's OWN
+  process (GetWindowThreadProcessId == GetCurrentProcessId) so it only docks to
+  its own settings/popup windows, as the name/comment always intended.
+- **Tooltips follow the cursor**: Position::Top flipped under the cursor for the
+  gear/X at the widget's top edge, and Position::Right pinned to a wide button's
+  far edge. Switched `with_tip` + all settings tooltips to
+  `Position::FollowCursor` (iced places it just above-right of the pointer and
+  ignores `gap`, so it's consistent everywhere).
+- **Tiles tab tofu boxes**: the accordion chevrons (▾/▸) had no font set → tofu.
+  Added `.font(crate::style::ICONS)` (Segoe UI Symbol).
+- **Tile primary alignment**: CPU temp / GPU temp / RAM value didn't line up
+  (esp. horizontal) because `Fill, primary, Fill, secondary` centered the primary
+  by the *secondary* height (GPU has 2 lines), and `sub_header` collapsed to 0
+  when empty. Fix: `sub_header` now always reserves one line; new `secondary_zone`
+  wraps the secondary in a fixed 2-line, top-aligned box so the primary centers
+  identically. Applied to CPU/GPU/RAM (verified aligned in horizontal). Network/
+  Disk (two equal stat lines) and Clock (no subheader) still need the same
+  treatment — TODO.
+
 ### Known Issues / TODO
 - (to be filled as found)
