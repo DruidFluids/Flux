@@ -595,6 +595,9 @@ pub fn view<'a>(
             // in its slot so the surrounding rows stay put (no reflow).
             floating_drag = Some(
                 container(header)
+                    // Bound the height — the grip's center_y(Fill) would otherwise
+                    // stretch to the full overlay (whole-window) height.
+                    .height(Length::Fixed(crate::TILE_ROW_H))
                     .style(move |_| iced::widget::container::Style {
                         background: Some(iced::Background::Color(iced::Color { a: 1.0, ..p.bg })),
                         border: Border { radius: 10.0.into(), width: 1.0, color: p.accent },
@@ -1263,6 +1266,7 @@ pub fn view<'a>(
                 Space::with_height(Length::Fixed(top)),
                 container(fl)
                     .width(Length::Fill)
+                    .height(Length::Shrink)
                     .padding(iced::Padding { top: 0.0, right: 37.0, bottom: 0.0, left: 37.0 }),
             ]
             .width(Length::Fill)
