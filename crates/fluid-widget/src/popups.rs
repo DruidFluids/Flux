@@ -2,7 +2,7 @@
 //! Picker, and the widget right-click context menu.
 
 use fluid_core::settings::{AppSettings, RemoteDevice, SnapPosition, WarnMetric};
-use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, slider, text, text_editor, text_input, toggler, Space};
+use iced::widget::{button, checkbox, column, container, mouse_area, pick_list, row, scrollable, slider, text, text_editor, text_input, toggler, Space};
 use iced::{window, Border, Color, Element, Length};
 use crate::style::Palette;
 use crate::Message;
@@ -964,52 +964,84 @@ fn chip<'a>(hex: &str, p: Palette) -> Element<'a, Message> {
     }).into()
 }
 
+// An on-brand checkbox used by the Theme Store to install/uninstall items.
+fn cbox<'a>(checked: bool, p: Palette, on_toggle: impl Fn(bool) -> Message + 'a) -> Element<'a, Message> {
+    checkbox("", checked).size(16).on_toggle(on_toggle)
+        .style(move |_t: &iced::Theme, status: checkbox::Status| {
+            let on = matches!(status,
+                checkbox::Status::Active { is_checked: true }
+                | checkbox::Status::Hovered { is_checked: true }
+                | checkbox::Status::Disabled { is_checked: true });
+            checkbox::Style {
+                background: iced::Background::Color(if on { p.accent } else { p.tile }),
+                icon_color: Color::WHITE,
+                border: Border { radius: 4.0.into(), width: 1.0, color: if on { p.accent } else { Color { a: 0.5, ..p.muted } } },
+                text_color: None,
+            }
+        }).into()
+}
+
 /// Theme Store — a 2-column grid of franchise cards (matching the C#
 /// ThemeStoreWindow). `franchise` selects the drill-in theme list for a pack.
-pub fn theme_store_view<'a>(franchise: Option<usize>, p: Palette, win_id: window::Id) -> Element<'a, Message> {
+pub fn theme_store_view<'a>(franchise: Option<usize>, settings: &AppSettings, p: Palette, win_id: window::Id) -> Element<'a, Message> {
     let packs = crate::style::theme_packs();
     match franchise {
-        Some(pi) if pi < packs.len() => franchise_detail(pi, p, win_id),
-        _ => store_grid(p, win_id),
+        Some(pi) if pi < packs.len() => franchise_detail(pi, settings, p, win_id),
+        _ => store_grid(settings, p, win_id),
     }
 }
 
-fn store_grid<'a>(p: Palette, win_id: window::Id) -> Element<'a, Message> {
+fn store_grid<'a>(settings: &AppSettings, p: Palette, win_id: window::Id) -> Element<'a, Message> {
     let packs = crate::style::theme_packs();
     let total: usize = packs.iter().map(|p| p.themes.len()).sum();
+    let is_installed = |name: &str| settings.installed_themes.iter().any(|t| t.name == name);
 
-    // Summary header (C#: "N packs · M themes").
-    let summary = text(format!("{} packs \u{00B7} {} themes \u{00B7} all installed", packs.len(), total))
+    // Summary header.
+    let summary = text(format!("{} packs \u{00B7} {} themes \u{00B7} {} installed", packs.len(), total, settings.installed_themes.len()))
         .size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) });
+    let hint = text("Check a pack to install all its themes, or open it to pick individual ones. Installed themes appear in Choose a Theme.")
+        .size(10).style(move |_| iced::widget::text::Style { color: Some(Color { a: 0.7, ..p.muted }) });
 
-    // 2-column grid of franchise cards.
+    // 2-column grid of franchise cards, each with an install checkbox.
     let card = |pi: usize| -> Element<'a, Message> {
         let pack = &packs[pi];
-        // Up to 6 representative accent swatches (≈ the C# manifest swatches).
+        let installed_n = pack.themes.iter().filter(|t| is_installed(&t.name)).count();
+        let all_installed = installed_n == pack.themes.len() && !pack.themes.is_empty();
         let mut sw = row![].spacing(3);
         for t in pack.themes.iter().take(6) {
             sw = sw.push(chip(&t.accent, p));
         }
-        button(column![
+        let info = button(column![
             text(pack.franchise.clone()).size(11)
                 .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-            text(format!("{} themes", pack.themes.len())).size(9)
-                .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+            text(format!("{} / {} installed", installed_n, pack.themes.len())).size(9)
+                .style(move |_| iced::widget::text::Style { color: Some(if installed_n > 0 { p.accent } else { p.muted }) }),
             Space::with_height(6),
             sw,
         ].spacing(1))
         .width(Length::Fill)
-        .padding(10)
+        .padding(8)
         .style(move |_: &iced::Theme, status: button::Status| {
             let hover = matches!(status, button::Status::Hovered);
             button::Style {
-                background: Some(iced::Background::Color(p.tile)),
+                background: None,
                 border: Border { radius: 8.0.into(), width: 1.0, color: if hover { p.accent } else { Color::TRANSPARENT } },
                 ..Default::default()
             }
         })
-        .on_press(Message::ThemeStoreOpenFranchise(pi))
+        .on_press(Message::ThemeStoreOpenFranchise(pi));
+        container(row![
+            cbox(all_installed, p, move |b| Message::ThemeStoreTogglePack(pi, b)),
+            info,
+        ].spacing(6).align_y(iced::Alignment::Center))
+        .width(Length::Fill)
+        .padding(iced::Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 8.0 })
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(p.tile)),
+            border: Border { radius: 8.0.into(), ..Border::default() },
+            ..Default::default()
+        })
         .into()
     };
 
@@ -1028,14 +1060,18 @@ fn store_grid<'a>(p: Palette, win_id: window::Id) -> Element<'a, Message> {
 
     let body = column![
         summary,
+        hint,
         Space::with_height(6),
         scrollable(container(grid).padding(iced::Padding { top: 0.0, right: 8.0, bottom: 8.0, left: 0.0 })).height(Length::Fill),
-    ];
+    ].spacing(2);
     shell("THEME STORE", win_id, p, body.into())
 }
 
-fn franchise_detail<'a>(pi: usize, p: Palette, win_id: window::Id) -> Element<'a, Message> {
+fn franchise_detail<'a>(pi: usize, settings: &AppSettings, p: Palette, win_id: window::Id) -> Element<'a, Message> {
     let pack = &crate::style::theme_packs()[pi];
+    let is_installed = |name: &str| settings.installed_themes.iter().any(|t| t.name == name);
+    let installed_n = pack.themes.iter().filter(|t| is_installed(&t.name)).count();
+    let all_installed = installed_n == pack.themes.len() && !pack.themes.is_empty();
 
     let back = button(text("\u{2039} All packs".to_string()).size(11)
         .style(move |_| iced::widget::text::Style { color: Some(p.accent) }))
@@ -1046,35 +1082,44 @@ fn franchise_detail<'a>(pi: usize, p: Palette, win_id: window::Id) -> Element<'a
     let header = row![
         back,
         Space::with_width(Length::Fill),
-        text(format!("{} \u{00B7} {} themes", pack.franchise, pack.themes.len())).size(10)
+        text(format!("{} \u{00B7} {} / {} installed", pack.franchise, installed_n, pack.themes.len())).size(10)
             .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
     ].align_y(iced::Alignment::Center);
 
-    let mut rows = column![].spacing(3);
+    let select_all = row![
+        cbox(all_installed, p, move |b| Message::ThemeStoreTogglePack(pi, b)),
+        Space::with_width(8),
+        text("Install all").size(11)
+            .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+            .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+    ].align_y(iced::Alignment::Center);
+
+    let mut rows = column![].spacing(2);
     for (ti, t) in pack.themes.iter().enumerate() {
+        let installed = is_installed(&t.name);
         let label = t.name.strip_prefix(&format!("{} ", pack.franchise)).unwrap_or(&t.name).to_string();
         rows = rows.push(
-            button(row![
+            container(row![
+                cbox(installed, p, move |b| Message::ThemeStoreToggleTheme(pi, ti, b)),
+                Space::with_width(8),
                 chip(&t.bg, p), chip(&t.tile, p), chip(&t.accent, p), chip(&t.text, p), chip(&t.muted, p),
                 Space::with_width(10),
                 text(label).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
             ].spacing(3).align_y(iced::Alignment::Center))
             .width(Length::Fill)
-            .padding(iced::Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 8.0 })
-            .style(move |_: &iced::Theme, status: button::Status| {
-                let hover = matches!(status, button::Status::Hovered);
-                button::Style {
-                    background: Some(iced::Background::Color(if hover { p.tile } else { Color::TRANSPARENT })),
-                    border: Border { radius: 4.0.into(), ..Border::default() },
-                    ..Default::default()
-                }
-            })
-            .on_press(Message::ApplyPackTheme(pi, ti)),
+            .padding(iced::Padding { top: 5.0, right: 8.0, bottom: 5.0, left: 8.0 })
+            .style(move |_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(if installed { Color { a: 0.10, ..p.accent } } else { Color::TRANSPARENT })),
+                border: Border { radius: 4.0.into(), ..Border::default() },
+                ..Default::default()
+            }),
         );
     }
 
     let body = column![
         header,
+        Space::with_height(2),
+        select_all,
         Space::with_height(4),
         scrollable(container(rows).padding(iced::Padding { top: 0.0, right: 8.0, bottom: 8.0, left: 0.0 })).height(Length::Fill),
     ];
@@ -1149,6 +1194,22 @@ pub fn picker_view<'a>(skins: bool, settings: &AppSettings, p: Palette, win_id: 
                 ].spacing(4).align_y(iced::Alignment::Center))
                 .width(Length::Fill).padding(iced::Padding { top: 7.0, right: 10.0, bottom: 7.0, left: 10.0 }).style(card_style(sel))
                 .on_press(Message::ApplyThemePreset(i))
+            );
+        }
+        // Game-pack themes installed from the Theme Store, matched by colours.
+        let preset_match = cur.is_some();
+        for (i, t) in settings.installed_themes.iter().enumerate() {
+            let sel = !preset_match && crate::style::colors_match(settings, &t.bg, &t.tile, &t.accent, &t.text, &t.muted);
+            col = col.push(
+                button(row![
+                    text(t.name.clone()).size(12)
+                        .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                        .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                    Space::with_width(Length::Fill),
+                    chip(&t.bg), chip(&t.tile), chip(&t.accent), chip(&t.text), chip(&t.muted),
+                ].spacing(4).align_y(iced::Alignment::Center))
+                .width(Length::Fill).padding(iced::Padding { top: 7.0, right: 10.0, bottom: 7.0, left: 10.0 }).style(card_style(sel))
+                .on_press(Message::ApplyInstalledTheme(i))
             );
         }
     }

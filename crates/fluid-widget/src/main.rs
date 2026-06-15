@@ -528,8 +528,9 @@ enum Message {
     OpenSettings, HideWidget, SaveClose, ResetDefaults, Noop,
     OpenAlerts, OpenGameMode, OpenHelp, OpenUtilities, OpenRemote, ClosePopup(window::Id),
     OpenUrl(String),
-    OpenThemeStore, ApplyPackTheme(usize, usize),
+    OpenThemeStore,
     ThemeStoreOpenFranchise(usize), ThemeStoreBack,
+    ThemeStoreTogglePack(usize, bool), ThemeStoreToggleTheme(usize, usize, bool),
     BlocklistAction(iced::widget::text_editor::Action), SaveBlocklist,
     PickWindow, PickWindowChosen(String),
     ShowWidgetMenu, WidgetMenuSettings, WidgetMenuExit, WindowUnfocused(window::Id),
@@ -566,7 +567,7 @@ enum Message {
     UpdateDownloadDone(Result<(), String>),
     UpdateLater,
     PresetSlotClick(u8),
-    OpenThemePicker, OpenSkinPicker, ApplyThemePreset(usize), ApplySkin(String),
+    OpenThemePicker, OpenSkinPicker, ApplyThemePreset(usize), ApplyInstalledTheme(usize), ApplySkin(String),
     ConfirmDeletePreset(u8), DeletePresetConfirmed,
     EditColor(u8),
     SetSettingsTab(usize),
@@ -928,7 +929,16 @@ impl App {
         }
     }
     fn theme_name(&self) -> String {
-        style::match_preset(&self.settings).map(|i| style::THEME_PRESETS[i].0.to_string()).unwrap_or("Custom".into())
+        if let Some(i) = style::match_preset(&self.settings) {
+            return style::THEME_PRESETS[i].0.to_string();
+        }
+        // Then any installed game-pack theme (matched by its colours).
+        if let Some(t) = self.settings.installed_themes.iter()
+            .find(|t| style::colors_match(&self.settings, &t.bg, &t.tile, &t.accent, &t.text, &t.muted))
+        {
+            return t.name.clone();
+        }
+        "Custom".into()
     }
     fn disk_options(&self) -> Vec<String> {
         let mut v: Vec<String> = self.snapshot.disk.drives.iter().map(|d| d.mount.trim_end_matches('\\').to_string()).collect();
@@ -1316,14 +1326,33 @@ impl App {
             Message::OpenThemeStore => { self.theme_store_franchise = None; self.open_popup(WindowKind::ThemeStore, popups::THEME_STORE_SIZE) }
             Message::ThemeStoreOpenFranchise(i) => { self.theme_store_franchise = Some(i); Task::none() }
             Message::ThemeStoreBack => { self.theme_store_franchise = None; Task::none() }
-            Message::ApplyPackTheme(pack_idx, theme_idx) => {
+            Message::ThemeStoreToggleTheme(pack_idx, theme_idx, on) => {
                 if let Some(pack) = style::theme_packs().get(pack_idx) {
                     if let Some(theme) = pack.themes.get(theme_idx) {
-                        self.push_appearance_undo();
-                        style::apply_pack_theme(&mut self.settings, theme);
+                        if on {
+                            if !self.settings.installed_themes.iter().any(|t| t.name == theme.name) {
+                                self.settings.installed_themes.push(style::pack_theme_slot(theme));
+                            }
+                        } else {
+                            self.settings.installed_themes.retain(|t| t.name != theme.name);
+                        }
                         let _ = self.settings.save();
-                        return self.resize_widget();
                     }
+                }
+                Task::none()
+            }
+            Message::ThemeStoreTogglePack(pack_idx, on) => {
+                if let Some(pack) = style::theme_packs().get(pack_idx) {
+                    for theme in &pack.themes {
+                        if on {
+                            if !self.settings.installed_themes.iter().any(|t| t.name == theme.name) {
+                                self.settings.installed_themes.push(style::pack_theme_slot(theme));
+                            }
+                        } else {
+                            self.settings.installed_themes.retain(|t| t.name != theme.name);
+                        }
+                    }
+                    let _ = self.settings.save();
                 }
                 Task::none()
             }
@@ -1876,6 +1905,15 @@ impl App {
                 let _ = self.settings.save();
                 self.resize_widget()
             }
+            Message::ApplyInstalledTheme(i) => {
+                if let Some(slot) = self.settings.installed_themes.get(i).cloned() {
+                    self.push_appearance_undo();
+                    style::apply_slot(&mut self.settings, &slot);
+                    let _ = self.settings.save();
+                    return self.resize_widget();
+                }
+                Task::none()
+            }
             Message::ApplySkin(name) => {
                 self.push_appearance_undo();
                 self.settings.active_skin = name;
@@ -1960,7 +1998,7 @@ impl App {
                 popups::remote_view(remote, &self.settings, p, id)
             }
             WindowKind::WindowPicker => popups::window_picker_view(enum_window_titles(), p, id),
-            WindowKind::ThemeStore => popups::theme_store_view(self.theme_store_franchise, p, id),
+            WindowKind::ThemeStore => popups::theme_store_view(self.theme_store_franchise, &self.settings, p, id),
             WindowKind::PopoutConfig => {
                 let dev = self.config_device.as_ref()
                     .and_then(|cid| self.settings.remote_devices.iter().find(|d| &d.id == cid));

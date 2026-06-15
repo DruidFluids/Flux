@@ -89,6 +89,9 @@ pub struct AppSettings {
     pub update_check_mode: UpdateMode,
     pub last_update_check: Option<String>,
     pub presets: Vec<PresetSlot>,
+    /// Game-pack themes the user installed from the Theme Store. These show up
+    /// in the "Choose a Theme" list alongside the built-in presets.
+    pub installed_themes: Vec<PresetSlot>,
     pub temperature_unit: TempUnit,
     pub start_minimized: bool,
     pub first_run_complete: bool,
@@ -187,6 +190,7 @@ impl Default for AppSettings {
             update_check_mode: UpdateMode::Manual,
             last_update_check: None,
             presets: Vec::new(),
+            installed_themes: Vec::new(),
             temperature_unit: TempUnit::Celsius,
             start_minimized: false,
             first_run_complete: false,

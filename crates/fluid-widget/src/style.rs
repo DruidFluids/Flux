@@ -723,14 +723,36 @@ pub fn theme_packs() -> &'static Vec<ThemePack> {
     })
 }
 
-/// Apply a pack theme: its five colours plus its paired skin (`category`).
-pub fn apply_pack_theme(s: &mut AppSettings, t: &PackTheme) {
-    s.theme_bg = t.bg.clone();
-    s.theme_tile = t.tile.clone();
-    s.theme_accent = t.accent.clone();
-    s.theme_text = t.text.clone();
-    s.theme_muted = t.muted.clone();
-    if !t.category.trim().is_empty() {
-        s.active_skin = t.category.clone();
+/// Convert a store pack theme into an installable slot (name + colours + skin).
+pub fn pack_theme_slot(t: &PackTheme) -> fluid_core::settings::PresetSlot {
+    fluid_core::settings::PresetSlot {
+        name: t.name.clone(),
+        bg: t.bg.clone(),
+        tile: t.tile.clone(),
+        accent: t.accent.clone(),
+        text: t.text.clone(),
+        muted: t.muted.clone(),
+        skin: t.category.clone(),
     }
+}
+
+/// Apply an installed theme slot: its five colours plus its paired skin.
+pub fn apply_slot(s: &mut AppSettings, slot: &fluid_core::settings::PresetSlot) {
+    s.theme_bg = slot.bg.clone();
+    s.theme_tile = slot.tile.clone();
+    s.theme_accent = slot.accent.clone();
+    s.theme_text = slot.text.clone();
+    s.theme_muted = slot.muted.clone();
+    if !slot.skin.trim().is_empty() {
+        s.active_skin = slot.skin.clone();
+    }
+}
+
+/// True when the live theme colours match the given five hex strings.
+pub fn colors_match(s: &AppSettings, bg: &str, tile: &str, accent: &str, text: &str, muted: &str) -> bool {
+    s.theme_bg.eq_ignore_ascii_case(bg)
+        && s.theme_tile.eq_ignore_ascii_case(tile)
+        && s.theme_accent.eq_ignore_ascii_case(accent)
+        && s.theme_text.eq_ignore_ascii_case(text)
+        && s.theme_muted.eq_ignore_ascii_case(muted)
 }
