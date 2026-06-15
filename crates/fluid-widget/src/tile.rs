@@ -124,16 +124,27 @@ fn small_unit<'a>(t: String, accent: Color, s: &AppSettings) -> Element<'a, Mess
 // the edge by `left_inset` (the per-tile position slider) so the user can slide
 // R:/W: (or the arrow) left or right without disturbing the centred number.
 // Number at PrimaryFontSize (18+primaryOffset); unit at UnitFontSize accent.
+#[allow(clippy::too_many_arguments)]
 fn centered_stat_line<'a>(
     left: Element<'a, Message>, v: String, u: String,
-    p: Palette, accent: Color, left_inset: f32, s: &AppSettings,
+    p: Palette, accent: Color, left_inset: f32, label_w: f32, s: &AppSettings,
 ) -> Element<'a, Message> {
-    // Clamp the inset to a fraction of the tile width so it can't shove the label
-    // into the centred number (or overflow) at extreme/old saved slider values.
-    let inset = left_inset.clamp(0.0, s.tile_width * s.ui_scale * 0.22);
     // Small symmetric gap on each side of the number keeps it centred and the
     // unit close, scaled with the UI so it tracks the font size.
     let gap = 4.0 * s.ui_scale;
+    // Dynamic safety clamp on the inset. Each Fill side cell is
+    //   fill = (tile_inner - 2*gap - widest_number) / 2
+    // wide. If `inset + label_w` exceeds that, iced grows the Fill to fit its
+    // content, which shoves the centred number off-centre and clips the unit
+    // (verified empirically). So cap the inset so the label always fits inside
+    // its half — keeping the number dead-centre for EVERY value, including the
+    // widest 4-digit reading. Works for any tile size / UI scale / font.
+    let prim = sz(18, s.primary_font_offset, s) as f32;
+    let num_w = prim * 4.0 * 0.6; // worst case: 4 tabular digits, generous width
+    let inner = (s.tile_width * s.ui_scale - 20.0).max(0.0); // tile inner width (h-padding ~20)
+    let fill = ((inner - 2.0 * gap - num_w) * 0.5).max(0.0);
+    let max_inset = (fill - label_w).max(0.0);
+    let inset = left_inset.clamp(0.0, max_inset);
     let number = text(v).size(sz(18, s.primary_font_offset, s))
         .font(named_font(&s.primary_font, Weight::Bold))
         .wrapping(iced::widget::text::Wrapping::None)
@@ -394,7 +405,9 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
             .wrapping(iced::widget::text::Wrapping::None)
             .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
             .into();
-        centered_stat_line(label, v, u, p, accent, spacing, s)
+        // "R:" / "W:" are ~2 label-font glyphs wide.
+        let label_w = label_size as f32 * 1.2;
+        centered_stat_line(label, v, u, p, accent, spacing, label_w, s)
     };
     let mut lines = column![].spacing(4);
     if s.disk_show_read { lines = lines.push(dline("R:", rv, ru)); }
@@ -494,8 +507,9 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
             .style(|_t, _s| iced::widget::svg::Style { color: None })
             .into();
         // Center the number on the tile centerline; the arrow sits on the left
-        // (nudged by the position slider) and the unit on the right.
-        centered_stat_line(arrow, v, u, p, accent, spacing, s)
+        // (nudged by the position slider) and the unit on the right. The arrow's
+        // glow box (glow_w) is its layout width — the value the inset must clear.
+        centered_stat_line(arrow, v, u, p, accent, spacing, glow_w, s)
     };
     let mut lines = column![].spacing(4);
     if s.net_show_down { lines = lines.push(nline(true, down > 0, down_color, dv, du)); }

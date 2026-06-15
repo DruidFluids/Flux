@@ -113,6 +113,20 @@ process (widget lives on a 150%-scaled monitor).
   Root cause of the "massive folder": `target/` build artifacts (gitignored), not
   the source.
 
+### Completed (round 4 — position-slider safety guards, empirically tuned)
+- [x] **Dynamic clamp on the label/arrow inset** (`centered_stat_line`): computed
+  the safe inset from real geometry — each Fill side cell is
+  `(tile_inner − 2·gap − widest_4digit_number)/2`; the inset is clamped so
+  `inset + label_w` always fits inside that half. Past it, iced grows the Fill to
+  fit, shoving the centred number off-centre and clipping the unit. Verified by a
+  forced-worst-case (`8888 MB/s`) inset sweep: broke at ~24px pre-clamp; with the
+  clamp, a stored inset of 40 renders perfectly centred. Holds for any tile
+  size / UI scale / font / digit count.
+- [x] **Slider maxes set to the safe limit**: Network "Arrow position" 0–8
+  (tighter — the arrow box is wider than R:/W:, so the centred 4-digit number
+  leaves it less room), Disk "R: / W: position" 0–14. Number stays perfectly
+  centred across the whole usable range.
+
 ### Findings deferred (real but higher-risk — left for a visually-verified pass)
 - Width jitter when a byte-rate or VRAM value crosses the 10.0 boundary
   (`"9.9"`→`"10"` changes char count, shifting the content-sized value cell).
