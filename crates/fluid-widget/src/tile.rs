@@ -101,6 +101,39 @@ fn secondary_zone<'a>(content: impl Into<Element<'a, Message>>, s: &AppSettings)
         .into()
 }
 
+// Build a tile whose body is a list of equal stat lines (Network ↓/↑, Disk R:/W:)
+// using the SAME primary + secondary_zone layout as the value tiles: the first
+// line takes the primary slot and the rest go in the secondary zone, so the
+// first line lines up with CPU/GPU/RAM across the row (esp. horizontal).
+fn stat_lines_body<'a>(
+    title: String,
+    sub: String,
+    lines: Vec<Element<'a, Message>>,
+    p: Palette,
+    w: WarnView,
+    s: &AppSettings,
+) -> Element<'a, Message> {
+    let mut it = lines.into_iter();
+    let primary: Element<'a, Message> = it.next().unwrap_or_else(|| Space::with_height(0).into());
+    let mut sec = column![].spacing(4);
+    for l in it {
+        sec = sec.push(l);
+    }
+    tile_container(
+        column![
+            header(title, p, s),
+            sub_header(sub, p, s),
+            Space::with_height(Length::Fill),
+            container(primary).width(Length::Fill).center_x(Length::Fill),
+            Space::with_height(Length::Fill),
+            secondary_zone(sec, s),
+        ],
+        p,
+        w,
+        s,
+    )
+}
+
 // Primary value: PrimaryFontSize (18+primaryOffset), Bold, text, primary font.
 fn big<'a>(t: String, p: Palette, s: &AppSettings) -> Element<'a, Message> {
     text(t).size(sz(18, s.primary_font_offset, s))
@@ -437,17 +470,11 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
         let label_w = label_size as f32 * 1.2;
         centered_stat_line(label, v, u, p, accent, spacing, label_w, s)
     };
-    let mut lines = column![].spacing(4);
-    if s.disk_show_read { lines = lines.push(dline("R:", rv, ru)); }
-    if s.disk_show_write { lines = lines.push(dline("W:", wv, wu)); }
+    let mut lines: Vec<Element<'a, Message>> = Vec::new();
+    if s.disk_show_read { lines.push(dline("R:", rv, ru)); }
+    if s.disk_show_write { lines.push(dline("W:", wv, wu)); }
 
-    tile_container(column![
-        header("Disk".into(), p, s),
-        sub_header(fit_name(mount, s), p, s),
-        Space::with_height(Length::Fill),
-        container(lines).width(Length::Fill).center_x(Length::Fill),
-        Space::with_height(Length::Fill),
-    ], p, w, s)
+    stat_lines_body("Disk".into(), fit_name(mount, s), lines, p, w, s)
 }
 
 pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnView, pulse: f32) -> Element<'a, Message> {
@@ -539,17 +566,11 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
         // glow box (glow_w) is its layout width — the value the inset must clear.
         centered_stat_line(arrow, v, u, p, accent, spacing, glow_w, s)
     };
-    let mut lines = column![].spacing(4);
-    if s.net_show_down { lines = lines.push(nline(true, down > 0, down_color, dv, du)); }
-    if s.net_show_up { lines = lines.push(nline(false, up > 0, up_color, uv, uu)); }
+    let mut lines: Vec<Element<'a, Message>> = Vec::new();
+    if s.net_show_down { lines.push(nline(true, down > 0, down_color, dv, du)); }
+    if s.net_show_up { lines.push(nline(false, up > 0, up_color, uv, uu)); }
 
-    tile_container(column![
-        header("Network".into(), p, s),
-        sub_header(fit_name(label, s), p, s),
-        Space::with_height(Length::Fill),
-        container(lines).width(Length::Fill).center_x(Length::Fill),
-        Space::with_height(Length::Fill),
-    ], p, w, s)
+    stat_lines_body("Network".into(), fit_name(label, s), lines, p, w, s)
 }
 
 pub fn clock_tile<'a>(s: &AppSettings, p: Palette, w: WarnView) -> Element<'a, Message> {
@@ -597,11 +618,13 @@ pub fn clock_tile<'a>(s: &AppSettings, p: Palette, w: WarnView) -> Element<'a, M
 
     tile_container(column![
         header("Clock".into(), p, s),
+        // Empty (reserved) subheader so the time lines up with the other tiles'
+        // primary values across the row.
+        sub_header(String::new(), p, s),
         Space::with_height(Length::Fill),
         container(primary).width(Length::Fill).center_x(Length::Fill),
-        Space::with_height(4),
-        container(secondary).width(Length::Fill).center_x(Length::Fill),
         Space::with_height(Length::Fill),
+        secondary_zone(secondary, s),
     ], p, w, s)
 }
 

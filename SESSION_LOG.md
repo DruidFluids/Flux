@@ -331,9 +331,11 @@ no matter what — the rounded look was the *tiles*), switched to OS-level round
   by the *secondary* height (GPU has 2 lines), and `sub_header` collapsed to 0
   when empty. Fix: `sub_header` now always reserves one line; new `secondary_zone`
   wraps the secondary in a fixed 2-line, top-aligned box so the primary centers
-  identically. Applied to CPU/GPU/RAM (verified aligned in horizontal). Network/
-  Disk (two equal stat lines) and Clock (no subheader) still need the same
-  treatment — TODO.
+  identically. Applied to CPU/GPU/RAM first, then extended to all tiles via
+  `stat_lines_body` (Network ↓/↑, Disk R:/W: → first line = primary, rest =
+  secondary zone) and a reserved empty subheader on Clock (its time is already a
+  `big()` primary). Verified in horizontal: all six tiles' primary values and
+  secondary first-lines line up across the row.
 
 ### Known Issues / TODO
 - (to be filled as found)
