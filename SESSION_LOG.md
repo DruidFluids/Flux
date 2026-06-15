@@ -354,10 +354,10 @@ clean & roomy, simple list + dividers, "Shown/Hidden" chip toggle.
 - **Clock moved to the top of the Tiles list** (matches the on-screen tile order
   — Clock renders first). Reordered the `names`/`internals` arrays and the
   matching `bodies` array together.
-- **Expand affordance**: replaced the small ▸/▾ chevron with a big hollow
-  outline triangle (▽ collapsed = "expand for more", accent △ when open) and a
-  thin vertical separator after the Shown/Hidden chip, so each row reads
-  "label … [Shown] | ▽".
+- **Expand affordance**: a soft open chevron (⌄ collapsed = "expand for more",
+  accent ⌃ when open) — iterated from filled→hollow triangle (too "dorito") to a
+  chevron that matches the ‹ › nav glyphs — plus a thin vertical separator after
+  the Shown/Hidden chip, so each row reads "label … [Shown] | ⌄".
 
 ### Known Issues / TODO
 - (to be filled as found)

@@ -510,8 +510,9 @@ pub fn view<'a>(
         let internal = intern.to_string();
         let nm = disp.to_string();
         let nm2 = disp.to_string();
-        // Big hollow triangle: down = "expand for more", up = "collapse".
-        let chev = if open { "\u{25B3}" } else { "\u{25BD}" };
+        // Soft chevron (open V, matches the ‹ › nav glyphs): down = "expand for
+        // more", up = "collapse".
+        let chev = if open { "\u{2303}" } else { "\u{2304}" };
         let chev_col = if open { p.accent } else { p.text };
         let lblcol = if open { p.accent } else { p.text };
         // The label fills the row width and is the expand click-target.
