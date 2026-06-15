@@ -1184,29 +1184,32 @@ impl App {
                 self.update_widget_level()
             }
             Message::WindowMoved(id, pos) => {
+                // Update positions IN MEMORY only — never write settings.json here.
+                // Moved fires many times per second during a drag; saving each
+                // time did synchronous disk I/O every frame (the drag stutter).
+                // Positions are persisted on window close / snap-release instead.
                 match self.windows.get(&id) {
                     Some(&WindowKind::Widget) => {
                         if self.ignore_next_move { self.ignore_next_move = false; return Task::none(); }
                         if self.game_mode { return Task::none(); }
                         self.settings.window_x = pos.x as f64; self.settings.window_y = pos.y as f64;
-                        self.settings.first_run_complete = true; let _ = self.settings.save();
+                        self.settings.first_run_complete = true;
                         if self.settings.snap_to_edges { self.pending_snap = Some((id, pos, Instant::now())); }
                     }
                     Some(&WindowKind::Settings) => {
                         self.settings.settings_window_x = Some(pos.x as f64);
-                        self.settings.settings_window_y = Some(pos.y as f64); let _ = self.settings.save();
+                        self.settings.settings_window_y = Some(pos.y as f64);
                     }
                     Some(&k) => {
                         if let Some(key) = kind_key(k) {
                             self.settings.popup_positions.insert(key.to_string(), (pos.x as f64, pos.y as f64));
-                            let _ = self.settings.save();
                         }
                     }
                     None => {}
                 }
                 Task::none()
             }
-            Message::WindowClosed(id) => { self.windows.remove(&id); self.popout_device.remove(&id); if self.widget_window().is_none() { return iced::exit(); } self.update_widget_level() }
+            Message::WindowClosed(id) => { self.windows.remove(&id); self.popout_device.remove(&id); let _ = self.settings.save(); if self.widget_window().is_none() { return iced::exit(); } self.update_widget_level() }
             Message::OpenSettings => self.open_settings(),
             Message::HideWidget => self.widget_window().map(|id| window::change_mode(id, window::Mode::Hidden)).unwrap_or(Task::none()),
             Message::OpenAlerts => self.open_popup(WindowKind::Alerts, popups::ALERTS_SIZE),

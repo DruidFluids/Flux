@@ -1034,7 +1034,6 @@ pub fn view<'a>(
     ].spacing(4).into();
 
     let remote_tab: Element<'a, Message> = column![remote].spacing(4).into();
-    let updates_tab: Element<'a, Message> = column![sh("Updates", ""), updates].spacing(4).into();
 
     // ── Tools tab: launchers that used to live behind the bottom-left gear ──
     let tool_item = |icon: &str, icon_color: iced::Color, title: &str, subtitle: &str, msg: Message| -> Element<'a, Message> {
@@ -1076,14 +1075,17 @@ pub fn view<'a>(
         tool_item("\u{26A0}", iced::Color::from_rgb8(0xE0, 0x60, 0x40), "Alerts", "Per-tile temperature / load thresholds", Message::OpenAlerts),
         tool_item("\u{1F3AE}", iced::Color::from_rgb8(0x6A, 0x9F, 0xD8), "Game Mode", "Hotkey-snap a compact overlay", Message::OpenGameMode),
         tool_item("\u{1F527}", iced::Color::from_rgb8(0x88, 0xAA, 0x55), "Utilities", "System tools & snap blocklist", Message::OpenUtilities),
+        Space::with_height(8),
+        sh("Updates", "Check for and install new versions of Fluxid."),
+        updates,
     ].spacing(8).into();
 
     // ════════════════════════════════════════════
     //  ASSEMBLY  (tabbed)
     // ════════════════════════════════════════════
 
-    let tab_labels = ["Tiles", "Appearance", "Behavior", "Sensors", "Tools", "Remote", "Updates"];
-    let mut tab_panes = vec![tiles_tab, appearance_tab, behavior_tab, sensors_tab, tools_tab, remote_tab, updates_tab];
+    let tab_labels = ["Tiles", "Appearance", "Behavior", "Sensors", "Tools", "Remote"];
+    let mut tab_panes = vec![tiles_tab, appearance_tab, behavior_tab, sensors_tab, tools_tab, remote_tab];
     let active = tab.min(tab_panes.len() - 1);
 
     // ── Soft Premium chrome colours (derived from the live palette) ──
@@ -1100,12 +1102,12 @@ pub fn view<'a>(
     for (i, lbl) in tab_labels.iter().enumerate() {
         let on = i == active;
         strip = strip.push(
-            button(container(text(lbl.to_string()).size(11)
+            button(container(text(lbl.to_string()).size(13)
                 .wrapping(iced::widget::text::Wrapping::None)
                 .font(iced::Font { weight: if on { iced::font::Weight::Semibold } else { iced::font::Weight::Medium }, ..iced::Font::DEFAULT }))
                 .center_x(Length::Fill))
                 .width(Length::Fill)
-                .padding(iced::Padding { top: 6.0, right: 2.0, bottom: 6.0, left: 2.0 })
+                .padding(iced::Padding { top: 7.0, right: 4.0, bottom: 7.0, left: 4.0 })
                 .style(move |_: &iced::Theme, status: button::Status| {
                     let hover = matches!(status, button::Status::Hovered);
                     button::Style {
