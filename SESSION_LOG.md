@@ -43,6 +43,26 @@ correctness + polish improvements** verified by reasoning and `cargo build` /
 
 ### Completed
 - [x] Verified build / clippy / launch (gate zero passed on arrival).
+- [x] **settings.rs**: atomic save (temp-file + rename) so a kill mid-write can't
+  truncate `settings.json`; on a corrupt/unparseable config, back it up to
+  `settings.json.bak` before resetting to defaults (was silently destroying the
+  user's settings on the next save). Addresses Phase-6 "missing/corrupt config".
+- [x] **fmt.rs**: NaN/Inf guard in `fmt_net`/`fmt_disk` (a NaN rate fell through
+  every `<` comparison to the GB/s arm and printed "NaN").
+- [x] **style.rs `parse_hex`**: malformed hex (non-hex digits) now falls back to
+  the caller's default instead of collapsing to pure black (which could make
+  theme text invisible); also guards non-ASCII input against a byte-slice panic.
+- [x] **tile.rs**: `pct()` helper guards CPU/GPU/RAM percentage readouts against
+  non-finite sensor values; `sub_header` clips long hardware/disk-model names to
+  one line (`Wrapping::None`) instead of word-wrapping into the fixed-height tile.
+
+All changes verified: `cargo clippy -p fluid-widget` clean, app relaunches OK.
+
+### Findings deferred (real but higher-risk / lower-value — left for review)
+- Width jitter when a byte-rate or VRAM value crosses the 10.0 boundary
+  (`"9.9"`→`"10"` changes char count, shifting the content-sized value cell).
+  Real but the fix is a layout change (fixed-width number column in
+  `line_value`), so deferred rather than risk regressing alignment.
 
 ### Decisions Made
 - DECISION: Treat this as a polish/bug-hunt session on a mature codebase rather

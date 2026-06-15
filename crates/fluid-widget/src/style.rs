@@ -188,15 +188,24 @@ pub struct Palette {
 
 pub fn parse_hex(s: &str, fallback: Color) -> Color {
     let h = s.trim_start_matches('#');
-    let (a, rgb) = match h.len() {
-        8 => (u8::from_str_radix(&h[0..2], 16).unwrap_or(255), &h[2..]),
-        6 => (255, h),
+    // Bail before any byte-slicing on non-ASCII input (a multi-byte char could
+    // sit on a slice boundary and panic). Also lets us treat len as char count.
+    if !h.is_ascii() {
+        return fallback;
+    }
+    let (a_hex, rgb) = match h.len() {
+        8 => (&h[0..2], &h[2..]),
+        6 => ("FF", h),
         _ => return fallback,
     };
-    let r = u8::from_str_radix(&rgb[0..2], 16).unwrap_or(0);
-    let g = u8::from_str_radix(&rgb[2..4], 16).unwrap_or(0);
-    let b = u8::from_str_radix(&rgb[4..6], 16).unwrap_or(0);
-    Color::from_rgba8(r, g, b, a as f32 / 255.0)
+    let p = |x: &str| u8::from_str_radix(x, 16).ok();
+    // Any non-hex digit makes the whole string invalid -> fallback, rather than
+    // silently collapsing a malformed channel to 0 (which turned typos like
+    // "#GGGGGG" into pure black, e.g. invisible text on a dark background).
+    match (p(a_hex), p(&rgb[0..2]), p(&rgb[2..4]), p(&rgb[4..6])) {
+        (Some(a), Some(r), Some(g), Some(b)) => Color::from_rgba8(r, g, b, a as f32 / 255.0),
+        _ => fallback,
+    }
 }
 
 pub fn swatch_color(hex: &str) -> Color {

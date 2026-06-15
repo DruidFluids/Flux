@@ -4,3 +4,5 @@ target/
 # stray local artifacts (screenshots, build logs)
 /*.png
 /build_output.txt
+/.run*.txt
+/fluidmonitor-rs-overnight.md

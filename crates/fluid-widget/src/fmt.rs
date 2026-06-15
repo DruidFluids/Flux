@@ -43,8 +43,10 @@ fn short(v: f64) -> String {
 }
 
 pub fn fmt_net(bps: f64) -> (String, String) {
-    if bps < 1024.0 {
-        (format!("{:.0}", bps), "B/s".into())
+    // NaN fails every `<` comparison, so without the `is_finite` guard a NaN
+    // rate would fall through to the GB/s arm and render "NaN".
+    if !bps.is_finite() || bps < 1024.0 {
+        (format!("{:.0}", bps.max(0.0)), "B/s".into())
     } else if bps < 1024.0 * 1024.0 {
         (short(bps / 1024.0), "KB/s".into())
     } else if bps < 1024.0 * 1024.0 * 1024.0 {
@@ -55,8 +57,8 @@ pub fn fmt_net(bps: f64) -> (String, String) {
 }
 
 pub fn fmt_disk(bps: f64) -> (String, String) {
-    if bps < 1024.0 {
-        (format!("{:.0}", bps), "B/s".into())
+    if !bps.is_finite() || bps < 1024.0 {
+        (format!("{:.0}", bps.max(0.0)), "B/s".into())
     } else if bps < 1024.0 * 1024.0 {
         (short(bps / 1024.0), "KB/s".into())
     } else if bps < 1024.0 * 1024.0 * 1024.0 {

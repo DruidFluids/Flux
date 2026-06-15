@@ -25,6 +25,12 @@ fn sz(base: i32, offset: i32, s: &AppSettings) -> u16 {
 // Secondary text colour: C# SecondaryValueText uses the text brush at 0.85.
 fn text085(p: Palette) -> Color { Color { a: p.text.a * 0.85, ..p.text } }
 
+// Percentage readout, guarded against non-finite sensor values: a NaN/Inf
+// usage would otherwise render as "NaN"/"inf" and blow out the tile layout.
+fn pct(v: f32) -> String {
+    format!("{:.0}", if v.is_finite() { v.clamp(0.0, 999.0) } else { 0.0 })
+}
+
 // ── Tile text roles (C# Theme.xaml styles) ──────────────────────────────────
 // Header: IndicatorFontSize (16+indicatorOffset), Bold, muted, secondary font.
 fn header<'a>(label: String, p: Palette, s: &AppSettings) -> Element<'a, Message> {
@@ -44,6 +50,10 @@ fn sub_header<'a>(label: String, p: Palette, s: &AppSettings) -> Element<'a, Mes
     container(
         text(label).size(sz(11, s.secondary_font_offset, s))
             .font(named_font(&s.secondary_font, Weight::Normal))
+            // Clip long hardware / disk-model names to one line instead of
+            // word-wrapping, which would grow into the fixed-height tile and
+            // shove the centered value rows around.
+            .wrapping(iced::widget::text::Wrapping::None)
             .style(move |_| iced::widget::text::Style { color: Some(Color { a: p.muted.a * 0.8, ..p.muted }) })
     ).width(Length::Fill).center_x(Length::Fill).into()
 }
@@ -127,7 +137,7 @@ pub fn cpu_tile<'a>(cpu: &CpuData, s: &AppSettings, p: Palette, w: WarnView, dri
         }
     }
     primary = primary
-        .push(big(format!("{:.0}", cpu.usage_percent), p, s))
+        .push(big(pct(cpu.usage_percent), p, s))
         .push(unit_inline("%".into(), accent, s));
 
     // C# v1.25 "turn on temperature" affordance: when there's no real reading
@@ -232,7 +242,7 @@ pub fn gpu_tile<'a>(gpu: &GpuData, s: &AppSettings, p: Palette, w: WarnView) -> 
         }
     }
     primary = primary
-        .push(big(format!("{:.0}", gpu.usage_percent), p, s))
+        .push(big(pct(gpu.usage_percent), p, s))
         .push(unit_inline("%".into(), accent, s));
 
     let mut sec = column![].spacing(1).align_x(iced::Alignment::Center);
@@ -282,7 +292,7 @@ pub fn ram_tile<'a>(ram: &RamData, s: &AppSettings, p: Palette, w: WarnView) -> 
 
     let secondary: Element<'a, Message> = if s.ram_show_details {
         row![
-            small(format!("{:.0}", ram.usage_percent), p, s),
+            small(pct(ram.usage_percent), p, s),
             small_unit("%".into(), accent, s),
             small(format!(" of {:.1}", total_gb), p, s),
             Space::with_width(3),
