@@ -83,7 +83,7 @@ fn sub_header<'a>(label: String, p: Palette, s: &AppSettings) -> Element<'a, Mes
         .width(Length::Fill)
         .height(Length::Fixed(sub_line_h(s)))
         .center_x(Length::Fill)
-        .center_y(Length::Fill)
+        .align_y(iced::alignment::Vertical::Center)
         .into()
 }
 
@@ -270,7 +270,7 @@ pub fn cpu_tile<'a>(cpu: &CpuData, s: &AppSettings, p: Palette, w: WarnView, dri
 
     tile_container(column![
         header("CPU".into(), p, s),
-        sub_header(name, p, s),
+        sub_header(if s.cpu_show_name { name } else { String::new() }, p, s),
         Space::with_height(Length::Fill),
         container(primary).width(Length::Fill).center_x(Length::Fill),
         Space::with_height(Length::Fill),
@@ -378,7 +378,7 @@ pub fn gpu_tile<'a>(gpu: &GpuData, s: &AppSettings, p: Palette, w: WarnView) -> 
 
     tile_container(column![
         header("GPU".into(), p, s),
-        sub_header(name, p, s),
+        sub_header(if s.gpu_show_name { name } else { String::new() }, p, s),
         Space::with_height(Length::Fill),
         container(primary).width(Length::Fill).center_x(Length::Fill),
         Space::with_height(Length::Fill),

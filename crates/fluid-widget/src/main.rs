@@ -1310,8 +1310,10 @@ impl App {
             Message::SetTileField(key, on) => {
                 let st = &mut self.settings;
                 match key.as_str() {
+                    "cpu_name" => st.cpu_show_name = on,
                     "cpu_temp" => st.cpu_show_temp = on,
                     "cpu_clock" => st.cpu_show_clock = on,
+                    "gpu_name" => st.gpu_show_name = on,
                     "gpu_temp" => st.gpu_show_temp = on,
                     "gpu_clock" => st.gpu_show_clock = on,
                     "gpu_vram" => st.gpu_show_vram = on,

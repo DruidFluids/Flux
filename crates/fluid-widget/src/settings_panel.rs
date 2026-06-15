@@ -444,7 +444,7 @@ pub fn view<'a>(
             pill("Custom".into(), !cpu_auto, Message::Noop),
         ].spacing(0).align_y(iced::Alignment::Center),
         temp_row,
-        row![field_tog("Temperature", settings.cpu_show_temp, "cpu_temp"), field_tog("Clock", settings.cpu_show_clock, "cpu_clock")].spacing(10),
+        row![field_tog("Model", settings.cpu_show_name, "cpu_name"), field_tog("Temperature", settings.cpu_show_temp, "cpu_temp"), field_tog("Clock", settings.cpu_show_clock, "cpu_clock")].spacing(10),
         Space::with_height(2),
         cpu_driver,
     ].spacing(6).into();
@@ -456,7 +456,7 @@ pub fn view<'a>(
             Space::with_width(4),
             pill("Custom".into(), !gpu_auto, Message::Noop),
         ].spacing(0).align_y(iced::Alignment::Center),
-        row![field_tog("Temperature", settings.gpu_show_temp, "gpu_temp"), field_tog("Clock", settings.gpu_show_clock, "gpu_clock"), field_tog("VRAM", settings.gpu_show_vram, "gpu_vram")].spacing(10),
+        row![field_tog("Model", settings.gpu_show_name, "gpu_name"), field_tog("Temperature", settings.gpu_show_temp, "gpu_temp"), field_tog("Clock", settings.gpu_show_clock, "gpu_clock"), field_tog("VRAM", settings.gpu_show_vram, "gpu_vram")].spacing(10),
     ].spacing(6).into();
     let ram_body: Element<'a, Message> =
         row![field_tog("Speed / type", settings.ram_show_speed, "ram_speed"), field_tog("Usage detail", settings.ram_show_details, "ram_details")].spacing(10).into();

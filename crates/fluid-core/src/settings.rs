@@ -105,8 +105,10 @@ pub struct AppSettings {
     pub show_remote_status_dot: bool,
 
     // ── Per-tile field visibility (all default ON) ──
+    #[serde(default = "def_true")] pub cpu_show_name: bool,
     #[serde(default = "def_true")] pub cpu_show_temp: bool,
     #[serde(default = "def_true")] pub cpu_show_clock: bool,
+    #[serde(default = "def_true")] pub gpu_show_name: bool,
     #[serde(default = "def_true")] pub gpu_show_temp: bool,
     #[serde(default = "def_true")] pub gpu_show_clock: bool,
     #[serde(default = "def_true")] pub gpu_show_vram: bool,
@@ -198,8 +200,8 @@ impl Default for AppSettings {
             first_run_complete: false,
             cpu_temp_hint_dismissed: false,
             show_remote_status_dot: true,
-            cpu_show_temp: true, cpu_show_clock: true,
-            gpu_show_temp: true, gpu_show_clock: true, gpu_show_vram: true,
+            cpu_show_name: true, cpu_show_temp: true, cpu_show_clock: true,
+            gpu_show_name: true, gpu_show_temp: true, gpu_show_clock: true, gpu_show_vram: true,
             ram_show_speed: true, ram_show_details: true,
             net_show_down: true, net_show_up: true,
             disk_show_read: true, disk_show_write: true,
