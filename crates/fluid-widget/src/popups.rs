@@ -88,7 +88,7 @@ fn shell<'a>(title: &str, win_id: window::Id, p: Palette, body: Element<'a, Mess
         .width(Length::Fill).height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
             background: Some(iced::Background::Color(window_bg)),
-            border: Border { radius: 16.0.into(), width: 1.5, color: accent_border },
+            border: Border { radius: crate::style::win_radius(16.0).into(), width: 1.5, color: accent_border },
             ..Default::default()
         })
         .into()

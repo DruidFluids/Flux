@@ -6,7 +6,17 @@ use iced::widget::canvas::{self, path, Frame, LineCap, LineJoin, Stroke};
 use iced::widget::{button, text};
 use iced::{Border, Color, Element};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
+
+/// Process-wide "rounded corners" flag, mirrored from settings. Window chrome
+/// (Settings + all popups) reads this so their card radii follow the toggle
+/// without threading the flag through every view signature.
+static ROUND_CORNERS: AtomicBool = AtomicBool::new(true);
+pub fn set_round_corners(on: bool) { ROUND_CORNERS.store(on, Ordering::Relaxed); }
+pub fn corners_rounded() -> bool { ROUND_CORNERS.load(Ordering::Relaxed) }
+/// A corner radius gated on the rounded-corners toggle (0.0 when off).
+pub fn win_radius(r: f32) -> f32 { if corners_rounded() { r } else { 0.0 } }
 
 /// A soft, custom-drawn expand chevron with rounded caps/joins — a smooth stroke
 /// rather than a (sharp) font glyph. Points down (⌄) when collapsed = "expand

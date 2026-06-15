@@ -522,6 +522,9 @@ pub fn view<'a>(
     let gap_anim = drag.as_ref().map(|d| d.1).unwrap_or(0.0);
     let drag_cursor_y = drag.as_ref().map(|d| d.2).unwrap_or(0.0);
     let dragging = drag_name.is_some();
+    // Floating-bar height (the lifted row itself) — shorter than the list row
+    // PITCH (crate::TILE_ROW_H), which is what the drop-well uses.
+    const FLOAT_H: f32 = 44.0;
     // The lifted, floating copy of the dragged row (rendered in the overlay).
     let mut floating_drag: Option<Element<'a, Message>> = None;
 
@@ -601,7 +604,7 @@ pub fn view<'a>(
                 container(header)
                     // Bound the height — the grip's center_y(Fill) would otherwise
                     // stretch to the full overlay (whole-window) height.
-                    .height(Length::Fixed(crate::TILE_ROW_H))
+                    .height(Length::Fixed(FLOAT_H))
                     .style(move |_| iced::widget::container::Style {
                         background: Some(iced::Background::Color(iced::Color { a: 1.0, ..p.bg })),
                         border: Border { radius: 10.0.into(), width: 1.0, color: p.accent },
@@ -1227,7 +1230,7 @@ pub fn view<'a>(
         .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 8.0 })
         .style(move |_| iced::widget::container::Style {
             background: Some(iced::Background::Color(iced::Color { a: 0.07, ..p.accent })),
-            border: Border { radius: iced::border::Radius { top_left: 18.0, top_right: 18.0, bottom_right: 0.0, bottom_left: 0.0 }, ..Border::default() },
+            border: Border { radius: iced::border::Radius { top_left: crate::style::win_radius(18.0), top_right: crate::style::win_radius(18.0), bottom_right: 0.0, bottom_left: 0.0 }, ..Border::default() },
             ..Default::default()
         })
     ).on_press(Message::DragWindow(win_id));
@@ -1287,7 +1290,7 @@ pub fn view<'a>(
         .width(Length::Fill).height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
             background: Some(iced::Background::Color(window_bg)),
-            border: Border { radius: 20.0.into(), width: 1.5, color: accent_border },
+            border: Border { radius: crate::style::win_radius(20.0).into(), width: 1.5, color: accent_border },
             ..Default::default()
         });
 
@@ -1300,7 +1303,7 @@ pub fn view<'a>(
     if let Some(fl) = floating_drag {
         // Float the lifted row at the cursor (window-relative y), aligned with
         // the list (body 20 + card 16 + 1 border ≈ 37px insets).
-        let top = (drag_cursor_y - crate::TILE_ROW_H / 2.0).max(0.0);
+        let top = (drag_cursor_y - FLOAT_H / 2.0).max(0.0);
         layers.push(
             column![
                 Space::with_height(Length::Fixed(top)),

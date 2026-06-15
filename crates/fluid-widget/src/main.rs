@@ -306,14 +306,10 @@ fn set_click_through(_: &str, _: bool) {}
 // container border-radius doesn't render on the transparent root window's top
 // corners, so we round the actual OS window instead — reliable and crisp.
 #[cfg(target_os = "windows")]
-fn set_window_rounded(round: bool) {
+fn dwm_round_hwnd(hwnd: windows::Win32::Foundation::HWND, round: bool) {
     use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
         DWMWCP_ROUND, DWM_WINDOW_CORNER_PREFERENCE,
-    };
-    let hwnd = match widget_hwnd() {
-        Some(h) => h,
-        None => return,
     };
     let pref: DWM_WINDOW_CORNER_PREFERENCE = if round { DWMWCP_ROUND } else { DWMWCP_DONOTROUND };
     unsafe {
@@ -325,8 +321,40 @@ fn set_window_rounded(round: bool) {
         );
     }
 }
+fn set_window_rounded(round: bool) {
+    if let Some(hwnd) = widget_hwnd() {
+        dwm_round_hwnd(hwnd, round);
+    }
+}
+// Apply the corner preference to EVERY top-level window owned by this process —
+// the widget plus all dialogs (Settings, Alerts, Game Mode, Utilities, Remote,
+// menus). Without this, only the widget honored the rounded-corners toggle and
+// the dialogs kept square OS corners poking past their rounded card.
+#[cfg(target_os = "windows")]
+fn set_all_windows_rounded(round: bool) {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM};
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowThreadProcessId, IsWindowVisible,
+    };
+    struct Ctx { own_pid: u32, round: bool }
+    let mut ctx = Ctx { own_pid: unsafe { GetCurrentProcessId() }, round };
+    unsafe extern "system" fn cb(h: HWND, lp: LPARAM) -> BOOL {
+        let ctx = &mut *(lp.0 as *mut Ctx);
+        let mut wpid = 0u32;
+        GetWindowThreadProcessId(h, Some(&mut wpid));
+        if wpid == ctx.own_pid && IsWindowVisible(h).as_bool() {
+            dwm_round_hwnd(h, ctx.round);
+        }
+        BOOL(1)
+    }
+    unsafe { let _ = EnumWindows(Some(cb), LPARAM(&mut ctx as *mut _ as isize)); }
+}
 #[cfg(not(target_os = "windows"))]
 fn set_window_rounded(_: bool) {}
+#[cfg(not(target_os = "windows"))]
+fn set_all_windows_rounded(_: bool) {}
 
 // Resolve + cache the widget HWND (renames the window to a unique title).
 fn rename_widget_window() {
@@ -499,9 +527,10 @@ struct TileDrag {
     gap_anim: f32,        // drop-gap position (float slot), eases toward the target
 }
 
-// Logical height of one tile row — the recessed well height and the
-// cursor-delta → slot math both key off this.
-const TILE_ROW_H: f32 = 38.0;
+// Logical row PITCH in the Settings tile list (header + divider spacing) —
+// the recessed drop-well height and the cursor-delta → slot math key off this.
+// Measured from the rendered list (~65px), not the bare header height.
+const TILE_ROW_H: f32 = 65.0;
 
 struct App {
     settings: AppSettings,
@@ -675,6 +704,8 @@ enum Message {
 impl App {
     fn new() -> (Self, Task<Message>) {
         let mut settings = AppSettings::load().unwrap_or_default();
+        // Mirror the rounded-corners flag for window chrome (dialogs read it).
+        style::set_round_corners(settings.round_corners);
         // Assign stable ids to any devices loaded from an older config.
         let mut devices_changed = false;
         for d in settings.remote_devices.iter_mut() {
@@ -1282,7 +1313,10 @@ impl App {
                     set_window_rounded(self.settings.round_corners);
                     return self.apply_click_through();
                 }
-                // A settings/popup opened: drop the widget below it.
+                // A settings/popup opened: round its OS corners to match the
+                // toggle (so the square window corners don't poke past the card),
+                // then drop the widget below it.
+                set_all_windows_rounded(self.settings.round_corners);
                 self.update_widget_level()
             }
             Message::WindowMoved(id, pos) => {
@@ -1718,7 +1752,9 @@ impl App {
             Message::SetRoundCorners(on) => {
                 self.settings.round_corners = on;
                 let _ = self.settings.save();
-                set_window_rounded(on);
+                style::set_round_corners(on);
+                // Apply to the widget AND any open dialogs (Settings/popups).
+                set_all_windows_rounded(on);
                 Task::none()
             }
             Message::SetSnapWindows(on) => { self.settings.snap_to_windows = on; Task::none() }
