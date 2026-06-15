@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 iced = { workspace = true }
 tokio = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56.0"

@@ -314,7 +314,7 @@ mod imp {
         set("InstallLocation", &dir.to_string_lossy())?;
         set("UninstallString", &uninstall_cmd)?;
         set("QuietUninstallString", &quiet_cmd)?;
-        set("URLInfoAbout", "https://github.com/DruidFluids/fluidMonitor")?;
+        set("URLInfoAbout", "https://github.com/DruidFluids/fluidmonitor-rs")?;
         key.set_value("EstimatedSize", &size_kb)
             .map_err(|e| err(format!("set EstimatedSize: {e}")))?;
         key.set_value("NoModify", &1u32).ok();

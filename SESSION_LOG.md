@@ -208,5 +208,33 @@ one exe, make shortcuts, register the uninstaller, apply opt-ins, launch.
 - Full click-through of the GUI wizard and the ARP "Uninstall" button from
   Settings → Apps.
 
+### Round 2 — full CLI switch coverage, widget theme match, docs
+- **Every installer feature now has a documented CLI switch** (`cli` module in
+  main.rs, one source of truth). Flags accept `--flag` / `-flag` / `/flag`
+  case-insensitively. Modes: `--install`/`--apply`, `--uninstall`,
+  `/S`|`/q`|`--silent`|`--quiet` (silent; alone = headless install with
+  defaults), `--help`/`/?`. Install opts: `--scope per-user|all-users`,
+  `--no-desktop`, `--no-startup`, `--no-launch`, `--all`. Uninstall opts:
+  `--scope`, `--remove-settings`, `--silent`. Headless install now **defaults to
+  everything on**; the GUI→elevated worker call passes explicit `--no-*` +
+  always `--no-launch` so nothing is ambiguous and the worker never launches the
+  widget elevated. Built-in `--help` text (console in debug, MessageBox in the
+  windowed release).
+- **Installer themed to match the widget's "Dark (default)"** (`style.rs`):
+  bg #1E1E22, tile #2A2A30, accent #00A8FF, text #E8E8EC, muted #9A9AA8. Custom
+  iced `Theme` palette + container/card/title/muted/button styles; options on a
+  rounded tile-colored card; accent headings; primary(accent)/secondary buttons.
+  Window/taskbar **icon** = the widget's logo PNG (copied to
+  `crates/fluid-setup/assets/icon.png`, decoded via the `image` crate, set with
+  `iced::window::icon::from_rgba`).
+- **Docs:** top-level `README.md` (intro + Install/silent/uninstall + build +
+  workspace table) and `docs/INSTALLER.md` (quick start, scope table, full
+  switch reference with examples, what-gets-created layout, uninstall, build
+  steps, architecture, signing/SmartScreen). Fixed ARP `URLInfoAbout` to the
+  real remote `DruidFluids/fluidmonitor-rs`.
+- Verified: `--apply --no-desktop --no-launch` → start-menu yes, desktop
+  skipped, startup on, fluxid not launched; silent uninstall full cleanup;
+  `--help` + `/?` print correctly; themed GUI launches without crashing.
+
 ### Known Issues / TODO
 - (to be filled as found)
