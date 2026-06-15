@@ -270,5 +270,20 @@ console. Fix: `#![cfg_attr(all(windows, not(debug_assertions)), windows_subsyste
 Verified: rebuilt release, installed exe PE subsystem = 2 (GUI), and the running
 installed fluxid now shows only the tile + tray — no console.
 
+### Round 5 — widget top bar slimmed + symmetric rounded corners
+User: shrink the top chrome bar (gear + X) — too much empty space; and round the
+TOP corners to match the rounded bottom.
+- **Header bar**: `row[gear, X].height(20)` → `.height(15).align_y(Center)`,
+  icon sizes 15/13 → 14/12, and the gap before the body `Space(4)` → `Space(2)`.
+  Updated `widget_size()` height calc (`8+20+4` → `8+15+2`) to match so no gap
+  reopens. Keep these three in sync.
+- **Rounded corners**: confirmed via screenshots (PrintWindow can't show the
+  transparent corners; used screen-capture over a white Paint backdrop + a temp
+  accent border) that the outer container rendered SQUARE top corners but ROUNDED
+  bottom — iced's wgpu quad doesn't round a quad's top corners when flush against
+  the top of the window/viewport. Fix: wrap the rounded frame in a transparent
+  root `container(framed).padding(1)` so it's inset 1px from the window edge;
+  top corners now render rounded, symmetric with the bottom. Verified on white.
+
 ### Known Issues / TODO
 - (to be filled as found)

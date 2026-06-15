@@ -729,9 +729,11 @@ impl App {
         // The device switcher tabs add a row above the tiles (only when a remote
         // device exists and we're not in the compact game-mode overlay).
         let tabs_h = if self.show_device_tabs() { 24.0 } else { 0.0 };
+        // Header bar (15) + gap (2) + top/bottom padding (8 each). Keep in sync
+        // with the `header` row height and the Space before `body` in view().
         match self.effective_orientation() {
-            Orientation::Horizontal => Size::new(16.0 + n * tw + (n - 1.0) * sp, 8.0 + 20.0 + 4.0 + tabs_h + th + 8.0),
-            Orientation::Vertical => Size::new(tw + 16.0, 8.0 + 20.0 + 4.0 + tabs_h + n * th + (n - 1.0) * sp + 8.0),
+            Orientation::Horizontal => Size::new(16.0 + n * tw + (n - 1.0) * sp, 8.0 + 15.0 + 2.0 + tabs_h + th + 8.0),
+            Orientation::Vertical => Size::new(tw + 16.0, 8.0 + 15.0 + 2.0 + tabs_h + n * th + (n - 1.0) * sp + 8.0),
         }
     }
     // The device switcher shows only when at least one remote device exists and
@@ -2257,10 +2259,10 @@ impl App {
             ).padding(0).style(|_, _| button::Style { background: None, ..Default::default() }).on_press(msg)
         };
         let header = row![
-            style::with_tip(icon_btn("\u{2699}", 15, Message::OpenSettings), "Open settings", p),
+            style::with_tip(icon_btn("\u{2699}", 14, Message::OpenSettings), "Open settings", p),
             Space::with_width(Length::Fill),
-            style::with_tip(icon_btn("\u{2715}", 13, Message::HideWidget), "Hide the widget (stays running in the tray)", p),
-        ].height(20);
+            style::with_tip(icon_btn("\u{2715}", 12, Message::HideWidget), "Hide the widget (stays running in the tray)", p),
+        ].height(15).align_y(iced::Alignment::Center);
 
         // Device switcher tabs (this PC + each remote), shown only with remotes.
         let widget_border = skin.border_color(&p);
@@ -2269,7 +2271,7 @@ impl App {
             shell = shell.push(Space::with_height(2));
             shell = shell.push(self.device_tabs(active_id, p));
         }
-        shell = shell.push(Space::with_height(4));
+        shell = shell.push(Space::with_height(2));
         shell = shell.push(body);
         // Bold skins glow the whole widget frame too (accent-tinted bloom).
         let frame_shadow = if skin.glow > 0.0 {
@@ -2277,7 +2279,7 @@ impl App {
         } else {
             iced::Shadow::default()
         };
-        let root = container(shell)
+        let framed = container(shell)
             .width(Length::Fill).height(Length::Fill).padding(8)
             .style(move |_| iced::widget::container::Style {
                 background: Some(iced::Background::Color(p.bg)),
@@ -2285,6 +2287,12 @@ impl App {
                 shadow: frame_shadow,
                 ..Default::default()
             });
+        // iced's wgpu renderer doesn't round a quad's TOP corners when it sits
+        // flush against the top of the window/viewport (bottom corners round
+        // fine). Inset the rounded frame by 1px inside a transparent root so the
+        // top corners have room to render — keeps top/bottom symmetric.
+        let root = container(framed)
+            .width(Length::Fill).height(Length::Fill).padding(1);
         mouse_area(root)
             .on_press(Message::DragWindow(id))
             .on_release(Message::SnapWidgetNow)
