@@ -81,8 +81,8 @@ pub fn view<'a>(
     share_dialog: Option<(bool, String)>,
     copied_opacity: f32,
     tile_order: Vec<String>,
-    // Active drag-reorder: (tile name, animated gap slot, cursor y in window).
-    drag: Option<(String, f32, f32)>,
+    // Active drag-reorder: (tile name, cursor y in window).
+    drag: Option<(String, f32)>,
 ) -> Element<'a, Message> {
     // ── Style helpers ──
     let sh = |label: &str, tip: &'static str| -> Element<'a, Message> {
@@ -515,17 +515,14 @@ pub fn view<'a>(
         if !display_order.contains(&c) { display_order.push(c); }
     }
 
-    // Drag state: the dragged tile lifts out and floats under the cursor while
-    // the list opens a spring-animated gap that travels to its drop slot.
+    // Drag state: the dragged tile pops up and floats over the (stationary)
+    // rows for a 3D lift; its slot becomes a recessed "well".
     let drag_name: Option<&str> = drag.as_ref().map(|d| d.0.as_str());
-    let gap_anim = drag.as_ref().map(|d| d.1).unwrap_or(0.0);
-    let drag_cursor_y = drag.as_ref().map(|d| d.2).unwrap_or(0.0);
-    let dragging = drag_name.is_some();
+    let drag_cursor_y = drag.as_ref().map(|d| d.1).unwrap_or(0.0);
     // The lifted, floating copy of the dragged row (rendered in the overlay).
     let mut floating_drag: Option<Element<'a, Message>> = None;
 
     let mut tcol = column![].spacing(0);
-    let mut reduced: Vec<Element<'a, Message>> = Vec::new();
     let last = display_order.len() - 1;
     for (i, &name) in display_order.iter().enumerate() {
         let canon_idx = CANON.iter().position(|c| *c == name).unwrap();
@@ -593,27 +590,32 @@ pub fn view<'a>(
             ..Default::default()
         });
         if is_dragging {
-            // Lift this row out — render it opaque with an accent edge + shadow so
-            // it reads as "plucked toward you". Its slot becomes the gap.
+            // Pop this row up — opaque, accent edge + drop shadow so it reads as
+            // lifted toward you, floating over the others. Leave a recessed well
+            // in its slot so the surrounding rows stay put (no reflow).
             floating_drag = Some(
                 container(header)
                     .style(move |_| iced::widget::container::Style {
                         background: Some(iced::Background::Color(iced::Color { a: 1.0, ..p.bg })),
                         border: Border { radius: 10.0.into(), width: 1.0, color: p.accent },
                         shadow: iced::Shadow {
-                            color: iced::Color { a: 0.45, ..iced::Color::BLACK },
-                            offset: iced::Vector::new(0.0, 7.0),
-                            blur_radius: 20.0,
+                            color: iced::Color { a: 0.5, ..iced::Color::BLACK },
+                            offset: iced::Vector::new(0.0, 8.0),
+                            blur_radius: 22.0,
                         },
                         ..Default::default()
                     })
                     .into(),
             );
-            continue;
-        }
-        if dragging {
-            // Remaining rows are reassembled below with the traveling gap.
-            reduced.push(header.into());
+            let well = container(Space::with_height(Length::Fixed(crate::TILE_ROW_H)))
+                .width(Length::Fill)
+                .style(move |_| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(iced::Color { a: 0.06, ..p.muted })),
+                    border: Border { radius: 8.0.into(), width: 1.0, color: iced::Color { a: 0.16, ..p.muted } },
+                    ..Default::default()
+                });
+            tcol = tcol.push(well);
+            if i != last { tcol = tcol.push(row_divider()); }
             continue;
         }
         tcol = tcol.push(header);
@@ -625,45 +627,6 @@ pub fn view<'a>(
             );
         }
         if i != last { tcol = tcol.push(row_divider()); }
-    }
-    if dragging {
-        // Reassemble the surviving rows with a single row-tall gap split across
-        // the spring position `gap_anim` (frac of the gap above/below the seam),
-        // so the rows visibly squish past as the gap travels.
-        let m = reduced.len();
-        let g = gap_anim.clamp(0.0, m as f32);
-        let floor_g = g.floor() as usize;
-        let frac = g - g.floor();
-        let mut reduced_opt: Vec<Option<Element<'a, Message>>> =
-            reduced.into_iter().map(Some).collect();
-        let mut col = column![].spacing(0);
-        for ins in 0..=m {
-            let gh = if ins == floor_g {
-                crate::TILE_ROW_H * (1.0 - frac)
-            } else if ins == floor_g + 1 {
-                crate::TILE_ROW_H * frac
-            } else {
-                0.0
-            };
-            if gh > 0.5 {
-                col = col.push(
-                    container(Space::with_height(Length::Fixed(gh)))
-                        .width(Length::Fill)
-                        .style(move |_| iced::widget::container::Style {
-                            background: Some(iced::Background::Color(iced::Color { a: 0.08, ..p.accent })),
-                            border: Border { radius: 8.0.into(), ..Border::default() },
-                            ..Default::default()
-                        }),
-                );
-            }
-            if ins < m {
-                col = col.push(reduced_opt[ins].take().unwrap());
-                if ins != m - 1 {
-                    col = col.push(row_divider());
-                }
-            }
-        }
-        tcol = col;
     }
     tcol = tcol.push(Space::with_height(14));
     tcol = tcol.push(sh("Layout", "Stack tiles vertically (tall) or horizontally (wide)."));
