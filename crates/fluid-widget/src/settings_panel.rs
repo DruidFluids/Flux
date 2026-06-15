@@ -1091,14 +1091,14 @@ pub fn view<'a>(
 
     // 32px caption: "Settings" left, ✕ right, whole bar draggable
     let close_btn = crate::style::with_tip(button(
-        text("\u{2715}").size(16).font(iced::Font::with_name("Segoe UI Symbol"))
+        text("\u{2715}").size(13).font(iced::Font::with_name("Segoe UI Symbol"))
             .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
     ).padding([2, 8]).style(|_,_| button::Style { background: None, ..Default::default() }).on_press(Message::SaveClose),
         "Save and close", p);
 
     let caption = mouse_area(
         container(row![
-            text("Settings").size(17).font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
+            text("Settings").size(13).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
             Space::with_width(Length::Fill),
             close_btn,
