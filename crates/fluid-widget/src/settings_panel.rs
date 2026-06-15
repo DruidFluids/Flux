@@ -1096,14 +1096,19 @@ pub fn view<'a>(
     ).padding([2, 8]).style(|_,_| button::Style { background: None, ..Default::default() }).on_press(Message::SaveClose),
         "Save and close", p);
 
-    // Tall, fully-draggable title bar: "Settings" centered, ✕ on the right. The
-    // whole band (down to where the tabs start) drags the window — the close
-    // button is the only part that doesn't.
+    // Tall, fully-draggable title bar: an accent brand mark + centered "Settings"
+    // on a subtly accent-tinted band (rounded to match the window top), ✕ on the
+    // right. The whole band drags the window; only the close button doesn't.
+    let brand = crate::style::brand_pulse(p.accent, 18.0);
     let caption = mouse_area(
         container(
             stack![
-                container(text("Settings").size(13).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
-                    .style(move |_| iced::widget::text::Style { color: Some(p.text) }))
+                container(row![
+                    brand,
+                    Space::with_width(8),
+                    text("Settings").size(13).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                        .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                ].align_y(iced::Alignment::Center))
                     .width(Length::Fill).height(Length::Fill)
                     .center_x(Length::Fill).center_y(Length::Fill),
                 container(close_btn)
@@ -1114,7 +1119,14 @@ pub fn view<'a>(
         .width(Length::Fill)
         .height(Length::Fixed(48.0))
         .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 8.0 })
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(iced::Color { a: 0.07, ..p.accent })),
+            border: Border { radius: iced::border::Radius { top_left: 18.0, top_right: 18.0, bottom_right: 0.0, bottom_left: 0.0 }, ..Border::default() },
+            ..Default::default()
+        })
     ).on_press(Message::DragWindow(win_id));
+    let caption_hairline = container(Space::new(Length::Fill, Length::Fixed(1.0)))
+        .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(iced::Color { a: 0.30, ..p.accent })), ..Default::default() });
 
     // Bottom bar: [?] Help + Reset + Save. (Tools moved to its own top tab.)
     let help_btn = tooltip(button(text("?").size(14).font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
@@ -1165,7 +1177,7 @@ pub fn view<'a>(
 
     // Soft Premium window chrome: darker window bg, 20px corners, 1.5px
     // accent-tinted outline so dark-on-dark dialogs don't blend in.
-    let window = container(column![caption, body])
+    let window = container(column![caption, caption_hairline, body])
         .width(Length::Fill).height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
             background: Some(iced::Background::Color(window_bg)),

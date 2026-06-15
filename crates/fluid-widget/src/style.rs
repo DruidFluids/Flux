@@ -59,6 +59,62 @@ pub fn expand_chevron<'a>(open: bool, color: Color, size: f32) -> Element<'a, Me
         .into()
 }
 
+/// The Fluxid brand mark: a small accent "activity pulse" (ECG) stroke — same
+/// motif as the installer badge. Used to dress up the Settings title bar.
+struct BrandPulse {
+    color: Color,
+}
+impl canvas::Program<Message> for BrandPulse {
+    type State = ();
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &iced::Renderer,
+        _theme: &iced::Theme,
+        bounds: iced::Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = Frame::new(renderer, bounds.size());
+        let r = bounds.width.min(bounds.height);
+        let (cx, cy) = (bounds.width / 2.0, bounds.height / 2.0);
+        let pts = [
+            (-0.46, 0.0),
+            (-0.22, 0.0),
+            (-0.08, 0.32),
+            (0.04, -0.42),
+            (0.18, 0.22),
+            (0.30, 0.0),
+            (0.46, 0.0),
+        ];
+        let mut b = path::Builder::new();
+        for (i, (dx, dy)) in pts.iter().enumerate() {
+            let pt = iced::Point::new(cx + dx * r, cy + dy * r);
+            if i == 0 {
+                b.move_to(pt);
+            } else {
+                b.line_to(pt);
+            }
+        }
+        frame.stroke(
+            &b.build(),
+            Stroke::default()
+                .with_width((r * 0.11).max(1.6))
+                .with_color(self.color)
+                .with_line_cap(LineCap::Round)
+                .with_line_join(LineJoin::Round),
+        );
+        vec![frame.into_geometry()]
+    }
+}
+
+/// The Fluxid brand pulse mark as a fixed-size element.
+pub fn brand_pulse<'a>(color: Color, size: f32) -> Element<'a, Message> {
+    canvas::Canvas::new(BrandPulse { color })
+        .width(iced::Length::Fixed(size))
+        .height(iced::Length::Fixed(size))
+        .into()
+}
+
 /// Field colour (dropdowns / inputs) derived from the theme background, so it
 /// stays readable on both dark and light themes: dark themes get a clearly
 /// darker field, light themes a subtly darker one (a muddy mid-tone from a flat
