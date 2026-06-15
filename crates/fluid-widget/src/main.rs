@@ -558,6 +558,8 @@ struct App {
     preset_arming: Option<u8>,
     // Appearance share-code dialog: Some((is_export, code_text)) when open.
     share_dialog: Option<(bool, String)>,
+    // When the share code was last copied — drives the fading "Copied!" toast.
+    share_copied_at: Option<Instant>,
     // Picker popup mode: false = themes, true = skins.
     picker_skins: bool,
     // Saved-Themes slot pending delete confirmation.
@@ -610,7 +612,7 @@ enum Message {
     SetFont(u8, String),
     SetUpdateMode(String),
     ExportAppearance, ImportAppearance, ImportAppearanceCode(Option<String>),
-    ShareCodeInput(String), CopyShareCode, ApplyShareCode, CloseShareDialog,
+    ShareCodeInput(String), CopyShareCode, ApplyShareCode, CloseShareDialog, CopiedFadeTick,
     CheckForUpdates,
     UpdateCheckDone(updates::CheckResult),
     DownloadUpdate,
@@ -713,6 +715,7 @@ impl App {
             tiles_section: None,
             preset_arming: None,
             share_dialog: None,
+            share_copied_at: None,
             picker_skins: false,
             confirm_delete_slot: None,
         };
@@ -1997,10 +2000,23 @@ impl App {
                 Task::none()
             }
             Message::CopyShareCode => {
-                match self.share_dialog.as_ref() {
-                    Some((_, t)) => iced::clipboard::write(t.clone()),
-                    None => Task::none(),
+                let code = match self.share_dialog.as_ref() {
+                    Some((_, t)) => t.clone(),
+                    None => return Task::none(),
+                };
+                self.share_copied_at = Some(Instant::now());
+                let id = iced::widget::text_input::Id::new("share_code");
+                Task::batch([
+                    iced::clipboard::write(code),
+                    iced::widget::text_input::focus(id.clone()),
+                    iced::widget::text_input::select_all(id),
+                ])
+            }
+            Message::CopiedFadeTick => {
+                if self.share_copied_at.map(|t| t.elapsed().as_secs_f32() > 1.8).unwrap_or(false) {
+                    self.share_copied_at = None;
                 }
+                Task::none()
             }
             Message::ApplyShareCode => {
                 if let Some((_, code)) = self.share_dialog.take() {
@@ -2013,7 +2029,7 @@ impl App {
                 }
                 Task::none()
             }
-            Message::CloseShareDialog => { self.share_dialog = None; Task::none() }
+            Message::CloseShareDialog => { self.share_dialog = None; self.share_copied_at = None; Task::none() }
             Message::ImportAppearanceCode(opt) => {
                 match opt {
                     Some(code) if self.apply_share_code(&code) => {
@@ -2164,7 +2180,12 @@ impl App {
                     status_kind: self.update_status_kind,
                     available: self.update_available.as_ref().map(|u| (u.version.clone(), u.changelog.clone())),
                 };
-                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), update, self.cpu_driver_installed, self.tiles_section.clone(), self.preset_arming, self.appearance_undo.last().map(|a| style::parse_hex(&a.accent, p.accent)), self.share_dialog.clone())
+                // Fading "Copied!" toast opacity: solid ~0.9s, then fade out.
+                let copied_opacity = self.share_copied_at.map(|t| {
+                    let e = t.elapsed().as_secs_f32();
+                    if e < 0.9 { 1.0 } else { ((1.8 - e) / 0.9).clamp(0.0, 1.0) }
+                }).unwrap_or(0.0);
+                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), update, self.cpu_driver_installed, self.tiles_section.clone(), self.preset_arming, self.appearance_undo.last().map(|a| style::parse_hex(&a.accent, p.accent)), self.share_dialog.clone(), copied_opacity)
             }
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id, self.capturing_hotkey == Some(hotkeys::HotkeyTarget::GameMode)),
@@ -2371,14 +2392,17 @@ impl App {
             iced::Shadow::default()
         };
         // Tighter top inset so the gear/X bar hugs the top edge (less empty
-        // space). The visible corner rounding is handled at the OS level via
-        // set_window_rounded (DWM), gated by the round_corners setting.
+        // space). The OS-level rounding is handled by set_window_rounded (DWM);
+        // the iced background must also drop its radius when corners are off,
+        // otherwise it keeps drawing its own rounded fill and the widget still
+        // looks rounded even with DWM squared.
+        let corner_radius = if self.settings.round_corners { skin.widget_radius } else { 0.0 };
         let root = container(shell)
             .width(Length::Fill).height(Length::Fill)
             .padding(iced::Padding { top: 4.0, right: 8.0, bottom: 8.0, left: 8.0 })
             .style(move |_| iced::widget::container::Style {
                 background: Some(iced::Background::Color(p.bg)),
-                border: Border { radius: skin.widget_radius.into(), width: skin.widget_border, color: widget_border },
+                border: Border { radius: corner_radius.into(), width: skin.widget_border, color: widget_border },
                 shadow: frame_shadow,
                 ..Default::default()
             });
@@ -2422,6 +2446,10 @@ impl App {
         // While a hotkey field is armed, capture the next key combo.
         if self.capturing_hotkey.is_some() {
             subs.push(iced::keyboard::on_key_press(|key, mods| Some(Message::HotkeyKeyPressed(key, mods))));
+        }
+        // Drive the fading "Copied!" toast in the share dialog.
+        if self.share_copied_at.is_some() {
+            subs.push(iced::time::every(Duration::from_millis(50)).map(|_| Message::CopiedFadeTick));
         }
         Subscription::batch(subs)
     }

@@ -79,6 +79,7 @@ pub fn view<'a>(
     preset_arming: Option<u8>,
     undo_accent: Option<iced::Color>,
     share_dialog: Option<(bool, String)>,
+    copied_opacity: f32,
 ) -> Element<'a, Message> {
     // ── Style helpers ──
     let sh = |label: &str, tip: &'static str| -> Element<'a, Message> {
@@ -1166,7 +1167,7 @@ pub fn view<'a>(
     // Modal share-code dialog (Import/Export) overlaid on the settings window.
     match share_dialog {
         Some((is_export, code)) => {
-            stack![window, share_dialog_view(is_export, code, sunken, hairline, p)].into()
+            stack![window, share_dialog_view(is_export, code, copied_opacity, sunken, hairline, p)].into()
         }
         None => window.into(),
     }
@@ -1174,7 +1175,7 @@ pub fn view<'a>(
 
 // Centered modal for importing/exporting the appearance share code, on a dimmed
 // backdrop. Export pre-fills the code (Copy button); Import starts empty (Apply).
-fn share_dialog_view<'a>(is_export: bool, code: String, card_bg: iced::Color, hairline: iced::Color, p: Palette) -> Element<'a, Message> {
+fn share_dialog_view<'a>(is_export: bool, code: String, copied_opacity: f32, card_bg: iced::Color, hairline: iced::Color, p: Palette) -> Element<'a, Message> {
     let bg_opaque = iced::Color { a: 1.0, ..p.bg };
     let title = if is_export { "Export appearance" } else { "Import appearance" };
     let hint = if is_export {
@@ -1183,6 +1184,7 @@ fn share_dialog_view<'a>(is_export: bool, code: String, card_bg: iced::Color, ha
         "Paste an appearance share code, then Apply."
     };
     let field = text_input("paste code\u{2026}", &code)
+        .id(text_input::Id::new("share_code"))
         .on_input(Message::ShareCodeInput)
         .size(12)
         .padding(8)
@@ -1215,7 +1217,16 @@ fn share_dialog_view<'a>(is_export: bool, code: String, card_bg: iced::Color, ha
         Space::with_height(4),
         field,
         Space::with_height(4),
-        row![Space::with_width(Length::Fill), close, Space::with_width(8), action].align_y(iced::Alignment::Center),
+        row![
+            // Fading "Copied!" toast (alpha driven by copied_opacity).
+            text("Copied to clipboard!").size(11)
+                .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                .style(move |_| iced::widget::text::Style { color: Some(iced::Color { a: copied_opacity, ..p.accent }) }),
+            Space::with_width(Length::Fill),
+            close,
+            Space::with_width(8),
+            action,
+        ].align_y(iced::Alignment::Center),
     ].spacing(8))
         .width(Length::Fixed(440.0))
         .padding(18)
