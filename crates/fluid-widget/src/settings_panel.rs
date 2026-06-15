@@ -901,10 +901,6 @@ pub fn view<'a>(
         ].align_y(iced::Alignment::Center),
     ].spacing(2);
 
-    let sensors_tab: Element<'a, Message> = column![
-        sh("CPU Sensor Driver", "Optional signed driver (PawnIO) for accurate CPU temperature."), cpu_driver,
-    ].spacing(4).into();
-
     // ── Tools tab: launchers that used to live behind the bottom-left gear ──
     let tool_item = |icon: &str, icon_color: iced::Color, title: &str, subtitle: &str, msg: Message| -> Element<'a, Message> {
         let ic = container(
@@ -947,6 +943,9 @@ pub fn view<'a>(
         tool_item("\u{1F527}", iced::Color::from_rgb8(0x88, 0xAA, 0x55), "Utilities", "System tools & snap blocklist", Message::OpenUtilities),
         tool_item("\u{1F4E1}", iced::Color::from_rgb8(0x5A, 0xB0, 0xC8), "Remote", "Share sensors & monitor other machines", Message::OpenRemote),
         Space::with_height(8),
+        sh("CPU Sensor Driver", "Optional signed driver (PawnIO) for accurate CPU temperature."),
+        cpu_driver,
+        Space::with_height(8),
         sh("Updates", "Check for and install new versions of Fluxid."),
         updates,
     ].spacing(8).into();
@@ -955,8 +954,8 @@ pub fn view<'a>(
     //  ASSEMBLY  (tabbed)
     // ════════════════════════════════════════════
 
-    let tab_labels = ["Tiles", "Appearance", "Sensors", "Tools"];
-    let mut tab_panes = vec![tiles_tab, appearance_tab, sensors_tab, tools_tab];
+    let tab_labels = ["Tiles", "Appearance", "Tools"];
+    let mut tab_panes = vec![tiles_tab, appearance_tab, tools_tab];
     let active = tab.min(tab_panes.len() - 1);
 
     // ── Soft Premium chrome colours (derived from the live palette) ──
