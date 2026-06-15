@@ -142,5 +142,71 @@ process (widget lives on a 150%-scaled monitor).
   than a from-scratch build, since Phases 1–7 already ship. Keep changes small,
   reviewable, and individually committed.
 
+## Session: 2026-06-15 (custom installer)
+
+Built out `fluid-setup` from a do-nothing stub wizard into a working
+self-contained custom installer. Key realisation: the Rust payload is a **single
+embedded-asset exe** — `fluxid.exe` statically bundles all 25 themes, fonts,
+icon, and PawnIO `.bin` modules via `include_bytes!`, the widget polls sensors
+in-process (no Windows service), and there's no .NET runtime. So unlike the C#
+`Fluid.Setup` (service + .NET check + admin), the installer's whole job is: copy
+one exe, make shortcuts, register the uninstaller, apply opt-ins, launch.
+
+### Architecture
+- **One exe, three modes** (CLI dispatch in `main.rs`): no args → iced wizard;
+  `--apply <flags>` → headless install engine (also the elevated worker);
+  `--uninstall <flags>` → headless uninstall engine (registered as the ARP
+  uninstall command, a copy of setup placed at `<dir>\uninstall.exe`).
+- **Payload embed** (`build.rs` + `payload.rs`): reads `FLUXID_PAYLOAD` env var
+  → copies `fluxid.exe` to `OUT_DIR/payload.bin` for `include_bytes!`; unset →
+  0-byte placeholder so plain `cargo build --workspace` stays green (installer
+  detects empty payload and refuses to install — "dev build").
+- **Per-user vs all-users** (`engine.rs::Scope`): per-user → `%LOCALAPPDATA%\
+  Fluxid`, HKCU, no UAC; all-users → `%ProgramFiles%\Fluxid`, HKLM, needs
+  elevation → the unelevated GUI relaunches itself `--apply` with the `runas`
+  verb (`ShellExecuteExW`) and waits, then launches the widget unelevated.
+- **Operations** (`engine.rs`): copy exe, copy self→uninstall.exe, Start Menu
+  shortcut (always) + Desktop (opt) via COM `IShellLinkW`/`IPersistFile`, ARP
+  registry entry (DisplayName/Version/Publisher/DisplayIcon/InstallLocation/
+  Uninstall+QuietUninstallString/EstimatedSize/NoModify/NoRepair), HKCU `Run`
+  for startup, launch-on-finish. Uninstall reverses all of it (taskkill /F
+  fluxid first, like the C#; optional `%APPDATA%\Fluxid` settings wipe; defers
+  install-dir removal — which holds the running uninstaller — to a detached
+  `cmd /C ping … & rmdir`).
+- **Deferred to in-app (intentional, no divergent flows):** PawnIO driver (has a
+  secure verified opt-in in `cpu_driver.rs`) and the remote firewall rule.
+
+### Packaging
+- `scripts/Build-Setup.ps1`: release-builds fluxid → sets `FLUXID_PAYLOAD` →
+  release-builds fluid-setup (embeds) → copies to `dist\fluidmonitor-setup-v<ver>
+  .exe` + writes a `.sha256` sidecar (release flow publishes checksums). `dist/`
+  gitignored. Output verified: single 20.3 MB self-contained installer.
+
+### Gotchas hit & fixed
+- `SHELLEXECUTEINFOW` needs the `Win32_System_Registry` windows-crate feature
+  (it carries an HKEY field).
+- `BOOL` lives at `windows::core::BOOL` in 0.62; but `IPersistFile::Save` takes a
+  plain `bool` now.
+- `SHGetKnownFolderPath` `htoken` param is `Option<HANDLE>` → pass `None`.
+- COM must be initialised on the thread before `CoCreateInstance(ShellLink)` —
+  `CoInitializeEx`/`CoUninitialize` around shortcut creation (missing it failed
+  the install right after the file copy).
+- Self-delete `rmdir` must be passed to `cmd.exe` via `raw_arg` — `Command::arg`
+  backslash-escapes the path quotes, which `cmd` doesn't grok, so it no-ops.
+
+### Verified on-machine
+- Headless per-user `--apply --desktop --startup` → exit 0; both exes, both
+  shortcuts, HKCU Run, full ARP entry all present and correct (EstimatedSize
+  ≈34 MB).
+- Silent uninstall → shortcuts/Run/ARP removed, install dir gone after the
+  deferred rmdir. Zero trace left.
+- GUI wizard launches without crashing.
+
+### Needs manual user test (couldn't automate)
+- The **all-users** path (real UAC elevation prompt) — same engine code, just
+  HKLM + Program Files via the elevated `--apply` worker.
+- Full click-through of the GUI wizard and the ARP "Uninstall" button from
+  Settings → Apps.
+
 ### Known Issues / TODO
 - (to be filled as found)
