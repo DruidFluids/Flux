@@ -58,11 +58,42 @@ correctness + polish improvements** verified by reasoning and `cargo build` /
 
 All changes verified: `cargo clippy -p fluid-widget` clean, app relaunches OK.
 
-### Findings deferred (real but higher-risk / lower-value — left for review)
+### Completed (round 2 — found via main.rs / settings_panel.rs / popups.rs review agents)
+- [x] **main.rs `ResetDefaults`**: was leaving the live `RemoteManager` polling
+  the just-removed devices (every other device mutation calls `set_devices`, this
+  one didn't). Now pushes the empty device list + disabled-feed state to the
+  runtime, clears cached `remote_snapshots`/`remote_conn`, resets `widget_device`,
+  and preserves the machine's handshake key (runtime identity, not a preference).
+- [x] **main.rs `ImportAppearanceCode`**: an imported share-code can change the
+  skin (different `tile_spacing` → different `widget_size`), but the handler never
+  resized the window. Now calls `resize_widget()` on success like every other
+  appearance handler.
+- [x] **main.rs `build_device_from_form`**: returned `Option`, so a present-but-
+  malformed handshake key showed the generic "Fill in all fields first". Now
+  returns `Result<_, &str>` and surfaces "Invalid handshake key" distinctly
+  (Test + Save device handlers updated).
+- [x] **popups.rs `warn_card`**: the "dim when disabled" branch was a no-op
+  (`container(body).style(default)` renders identically). Now genuinely fades the
+  card's text/muted/accent (alpha ×0.4) when the alert is off, a real inactive cue.
+
+All verified: `cargo clippy -p fluid-widget` clean, app relaunches OK.
+
+### Reviewed and confirmed NOT bugs (by the review agents — recorded so they
+### aren't re-investigated): opacity %↔0..1 conversions, all per-tile field
+### toggles' read/write wiring, font-offset + spacing slider message mapping,
+### `SetInterval` f32→u64 round-trip, modulo-by-zero in theme/skin/traffic
+### cycling, `warn_mut().unwrap()`, `ignore_next_move` handling, preset
+### slot-bounds, subscription timer floors, empty-list guards in settings/popups.
+
+### Findings deferred (real but higher-risk — left for a visually-verified pass)
 - Width jitter when a byte-rate or VRAM value crosses the 10.0 boundary
   (`"9.9"`→`"10"` changes char count, shifting the content-sized value cell).
-  Real but the fix is a layout change (fixed-width number column in
-  `line_value`), so deferred rather than risk regressing alignment.
+  ATTEMPTED a fixed-width right-aligned number cell, but reverted it: the tile's
+  inner width (~110px at default size) only fits the worst case because the
+  4-glyph value ("1023") only ever pairs with the narrowest unit ("B/s"); a fixed
+  cell sized for 4 glyphs overflows/clips when paired with "MB/s". A correct fix
+  needs coordinated spacing/width changes verified on-screen, so it's deferred
+  rather than risk a clipping regression. (Comment left in `line_value`.)
 
 ### Decisions Made
 - DECISION: Treat this as a polish/bug-hunt session on a mature codebase rather

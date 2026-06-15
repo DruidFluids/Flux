@@ -887,13 +887,15 @@ impl App {
     fn device_mut(&mut self, id: &str) -> Option<&mut fluid_core::settings::RemoteDevice> {
         self.settings.remote_devices.iter_mut().find(|d| d.id == id)
     }
-    fn build_device_from_form(&self) -> Option<fluid_core::settings::RemoteDevice> {
+    fn build_device_from_form(&self) -> Result<fluid_core::settings::RemoteDevice, &'static str> {
         let name = self.new_device_name.trim();
         let ip = self.new_device_ip.trim();
         let key = self.new_device_key.trim();
-        if name.is_empty() || ip.is_empty() { return None; }
-        fluid_remote::protocol::decode_handshake_key(key)?; // reject invalid keys
-        Some(fluid_core::settings::RemoteDevice {
+        if name.is_empty() || ip.is_empty() || key.is_empty() { return Err("Fill in all fields first"); }
+        // Distinguish a missing field from a present-but-malformed key so the
+        // user sees why the key was rejected instead of a generic "fill in" hint.
+        if fluid_remote::protocol::decode_handshake_key(key).is_none() { return Err("Invalid handshake key"); }
+        Ok(fluid_core::settings::RemoteDevice {
             id: new_device_id(), name: name.to_string(), host: ip.to_string(),
             port: self.settings.remote_port, key: key.to_string(),
             popout: fluid_core::settings::PopoutSettings::default(),
@@ -1461,8 +1463,25 @@ impl App {
             }
             Message::ResetDefaults => {
                 let keep = (self.settings.window_x, self.settings.window_y, self.settings.first_run_complete);
+                // Preserve this machine's handshake key: it's a runtime identity
+                // owned by the live RemoteManager, not a user preference. Wiping
+                // it to default would desync the key shown in the Remote panel
+                // from the one the manager actually accepts connections with.
+                let keep_key = self.settings.remote_key.clone();
                 self.settings = AppSettings::default();
                 self.settings.window_x = keep.0; self.settings.window_y = keep.1; self.settings.first_run_complete = keep.2;
+                self.settings.remote_key = keep_key;
+                // Reset cleared all remote devices (default has none) and disabled
+                // the feed. Push that to the live runtime so it stops connecting to
+                // the now-removed machines, and drop their cached snapshots/state —
+                // otherwise it keeps polling devices the user just reset away.
+                if let Some(r) = &self.remote {
+                    r.set_devices(self.settings.remote_devices.clone());
+                    r.set_server_enabled(self.settings.remote_enabled);
+                }
+                self.remote_snapshots.clear();
+                self.remote_conn.clear();
+                self.widget_device = None;
                 // Clears installed Theme Store themes too (default has none).
                 let _ = self.settings.save();
                 self.resize_widget()
@@ -1617,24 +1636,24 @@ impl App {
             Message::SetNewDeviceKey(v) => { self.new_device_key = v; Task::none() }
             Message::TestDevice => {
                 match self.build_device_from_form() {
-                    Some(dev) => {
+                    Ok(dev) => {
                         self.device_test_status = "Testing\u{2026}".into();
                         if let Some(r) = &self.remote { r.test_device(dev.host, dev.port, dev.key); }
                     }
-                    None => { self.device_test_status = "Fill in all fields first".into(); self.device_test_ok = false; }
+                    Err(msg) => { self.device_test_status = msg.into(); self.device_test_ok = false; }
                 }
                 Task::none()
             }
             Message::SaveDevice => {
                 if self.settings.remote_devices.len() >= 5 { return Task::none(); }
                 match self.build_device_from_form() {
-                    Some(dev) => {
+                    Ok(dev) => {
                         self.settings.remote_devices.push(dev);
                         let _ = self.settings.save();
                         if let Some(r) = &self.remote { r.set_devices(self.settings.remote_devices.clone()); }
                         self.add_device_open = false;
                     }
-                    None => { self.device_test_status = "Fill in all fields first".into(); self.device_test_ok = false; }
+                    Err(msg) => { self.device_test_status = msg.into(); self.device_test_ok = false; }
                 }
                 Task::none()
             }
@@ -1889,10 +1908,18 @@ impl App {
             Message::ImportAppearance => iced::clipboard::read().map(Message::ImportAppearanceCode),
             Message::ImportAppearanceCode(opt) => {
                 match opt {
-                    Some(code) if self.apply_share_code(&code) => self.appearance_status = "Imported".into(),
-                    _ => self.appearance_status = "No valid code on clipboard".into(),
+                    Some(code) if self.apply_share_code(&code) => {
+                        self.appearance_status = "Imported".into();
+                        // An imported code can change the skin, whose tile_spacing
+                        // feeds widget_size(); resize so the window matches it (as
+                        // every other appearance-applying handler does).
+                        self.resize_widget()
+                    }
+                    _ => {
+                        self.appearance_status = "No valid code on clipboard".into();
+                        Task::none()
+                    }
                 }
-                Task::none()
             }
             Message::PresetSlotClick(slot) => {
                 let idx = slot as usize;

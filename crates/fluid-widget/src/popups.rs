@@ -182,11 +182,25 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
     };
     let unit_label = if matches!(w.metric, WarnMetric::Load) { " %" } else { " \u{00B0}C" };
 
+    // Dim the whole config when the alert is off (faithful to the C# DataTrigger
+    // opacity). iced 0.13 containers can't set opacity, so we fade the colours the
+    // card's controls draw with by reducing their alpha — a real visual cue that
+    // the section is inactive (the previous no-op container left it full-strength).
+    let bp = if enabled {
+        p
+    } else {
+        Palette {
+            text: iced::Color { a: p.text.a * 0.4, ..p.text },
+            muted: iced::Color { a: p.muted.a * 0.4, ..p.muted },
+            accent: iced::Color { a: p.accent.a * 0.4, ..p.accent },
+            ..p
+        }
+    };
     let grad_color_row: Element<'a, Message> = if w.gradient_mode {
         row![
-            text("Gradient color".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+            text("Gradient color".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(bp.muted) }),
             Space::with_width(Length::Fill),
-            color_field(&w.gradient_color, p, move |s| Message::SetWarnGradientColor(k6.clone(), s)),
+            color_field(&w.gradient_color, bp, move |s| Message::SetWarnGradientColor(k6.clone(), s)),
         ].spacing(6).align_y(iced::Alignment::Center).into()
     } else {
         Space::with_height(0).into()
@@ -194,42 +208,37 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
     let body = column![
         // Threshold
         row![
-            label("Threshold", p), Space::with_width(Length::Fill),
+            label("Threshold", bp), Space::with_width(Length::Fill),
             text_input("", &format!("{}", w.threshold as i64)).size(11).width(70)
                 .on_input(move |s| Message::SetWarnThresholdStr(k1.clone(), s))
-                .style(crate::style::dark_input_style(p)),
-            text(unit_label.to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+                .style(crate::style::dark_input_style(bp)),
+            text(unit_label.to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(bp.muted) }),
         ].spacing(6).align_y(iced::Alignment::Center),
         // Metric
         row![
-            label("Metric", p), Space::with_width(Length::Fill),
+            label("Metric", bp), Space::with_width(Length::Fill),
             pick_list(metrics, Some(sel_metric), move |s: String| {
                 let m = if s == "Load" { WarnMetric::Load } else { WarnMetric::Temperature };
                 Message::SetWarnMetric(k2.clone(), m)
-            }).text_size(11).width(140).style(crate::style::pick_list_style(p)),
+            }).text_size(11).width(140).style(crate::style::pick_list_style(bp)),
         ].spacing(6).align_y(iced::Alignment::Center),
         // Flash + flash colour swatch
         row![
-            toggler(w.flash_enabled).size(14).on_toggle(move |on| Message::SetWarnFlash(k3.clone(), on)).style(crate::style::toggler_style(p)),
-            text("Flash".to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+            toggler(w.flash_enabled).size(14).on_toggle(move |on| Message::SetWarnFlash(k3.clone(), on)).style(crate::style::toggler_style(bp)),
+            text("Flash".to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(bp.text) }),
             Space::with_width(Length::Fill),
-            color_field(&w.flash_color, p, move |s| Message::SetWarnFlashColor(k4.clone(), s)),
+            color_field(&w.flash_color, bp, move |s| Message::SetWarnFlashColor(k4.clone(), s)),
         ].spacing(6).align_y(iced::Alignment::Center),
         // Gradient + (when on) the gradient hot-colour swatch
         row![
-            toggler(w.gradient_mode).size(14).on_toggle(move |on| Message::SetWarnGradient(k5.clone(), on)).style(crate::style::toggler_style(p)),
+            toggler(w.gradient_mode).size(14).on_toggle(move |on| Message::SetWarnGradient(k5.clone(), on)).style(crate::style::toggler_style(bp)),
             text("Gradient mode \u{2014} unit color shifts blue \u{2192} your color".to_string()).size(10)
-                .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                .style(move |_| iced::widget::text::Style { color: Some(bp.text) }),
         ].spacing(6).align_y(iced::Alignment::Center),
         grad_color_row,
     ].spacing(8);
 
-    // Dim the config when disabled (mimics the C# DataTrigger opacity).
-    let config: Element<'a, Message> = if enabled {
-        body.into()
-    } else {
-        container(body).style(|_| iced::widget::container::Style::default()).into()
-    };
+    let config: Element<'a, Message> = body.into();
 
     let ek = kind.to_string();
     container(column![

@@ -104,6 +104,12 @@ fn small_unit<'a>(t: String, accent: Color, s: &AppSettings) -> Element<'a, Mess
 // Network/Disk stacked value: number at PrimaryFontSize (18+primaryOffset),
 // unit at UnitFontSize (12+primaryOffset) accent (C# AccentScale=0.75 path).
 fn line_value<'a>(v: String, u: String, p: Palette, accent: Color, s: &AppSettings) -> Element<'a, Message> {
+    // NOTE: the number cell is intentionally content-sized, not fixed-width.
+    // The widest value ("1023", 4 glyphs) only ever occurs at sub-KB rates where
+    // the unit is the narrowest ("B/s"); once the unit widens to "KB/s"/"MB/s"
+    // the value is ≤3 glyphs — so content sizing keeps the whole line inside the
+    // tile's tight width budget in every case. A fixed-width cell sized for the
+    // 4-glyph worst case would overflow/clip when paired with a wide unit.
     row![
         text(v).size(sz(18, s.primary_font_offset, s))
             .font(named_font(&s.primary_font, Weight::Bold))
