@@ -1096,15 +1096,24 @@ pub fn view<'a>(
     ).padding([2, 8]).style(|_,_| button::Style { background: None, ..Default::default() }).on_press(Message::SaveClose),
         "Save and close", p);
 
+    // Tall, fully-draggable title bar: "Settings" centered, ✕ on the right. The
+    // whole band (down to where the tabs start) drags the window — the close
+    // button is the only part that doesn't.
     let caption = mouse_area(
-        container(row![
-            text("Settings").size(13).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
-                .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-            Space::with_width(Length::Fill),
-            close_btn,
-        ].align_y(iced::Alignment::Center))
+        container(
+            stack![
+                container(text("Settings").size(13).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                    .style(move |_| iced::widget::text::Style { color: Some(p.text) }))
+                    .width(Length::Fill).height(Length::Fill)
+                    .center_x(Length::Fill).center_y(Length::Fill),
+                container(close_btn)
+                    .width(Length::Fill).height(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Right).align_y(iced::alignment::Vertical::Center),
+            ]
+        )
         .width(Length::Fill)
-        .padding(iced::Padding { top: 3.0, right: 4.0, bottom: 1.0, left: 8.0 })
+        .height(Length::Fixed(48.0))
+        .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 8.0 })
     ).on_press(Message::DragWindow(win_id));
 
     // Bottom bar: [?] Help + Reset + Save. (Tools moved to its own top tab.)
