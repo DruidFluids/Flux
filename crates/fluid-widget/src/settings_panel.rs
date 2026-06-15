@@ -83,8 +83,9 @@ pub fn view<'a>(
     // ── Style helpers ──
     let sh = |label: &str, tip: &'static str| -> Element<'a, Message> {
         row![
-            text(label.to_string()).size(13)
-                .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+            // Soft Premium: section headers are UPPERCASE in the accent color.
+            text(label.to_uppercase()).size(12)
+                .font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
                 .style(move |_| iced::widget::text::Style { color: Some(p.accent) }),
             Space::with_width(5),
             qmark(p, tip),
@@ -1085,28 +1086,63 @@ pub fn view<'a>(
     let mut tab_panes = vec![tiles_tab, appearance_tab, behavior_tab, sensors_tab, tools_tab, remote_tab, updates_tab];
     let active = tab.min(tab_panes.len() - 1);
 
-    // Tab strip
+    // ── Soft Premium chrome colours (derived from the live palette) ──
+    let darken = |c: iced::Color, f: f32| iced::Color { r: c.r * f, g: c.g * f, b: c.b * f, a: 1.0 };
+    let window_bg = darken(p.bg, 0.88);
+    let sunken = darken(p.bg, 0.70);
+    let hairline = iced::Color { a: 0.22, ..p.muted };
+    let accent_border = crate::style::lerp(window_bg, p.accent, 0.45);
+    let bg_opaque = iced::Color { a: 1.0, ..p.bg };
+
+    // Pill tab bar: a sunken container with an accent-filled pill on the active
+    // tab (dark text), idle tabs muted. Equal-width tabs.
     let mut strip = row![].spacing(4);
     for (i, lbl) in tab_labels.iter().enumerate() {
         let on = i == active;
         strip = strip.push(
-            button(text(lbl.to_string()).size(11))
-                .padding(iced::Padding { top: 5.0, right: 10.0, bottom: 5.0, left: 10.0 })
+            button(container(text(lbl.to_string()).size(11)
+                .wrapping(iced::widget::text::Wrapping::None)
+                .font(iced::Font { weight: if on { iced::font::Weight::Semibold } else { iced::font::Weight::Medium }, ..iced::Font::DEFAULT }))
+                .center_x(Length::Fill))
+                .width(Length::Fill)
+                .padding(iced::Padding { top: 6.0, right: 2.0, bottom: 6.0, left: 2.0 })
                 .style(move |_: &iced::Theme, status: button::Status| {
                     let hover = matches!(status, button::Status::Hovered);
                     button::Style {
-                        background: Some(iced::Background::Color(if on { p.accent } else { p.tile })),
-                        text_color: if on { iced::Color::WHITE } else if hover { p.accent } else { p.muted },
-                        border: Border { radius: 6.0.into(), width: 1.0, color: if on || hover { p.accent } else { iced::Color { a: 0.4, ..p.muted } } },
+                        background: Some(iced::Background::Color(if on {
+                            p.accent
+                        } else if hover {
+                            iced::Color { a: 0.10, ..p.text }
+                        } else {
+                            iced::Color::TRANSPARENT
+                        })),
+                        text_color: if on { bg_opaque } else { p.muted },
+                        border: Border { radius: 9.0.into(), ..Default::default() },
                         ..Default::default()
                     }
                 })
                 .on_press(Message::SetSettingsTab(i)),
         );
     }
+    let strip_bar = container(strip)
+        .padding(4)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(sunken)),
+            border: Border { radius: 14.0.into(), width: 1.0, color: hairline },
+            ..Default::default()
+        });
 
-    let active_pane = container(tab_panes.remove(active)).width(Length::Fill);
-    let columns = column![strip, Space::with_height(10), active_pane].width(Length::Fill);
+    // The active section sits on a Soft-Premium card: tile surface, hairline
+    // border, 16px corners, generous padding.
+    let active_pane = container(tab_panes.remove(active))
+        .width(Length::Fill)
+        .padding(16)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(p.tile)),
+            border: Border { radius: 16.0.into(), width: 1.0, color: hairline },
+            ..Default::default()
+        });
+    let columns = column![strip_bar, Space::with_height(12), active_pane].width(Length::Fill);
 
     // 32px caption: "Settings" left, ✕ right, whole bar draggable
     let close_btn = crate::style::with_tip(button(
@@ -1117,7 +1153,7 @@ pub fn view<'a>(
 
     let caption = mouse_area(
         container(row![
-            text("Settings").size(13).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+            text("Settings").size(17).font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
             Space::with_width(Length::Fill),
             close_btn,
@@ -1178,10 +1214,13 @@ pub fn view<'a>(
     ]).width(Length::Fill).height(Length::Fill)
         .padding(iced::Padding { top: 4.0, right: 20.0, bottom: 10.0, left: 20.0 });
 
+    // Soft Premium window chrome: darker window bg, 20px corners, 1.5px
+    // accent-tinted outline so dark-on-dark dialogs don't blend in.
     container(column![caption, body])
         .width(Length::Fill).height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(p.bg)),
+            background: Some(iced::Background::Color(window_bg)),
+            border: Border { radius: 20.0.into(), width: 1.5, color: accent_border },
             ..Default::default()
         })
         .into()
