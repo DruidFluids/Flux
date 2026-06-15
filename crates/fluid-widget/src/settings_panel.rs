@@ -510,7 +510,9 @@ pub fn view<'a>(
         let internal = intern.to_string();
         let nm = disp.to_string();
         let nm2 = disp.to_string();
-        let chev = if open { "\u{25BE}" } else { "\u{25B8}" };
+        // Big hollow triangle: down = "expand for more", up = "collapse".
+        let chev = if open { "\u{25B3}" } else { "\u{25BD}" };
+        let chev_col = if open { p.accent } else { p.text };
         let lblcol = if open { p.accent } else { p.text };
         // The label fills the row width and is the expand click-target.
         let expand = button(
@@ -531,15 +533,26 @@ pub fn view<'a>(
             }
         })
         .on_press(Message::ToggleTileSection(nm.clone()));
-        let chev_btn = button(text(chev.to_string()).size(11).font(crate::style::ICONS)
-            .style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-            .padding(iced::Padding { top: 6.0, right: 6.0, bottom: 6.0, left: 6.0 })
-            .style(|_: &iced::Theme, _: button::Status| button::Style { background: None, ..Default::default() })
-            .on_press(Message::ToggleTileSection(nm2.clone()));
+        let chev_btn = crate::style::with_tip(
+            button(text(chev.to_string()).size(16).font(crate::style::ICONS)
+                .style(move |_| iced::widget::text::Style { color: Some(chev_col) }))
+                .padding(iced::Padding { top: 5.0, right: 10.0, bottom: 5.0, left: 10.0 })
+                .style(|_: &iced::Theme, _: button::Status| button::Style { background: None, ..Default::default() })
+                .on_press(Message::ToggleTileSection(nm2.clone())),
+            if open { "Collapse options" } else { "Expand for more options" }, p);
+        // Thin separator between the Shown/Hidden chip and the expand arrow.
+        let sep = container(Space::with_width(Length::Fixed(1.0)))
+            .height(Length::Fixed(16.0))
+            .style(move |_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(iced::Color { a: 0.22, ..p.muted })),
+                ..Default::default()
+            });
         let header = row![
             expand,
             crate::style::with_tip(vis_chip(vis, internal), if vis { "Hide this tile" } else { "Show this tile" }, p),
-            Space::with_width(2),
+            Space::with_width(10),
+            sep,
+            Space::with_width(4),
             chev_btn,
         ].align_y(iced::Alignment::Center);
         tcol = tcol.push(header);
