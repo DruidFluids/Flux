@@ -496,6 +496,12 @@ struct App {
     update_available: Option<updates::PendingUpdate>,
     appearance_status: String,
     theme_store_franchise: Option<usize>,
+    // Theme Store: names staged for download (not yet installed), and a short
+    // post-download confirmation message.
+    theme_store_sel: std::collections::HashSet<String>,
+    theme_store_status: String,
+    // "Choose a Theme": whether the Installed-themes folder is expanded.
+    theme_picker_installed_open: bool,
     config_device: Option<String>,
     add_device_open: bool,
     new_device_name: String,
@@ -531,6 +537,7 @@ enum Message {
     OpenThemeStore,
     ThemeStoreOpenFranchise(usize), ThemeStoreBack,
     ThemeStoreTogglePack(usize, bool), ThemeStoreToggleTheme(usize, usize, bool),
+    ThemeStoreDownload, RemoveInstalledTheme(usize), ToggleThemePickerInstalled,
     BlocklistAction(iced::widget::text_editor::Action), SaveBlocklist,
     PickWindow, PickWindowChosen(String),
     ShowWidgetMenu, WidgetMenuSettings, WidgetMenuExit, WindowUnfocused(window::Id),
@@ -650,6 +657,9 @@ impl App {
             update_checking: false, update_status: String::new(), update_status_kind: 0, update_available: None,
             appearance_status: String::new(),
             theme_store_franchise: None,
+            theme_store_sel: std::collections::HashSet::new(),
+            theme_store_status: String::new(),
+            theme_picker_installed_open: true,
             config_device: None,
             add_device_open: false,
             new_device_name: String::new(), new_device_ip: String::new(), new_device_key: String::new(),
@@ -1323,20 +1333,22 @@ impl App {
                 Task::none()
             }
             Message::OpenUrl(url) => { open_url(&url); Task::none() }
-            Message::OpenThemeStore => { self.theme_store_franchise = None; self.open_popup(WindowKind::ThemeStore, popups::THEME_STORE_SIZE) }
+            Message::OpenThemeStore => {
+                self.theme_store_franchise = None;
+                self.theme_store_sel.clear();
+                self.theme_store_status.clear();
+                self.open_popup(WindowKind::ThemeStore, popups::THEME_STORE_SIZE)
+            }
             Message::ThemeStoreOpenFranchise(i) => { self.theme_store_franchise = Some(i); Task::none() }
             Message::ThemeStoreBack => { self.theme_store_franchise = None; Task::none() }
             Message::ThemeStoreToggleTheme(pack_idx, theme_idx, on) => {
+                // Staging only — nothing installs until Download is pressed.
                 if let Some(pack) = style::theme_packs().get(pack_idx) {
                     if let Some(theme) = pack.themes.get(theme_idx) {
-                        if on {
-                            if !self.settings.installed_themes.iter().any(|t| t.name == theme.name) {
-                                self.settings.installed_themes.push(style::pack_theme_slot(theme));
-                            }
-                        } else {
-                            self.settings.installed_themes.retain(|t| t.name != theme.name);
-                        }
-                        let _ = self.settings.save();
+                        let installed = self.settings.installed_themes.iter().any(|t| t.name == theme.name);
+                        if on && !installed { self.theme_store_sel.insert(theme.name.clone()); }
+                        else { self.theme_store_sel.remove(&theme.name); }
+                        self.theme_store_status.clear();
                     }
                 }
                 Task::none()
@@ -1344,16 +1356,45 @@ impl App {
             Message::ThemeStoreTogglePack(pack_idx, on) => {
                 if let Some(pack) = style::theme_packs().get(pack_idx) {
                     for theme in &pack.themes {
-                        if on {
-                            if !self.settings.installed_themes.iter().any(|t| t.name == theme.name) {
-                                self.settings.installed_themes.push(style::pack_theme_slot(theme));
-                            }
-                        } else {
-                            self.settings.installed_themes.retain(|t| t.name != theme.name);
+                        let installed = self.settings.installed_themes.iter().any(|t| t.name == theme.name);
+                        if on && !installed { self.theme_store_sel.insert(theme.name.clone()); }
+                        else if !on { self.theme_store_sel.remove(&theme.name); }
+                    }
+                    self.theme_store_status.clear();
+                }
+                Task::none()
+            }
+            Message::ThemeStoreDownload => {
+                // Install every staged (selected) theme, then clear the staging.
+                let sel = std::mem::take(&mut self.theme_store_sel);
+                let mut added = 0usize;
+                for pack in style::theme_packs() {
+                    for theme in &pack.themes {
+                        if sel.contains(&theme.name)
+                            && !self.settings.installed_themes.iter().any(|t| t.name == theme.name)
+                        {
+                            self.settings.installed_themes.push(style::pack_theme_slot(theme));
+                            added += 1;
                         }
                     }
+                }
+                if added > 0 { let _ = self.settings.save(); }
+                self.theme_store_status = match added {
+                    0 => "Nothing to download.".into(),
+                    1 => "Installed 1 theme \u{2713}".into(),
+                    n => format!("Installed {n} themes \u{2713}"),
+                };
+                Task::none()
+            }
+            Message::RemoveInstalledTheme(idx) => {
+                if idx < self.settings.installed_themes.len() {
+                    self.settings.installed_themes.remove(idx);
                     let _ = self.settings.save();
                 }
+                Task::none()
+            }
+            Message::ToggleThemePickerInstalled => {
+                self.theme_picker_installed_open = !self.theme_picker_installed_open;
                 Task::none()
             }
             Message::BlocklistAction(action) => { self.blocklist_editor.perform(action); Task::none() }
@@ -1412,6 +1453,8 @@ impl App {
                 let keep = (self.settings.window_x, self.settings.window_y, self.settings.first_run_complete);
                 self.settings = AppSettings::default();
                 self.settings.window_x = keep.0; self.settings.window_y = keep.1; self.settings.first_run_complete = keep.2;
+                // Clears installed Theme Store themes too (default has none).
+                let _ = self.settings.save();
                 self.resize_widget()
             }
             Message::ToggleTile(name, on) => {
@@ -1998,14 +2041,14 @@ impl App {
                 popups::remote_view(remote, &self.settings, p, id)
             }
             WindowKind::WindowPicker => popups::window_picker_view(enum_window_titles(), p, id),
-            WindowKind::ThemeStore => popups::theme_store_view(self.theme_store_franchise, &self.settings, p, id),
+            WindowKind::ThemeStore => popups::theme_store_view(self.theme_store_franchise, &self.settings, &self.theme_store_sel, &self.theme_store_status, p, id),
             WindowKind::PopoutConfig => {
                 let dev = self.config_device.as_ref()
                     .and_then(|cid| self.settings.remote_devices.iter().find(|d| &d.id == cid));
                 popups::popout_config_view(dev, p, id)
             }
             WindowKind::CpuDriver => popups::cpu_driver_view(&self.cpu_dialog, self.cpu_driver_installed, p, id),
-            WindowKind::Picker => popups::picker_view(self.picker_skins, &self.settings, p, id),
+            WindowKind::Picker => popups::picker_view(self.picker_skins, &self.settings, self.theme_picker_installed_open, p, id),
             WindowKind::ConfirmDelete => popups::confirm_delete_view(self.confirm_delete_slot, p, id),
             WindowKind::WidgetMenu => popups::widget_menu_view(p),
             WindowKind::Popout => self.popout_view(id, p),
