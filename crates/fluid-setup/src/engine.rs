@@ -7,7 +7,7 @@
 //! registered as the Add/Remove-Programs uninstall command.
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Display name everywhere the user sees it, and the registry value name.
 pub const APP_NAME: &str = "Fluxid";
@@ -469,6 +469,12 @@ mod imp {
         delete_arp_entry(opts.scope);
         rep.step("Removed registry entries".to_string());
 
+        // Firewall rule (added when the user enabled remote monitoring). Leaving
+        // an inbound allow rule behind after uninstall is neither tidy nor safe.
+        if remove_firewall_rule() {
+            rep.step("Removed firewall rule".to_string());
+        }
+
         // Per-user settings (optional).
         if opts.remove_settings {
             if let Ok(sd) = settings_dir() {
@@ -484,6 +490,77 @@ mod imp {
         rep.step("Removed program files".to_string());
 
         Ok(rep)
+    }
+
+    /// Inbound firewall rule the widget adds for remote monitoring. Keep this
+    /// name in sync with `fluid-widget/src/firewall.rs` (`RULE_NAME`).
+    const FIREWALL_RULE: &str = "Fluxid Remote Sensor";
+
+    /// Remove the remote-monitoring firewall rule if present. Returns true if a
+    /// rule existed and a delete was issued. Querying needs no elevation; the
+    /// delete does, so we only prompt (one UAC) when a rule actually exists.
+    fn remove_firewall_rule() -> bool {
+        if !firewall_rule_exists() {
+            return false;
+        }
+        let args = format!(
+            "advfirewall firewall delete rule name=\"{FIREWALL_RULE}\""
+        );
+        if is_elevated() {
+            let _ = Command::new("netsh")
+                .raw_arg(args)
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        } else {
+            // Deleting a firewall rule requires elevation — one UAC prompt.
+            run_elevated_wait(Path::new("netsh.exe"), &args);
+        }
+        true
+    }
+
+    fn firewall_rule_exists() -> bool {
+        Command::new("netsh")
+            .args([
+                "advfirewall",
+                "firewall",
+                "show",
+                "rule",
+                &format!("name={FIREWALL_RULE}"),
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    /// Launch `file params` elevated (UAC), hidden, and wait for it to finish.
+    fn run_elevated_wait(file: &Path, params: &str) {
+        use windows::core::PCWSTR;
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Threading::{WaitForSingleObject, INFINITE};
+        use windows::Win32::UI::Shell::{
+            ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+        };
+        use windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
+
+        let verb = wide("runas");
+        let file_w = wide(&file.to_string_lossy());
+        let params_w = wide(params);
+        unsafe {
+            let mut info = SHELLEXECUTEINFOW {
+                cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+                fMask: SEE_MASK_NOCLOSEPROCESS,
+                lpVerb: PCWSTR(verb.as_ptr()),
+                lpFile: PCWSTR(file_w.as_ptr()),
+                lpParameters: PCWSTR(params_w.as_ptr()),
+                nShow: SW_HIDE.0,
+                ..Default::default()
+            };
+            if ShellExecuteExW(&mut info).is_ok() && !info.hProcess.is_invalid() {
+                WaitForSingleObject(info.hProcess, INFINITE);
+                let _ = CloseHandle(info.hProcess);
+            }
+        }
     }
 
     /// Spawn a detached shell that waits a moment (for this process to exit and
