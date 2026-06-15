@@ -79,6 +79,7 @@ pub fn view<'a>(
     cpu_driver_installed: bool,
     tiles_open: Option<String>,
     preset_arming: Option<u8>,
+    undo_accent: Option<iced::Color>,
 ) -> Element<'a, Message> {
     // ── Style helpers ──
     let sh = |label: &str, tip: &'static str| -> Element<'a, Message> {
@@ -612,9 +613,30 @@ pub fn view<'a>(
     };
 
     // Top row (Skins): Download · Undo · Randomize | ‹ skin ›
+    // Undo button: tinted to the accent of the appearance it would revert TO, so
+    // you can see the theme you're undoing back to. Disabled when nothing to undo.
+    let undo_col = undo_accent.unwrap_or(iced::Color { a: 0.4, ..p.muted });
+    let undo_on = undo_accent.is_some();
+    let undo_btn: Element<'a, Message> = crate::style::with_tip(
+        button(
+            container(text("\u{21BA}").size(15).font(crate::style::ICONS)
+                .style(move |_| iced::widget::text::Style { color: Some(undo_col) }))
+                .center_x(Length::Fill).center_y(Length::Fill)
+        )
+        .width(Length::Fixed(34.0)).height(Length::Fixed(28.0)).padding(0)
+        .style(move |_: &iced::Theme, status: button::Status| {
+            let hover = matches!(status, button::Status::Hovered);
+            button::Style {
+                background: Some(iced::Background::Color(p.tile)),
+                border: Border { radius: 4.0.into(), width: 1.0, color: if hover && undo_on { undo_col } else { iced::Color { a: 0.4, ..p.muted } } },
+                ..Default::default()
+            }
+        })
+        .on_press_maybe(undo_on.then_some(Message::UndoAppearance)),
+        "Undo to the previous appearance (color shows what you'll revert to)", p);
     let skins_row = row![
         cbtn("\u{1F4E5}", false, Message::OpenThemeStore, "Download more themes & skins"),
-        cbtn("\u{21BA}", false, Message::UndoAppearance, "Undo the last appearance change (up to 5)"),
+        undo_btn,
         dice,
         Space::with_width(4),
         crate::style::with_tip(pill("\u{2039}".into(), false, Message::SkinPrev), "Previous skin", p),
