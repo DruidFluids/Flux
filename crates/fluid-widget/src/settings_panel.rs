@@ -81,8 +81,8 @@ pub fn view<'a>(
     share_dialog: Option<(bool, String)>,
     copied_opacity: f32,
     tile_order: Vec<String>,
-    // Active drag-reorder: (tile name, cursor y in window).
-    drag: Option<(String, f32)>,
+    // Active drag-reorder: (tile name, drop-gap slot, cursor y in window).
+    drag: Option<(String, f32, f32)>,
 ) -> Element<'a, Message> {
     // ── Style helpers ──
     let sh = |label: &str, tip: &'static str| -> Element<'a, Message> {
@@ -515,14 +515,18 @@ pub fn view<'a>(
         if !display_order.contains(&c) { display_order.push(c); }
     }
 
-    // Drag state: the dragged tile pops up and floats over the (stationary)
-    // rows for a 3D lift; its slot becomes a recessed "well".
+    // Drag state: the dragged tile pops up and floats over the rows for a 3D
+    // lift; the other rows part to open a recessed drop "well" that glides to
+    // the slot the cursor is over.
     let drag_name: Option<&str> = drag.as_ref().map(|d| d.0.as_str());
-    let drag_cursor_y = drag.as_ref().map(|d| d.1).unwrap_or(0.0);
+    let gap_anim = drag.as_ref().map(|d| d.1).unwrap_or(0.0);
+    let drag_cursor_y = drag.as_ref().map(|d| d.2).unwrap_or(0.0);
+    let dragging = drag_name.is_some();
     // The lifted, floating copy of the dragged row (rendered in the overlay).
     let mut floating_drag: Option<Element<'a, Message>> = None;
 
     let mut tcol = column![].spacing(0);
+    let mut reduced: Vec<Element<'a, Message>> = Vec::new();
     let last = display_order.len() - 1;
     for (i, &name) in display_order.iter().enumerate() {
         let canon_idx = CANON.iter().position(|c| *c == name).unwrap();
@@ -610,15 +614,11 @@ pub fn view<'a>(
                     })
                     .into(),
             );
-            let well = container(Space::with_height(Length::Fixed(crate::TILE_ROW_H)))
-                .width(Length::Fill)
-                .style(move |_| iced::widget::container::Style {
-                    background: Some(iced::Background::Color(iced::Color { a: 0.06, ..p.muted })),
-                    border: Border { radius: 8.0.into(), width: 1.0, color: iced::Color { a: 0.16, ..p.muted } },
-                    ..Default::default()
-                });
-            tcol = tcol.push(well);
-            if i != last { tcol = tcol.push(row_divider()); }
+            continue;
+        }
+        if dragging {
+            // The surviving rows are reassembled below, parted around the gap.
+            reduced.push(header.into());
             continue;
         }
         tcol = tcol.push(header);
@@ -630,6 +630,46 @@ pub fn view<'a>(
             );
         }
         if i != last { tcol = tcol.push(row_divider()); }
+    }
+    if dragging {
+        // Reassemble the surviving rows with a recessed drop well opened at the
+        // (eased) gap position — split across the seam so the rows glide aside.
+        let m = reduced.len();
+        let g = gap_anim.clamp(0.0, m as f32);
+        let floor_g = g.floor() as usize;
+        let frac = g - g.floor();
+        let well = |h: f32| -> Element<'a, Message> {
+            container(Space::with_height(Length::Fixed(h)))
+                .width(Length::Fill)
+                .style(move |_| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(iced::Color { a: 0.06, ..p.muted })),
+                    border: Border { radius: 8.0.into(), width: 1.0, color: iced::Color { a: 0.18, ..p.accent } },
+                    ..Default::default()
+                })
+                .into()
+        };
+        let mut reduced_opt: Vec<Option<Element<'a, Message>>> =
+            reduced.into_iter().map(Some).collect();
+        let mut col = column![].spacing(0);
+        for ins in 0..=m {
+            let gh = if ins == floor_g {
+                crate::TILE_ROW_H * (1.0 - frac)
+            } else if ins == floor_g + 1 {
+                crate::TILE_ROW_H * frac
+            } else {
+                0.0
+            };
+            if gh > 0.5 {
+                col = col.push(well(gh));
+            }
+            if ins < m {
+                col = col.push(reduced_opt[ins].take().unwrap());
+                if ins != m - 1 {
+                    col = col.push(row_divider());
+                }
+            }
+        }
+        tcol = col;
     }
     tcol = tcol.push(Space::with_height(14));
     tcol = tcol.push(sh("Layout", "Stack tiles vertically (tall) or horizontally (wide)."));

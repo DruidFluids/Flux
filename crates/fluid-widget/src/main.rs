@@ -496,6 +496,7 @@ struct TileDrag {
     origin_index: usize,  // its index in tile_order when the drag began
     start_y: Option<f32>, // cursor y at the first move (window-relative, logical)
     cursor_y: f32,        // current cursor y (window-relative, logical)
+    gap_anim: f32,        // drop-gap position (float slot), eases toward the target
 }
 
 // Logical height of one tile row — the recessed well height and the
@@ -664,7 +665,7 @@ enum Message {
     OpenCpuDriver, DismissCpuTempHint,
     SwitchWidgetDevice(Option<String>), SetShowRemoteStatusDot(bool),
     ToggleTileSection(String), SetTileField(String, bool),
-    StartTileDrag(String), TileDragMove(f32), TileDragEnd,
+    StartTileDrag(String), TileDragMove(f32), TileDragEnd, DragAnimTick,
     CpuDriverMoreInfo, CpuDriverBack,
     CpuDriverInstall, CpuDriverUninstall,
     CpuDriverInstallDone(cpu_driver::Outcome),
@@ -1351,6 +1352,7 @@ impl App {
                     origin_index,
                     start_y: None,
                     cursor_y: 0.0,
+                    gap_anim: origin_index as f32,
                 });
                 // Collapse any open accordion so the list height is stable while dragging.
                 self.tiles_section = None;
@@ -1362,6 +1364,23 @@ impl App {
                     if drag.start_y.is_none() {
                         drag.start_y = Some(y);
                     }
+                }
+                Task::none()
+            }
+            Message::DragAnimTick => {
+                // Glide the drop gap toward the slot the cursor is over — a clean
+                // ease (no overshoot/bounce) so it tracks like the floating bar.
+                if let Some(drag) = self.tile_drag.as_mut() {
+                    let n = self.settings.tile_order.len().max(1);
+                    let target = match drag.start_y {
+                        Some(sy) => {
+                            let moved = ((drag.cursor_y - sy) / TILE_ROW_H).round() as i64;
+                            (drag.origin_index as i64 + moved).clamp(0, n as i64 - 1) as f32
+                        }
+                        None => drag.origin_index as f32,
+                    };
+                    drag.gap_anim += (target - drag.gap_anim) * 0.45;
+                    if (target - drag.gap_anim).abs() < 0.01 { drag.gap_anim = target; }
                 }
                 Task::none()
             }
@@ -2255,7 +2274,7 @@ impl App {
                     let e = t.elapsed().as_secs_f32();
                     if e < 0.9 { 1.0 } else { ((1.8 - e) / 0.9).clamp(0.0, 1.0) }
                 }).unwrap_or(0.0);
-                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), update, self.cpu_driver_installed, self.tiles_section.clone(), self.preset_arming, self.appearance_undo.last().map(|a| style::parse_hex(&a.accent, p.accent)), self.share_dialog.clone(), copied_opacity, self.settings.tile_order.clone(), self.tile_drag.as_ref().map(|d| (d.name.clone(), d.cursor_y)))
+                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), update, self.cpu_driver_installed, self.tiles_section.clone(), self.preset_arming, self.appearance_undo.last().map(|a| style::parse_hex(&a.accent, p.accent)), self.share_dialog.clone(), copied_opacity, self.settings.tile_order.clone(), self.tile_drag.as_ref().map(|d| (d.name.clone(), d.gap_anim, d.cursor_y)))
             }
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id, self.capturing_hotkey == Some(hotkeys::HotkeyTarget::GameMode)),
@@ -2532,6 +2551,8 @@ impl App {
                 }
                 _ => None,
             }));
+            // Drive the drop-gap glide even when the cursor is momentarily still.
+            subs.push(iced::time::every(Duration::from_millis(16)).map(|_| Message::DragAnimTick));
         }
         Subscription::batch(subs)
     }
