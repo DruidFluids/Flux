@@ -85,6 +85,25 @@ All verified: `cargo clippy -p fluid-widget` clean, app relaunches OK.
 ### cycling, `warn_mut().unwrap()`, `ignore_next_move` handling, preset
 ### slot-bounds, subscription timer floors, empty-list guards in settings/popups.
 
+### Completed (round 3 — interactive, screenshot-verified with the user)
+Screenshots captured via `PrintWindow(PW_RENDERFULLCONTENT)` (GDI CopyFromScreen
+returns black for iced's GPU/DComp surface) + a per-monitor-DPI-aware capture
+process (widget lives on a 150%-scaled monitor).
+- [x] **Network/Disk numbers centered on the tile centerline** (`centered_stat_line`
+  in tile.rs): number flanked by two equal `Length::Fill` cells so it stays dead-
+  centre and grows symmetrically as digit count changes — no measuring needed.
+  Replaces the abandoned fixed-width-cell attempt (which couldn't fit the tile).
+- [x] **R:/W: labels + traffic arrows pinned to the left edge** (left cell
+  left-aligned) so they never move; only the centered number/unit shift.
+- [x] **Long Disk/Network names truncate with “…”** (`fit_name`) sized to the tile
+  width, so "Model · C:" / long adapter names cut off cleanly (no wrap/clip).
+- [x] **Retro skin top bar** slimmed from `header_bar: 20.0` (≈30px @150%) to `6.0`.
+- [x] **Randomize now includes installed Theme Store themes** in the colour pool
+  (uninstalling removes them from `installed_themes`, so they leave the pool too).
+- [~] **Live CPU clock (MHz)**: sysinfo returns the static base freq; fix in
+  progress — PDH `% Processor Performance × base` (matches Task Manager, shows
+  boost). Delegated to a focused sensor agent.
+
 ### Findings deferred (real but higher-risk — left for a visually-verified pass)
 - Width jitter when a byte-rate or VRAM value crosses the 10.0 boundary
   (`"9.9"`→`"10"` changes char count, shifting the content-sized value cell).

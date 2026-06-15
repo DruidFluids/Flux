@@ -33,6 +33,98 @@ pub struct SensorPoller {
     components: Components,
     nvml: Option<Nvml>,
     gpu_backend: GpuBackend,
+    // Persistent PDH query for the live CPU clock (Windows boost-aware).
+    cpu_freq: Option<CpuFreq>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Live CPU clock via PDH (Windows) — matches Task Manager's "Speed".
+//  sysinfo's frequency() returns the static base MHz; we scale it by
+//  `\Processor Information(_Total)\% Processor Performance` (can exceed 100%
+//  under boost) to get the effective clock. A persistent query avoids
+//  re-opening PDH every poll. On non-Windows this is an inert stub so the
+//  rest of read_cpu compiles and just uses the base frequency.
+// ─────────────────────────────────────────────────────────────────────────
+#[cfg(windows)]
+struct CpuFreq {
+    query: windows::Win32::System::Performance::PDH_HQUERY,
+    counter: windows::Win32::System::Performance::PDH_HCOUNTER,
+}
+
+#[cfg(windows)]
+impl CpuFreq {
+    fn new() -> Option<Self> {
+        use windows::Win32::System::Performance::{
+            PdhAddEnglishCounterW, PdhCollectQueryData, PdhOpenQueryW, PDH_HCOUNTER, PDH_HQUERY,
+        };
+        use windows::core::w;
+
+        let mut query = PDH_HQUERY::default();
+        // PdhOpenQueryW(szDataSource: PCWSTR, dwUserData: usize, phQuery: *mut PDH_HQUERY) -> u32
+        let status = unsafe { PdhOpenQueryW(None, 0, &mut query) };
+        if status != 0 {
+            return None;
+        }
+
+        let mut counter = PDH_HCOUNTER::default();
+        // PdhAddEnglishCounterW(hQuery, szFullCounterPath: PCWSTR, dwUserData, phCounter: *mut PDH_HCOUNTER) -> u32
+        let status = unsafe {
+            PdhAddEnglishCounterW(
+                query,
+                w!("\\Processor Information(_Total)\\% Processor Performance"),
+                0,
+                &mut counter,
+            )
+        };
+        if status != 0 {
+            return None;
+        }
+
+        // Precision counters need two collects before a value is valid; prime once.
+        unsafe { PdhCollectQueryData(query) };
+
+        Some(Self { query, counter })
+    }
+
+    /// Effective-clock multiplier (e.g. 1.10 = 110% of base under boost).
+    fn current_ratio(&mut self) -> Option<f32> {
+        use windows::Win32::System::Performance::{
+            PdhCollectQueryData, PdhGetFormattedCounterValue, PDH_FMT_COUNTERVALUE, PDH_FMT_DOUBLE,
+        };
+
+        if unsafe { PdhCollectQueryData(self.query) } != 0 {
+            return None;
+        }
+
+        let mut value = PDH_FMT_COUNTERVALUE::default();
+        // PdhGetFormattedCounterValue(hCounter, dwFormat: PDH_FMT, lpdwType: Option<*mut u32>, pValue: *mut PDH_FMT_COUNTERVALUE) -> u32
+        let status = unsafe {
+            PdhGetFormattedCounterValue(self.counter, PDH_FMT_DOUBLE, None, &mut value)
+        };
+        if status != 0 {
+            return None;
+        }
+
+        let pct = unsafe { value.Anonymous.doubleValue };
+        if pct.is_finite() && pct > 0.0 {
+            Some((pct / 100.0) as f32)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(not(windows))]
+struct CpuFreq;
+
+#[cfg(not(windows))]
+impl CpuFreq {
+    fn new() -> Option<Self> {
+        None
+    }
+    fn current_ratio(&mut self) -> Option<f32> {
+        None
+    }
 }
 
 fn shorten_cpu_name(name: &str) -> String {
@@ -441,6 +533,7 @@ impl SensorPoller {
             components: Components::new_with_refreshed_list(),
             nvml,
             gpu_backend,
+            cpu_freq: CpuFreq::new(),
         }
     }
 
@@ -479,13 +572,20 @@ impl SensorPoller {
         }
     }
 
-    fn read_cpu(&self) -> CpuData {
+    fn read_cpu(&mut self) -> CpuData {
         let cpus = self.system.cpus();
         let global_usage = self.system.global_cpu_usage();
         let name = cpus.first()
             .map(|c| shorten_cpu_name(c.brand()))
             .unwrap_or_default();
-        let clock = cpus.first().map(|c| c.frequency() as f32);
+        // sysinfo gives the static base MHz; scale it by the PDH performance
+        // ratio for the live boost-aware clock (Task Manager "Speed"). Falls
+        // back to the base value before the counter is primed or off Windows.
+        let base = cpus.first().map(|c| c.frequency() as f32);
+        let clock = match (self.cpu_freq.as_mut().and_then(|f| f.current_ratio()), base) {
+            (Some(ratio), Some(b)) => Some(b * ratio),
+            _ => base,
+        };
 
         let temp = self.cpu_temperature();
 
