@@ -496,8 +496,12 @@ struct App {
     update_available: Option<updates::PendingUpdate>,
     appearance_status: String,
     theme_store_franchise: Option<usize>,
-    // "Choose a Theme": whether the Installed-themes folder is expanded.
+    // Theme Store: theme names ticked for "Install selected" inside a pack.
+    theme_store_sel: std::collections::HashSet<String>,
+    // "Choose a Theme": whether the Installed-themes folder is expanded, plus
+    // which per-game subfolders are expanded.
     theme_picker_installed_open: bool,
+    theme_picker_open_games: std::collections::HashSet<String>,
     config_device: Option<String>,
     add_device_open: bool,
     new_device_name: String,
@@ -533,7 +537,8 @@ enum Message {
     OpenThemeStore,
     ThemeStoreOpenFranchise(usize), ThemeStoreBack,
     ThemeStoreTogglePack(usize, bool), ThemeStoreToggleTheme(usize, usize, bool),
-    RemoveInstalledTheme(usize), ToggleThemePickerInstalled,
+    ThemeStoreToggleSelect(usize, usize, bool), ThemeStoreInstallSelected(usize),
+    RemoveInstalledTheme(usize), ToggleThemePickerInstalled, ToggleThemePickerGame(String),
     BlocklistAction(iced::widget::text_editor::Action), SaveBlocklist,
     PickWindow, PickWindowChosen(String),
     ShowWidgetMenu, WidgetMenuSettings, WidgetMenuExit, WindowUnfocused(window::Id),
@@ -653,7 +658,9 @@ impl App {
             update_checking: false, update_status: String::new(), update_status_kind: 0, update_available: None,
             appearance_status: String::new(),
             theme_store_franchise: None,
+            theme_store_sel: std::collections::HashSet::new(),
             theme_picker_installed_open: true,
+            theme_picker_open_games: std::collections::HashSet::new(),
             config_device: None,
             add_device_open: false,
             new_device_name: String::new(), new_device_ip: String::new(), new_device_key: String::new(),
@@ -1329,10 +1336,36 @@ impl App {
             Message::OpenUrl(url) => { open_url(&url); Task::none() }
             Message::OpenThemeStore => {
                 self.theme_store_franchise = None;
+                self.theme_store_sel.clear();
                 self.open_popup(WindowKind::ThemeStore, popups::THEME_STORE_SIZE)
             }
             Message::ThemeStoreOpenFranchise(i) => { self.theme_store_franchise = Some(i); Task::none() }
             Message::ThemeStoreBack => { self.theme_store_franchise = None; Task::none() }
+            Message::ThemeStoreToggleSelect(pack_idx, theme_idx, on) => {
+                if let Some(theme) = style::theme_packs().get(pack_idx).and_then(|p| p.themes.get(theme_idx)) {
+                    if on { self.theme_store_sel.insert(theme.name.clone()); }
+                    else { self.theme_store_sel.remove(&theme.name); }
+                }
+                Task::none()
+            }
+            Message::ThemeStoreInstallSelected(pack_idx) => {
+                if let Some(pack) = style::theme_packs().get(pack_idx) {
+                    for theme in &pack.themes {
+                        if self.theme_store_sel.contains(&theme.name)
+                            && !self.settings.installed_themes.iter().any(|t| t.name == theme.name)
+                        {
+                            self.settings.installed_themes.push(style::pack_theme_slot(theme));
+                        }
+                        self.theme_store_sel.remove(&theme.name);
+                    }
+                    let _ = self.settings.save();
+                }
+                Task::none()
+            }
+            Message::ToggleThemePickerGame(g) => {
+                if !self.theme_picker_open_games.remove(&g) { self.theme_picker_open_games.insert(g); }
+                Task::none()
+            }
             Message::ThemeStoreToggleTheme(pack_idx, theme_idx, on) => {
                 if let Some(pack) = style::theme_packs().get(pack_idx) {
                     if let Some(theme) = pack.themes.get(theme_idx) {
@@ -2018,14 +2051,14 @@ impl App {
                 popups::remote_view(remote, &self.settings, p, id)
             }
             WindowKind::WindowPicker => popups::window_picker_view(enum_window_titles(), p, id),
-            WindowKind::ThemeStore => popups::theme_store_view(self.theme_store_franchise, &self.settings, p, id),
+            WindowKind::ThemeStore => popups::theme_store_view(self.theme_store_franchise, &self.settings, &self.theme_store_sel, p, id),
             WindowKind::PopoutConfig => {
                 let dev = self.config_device.as_ref()
                     .and_then(|cid| self.settings.remote_devices.iter().find(|d| &d.id == cid));
                 popups::popout_config_view(dev, p, id)
             }
             WindowKind::CpuDriver => popups::cpu_driver_view(&self.cpu_dialog, self.cpu_driver_installed, p, id),
-            WindowKind::Picker => popups::picker_view(self.picker_skins, &self.settings, self.theme_picker_installed_open, p, id),
+            WindowKind::Picker => popups::picker_view(self.picker_skins, &self.settings, self.theme_picker_installed_open, &self.theme_picker_open_games, p, id),
             WindowKind::ConfirmDelete => popups::confirm_delete_view(self.confirm_delete_slot, p, id),
             WindowKind::WidgetMenu => popups::widget_menu_view(p),
             WindowKind::Popout => self.popout_view(id, p),
