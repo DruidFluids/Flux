@@ -1794,9 +1794,23 @@ impl App {
                 if skins[si] == self.settings.active_skin { si = (si + 1) % skins.len(); }
                 self.settings.active_skin = skins[si].to_string();
 
-                let n = style::THEME_PRESETS.len();
-                let ti = (r / 7 + 1) % n;
-                style::apply_preset(&mut self.settings, ti);
+                // Random palette pool = built-in presets + themes the user
+                // installed from the Theme Store. Uninstalling a store theme drops
+                // it from `installed_themes`, so it naturally leaves the pool too.
+                // Only the colours are taken (the skin stays the random one picked
+                // above, keeping the C# "mashup" behaviour).
+                let n_presets = style::THEME_PRESETS.len();
+                let total = n_presets + self.settings.installed_themes.len();
+                let ti = (r / 7 + 1) % total.max(1);
+                if ti < n_presets {
+                    style::apply_preset(&mut self.settings, ti);
+                } else if let Some(slot) = self.settings.installed_themes.get(ti - n_presets).cloned() {
+                    self.settings.theme_bg = slot.bg;
+                    self.settings.theme_tile = slot.tile;
+                    self.settings.theme_accent = slot.accent;
+                    self.settings.theme_text = slot.text;
+                    self.settings.theme_muted = slot.muted;
+                }
 
                 if self.settings.randomize_fonts_on_dice && !self.font_list.is_empty() {
                     let fl = &self.font_list;

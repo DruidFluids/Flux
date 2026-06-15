@@ -41,6 +41,21 @@ fn header<'a>(label: String, p: Palette, s: &AppSettings) -> Element<'a, Message
     ).width(Length::Fill).center_x(Length::Fill).into()
 }
 
+// Truncate a tile subheader to roughly the tile's inner width (at the subheader
+// font), appending an ellipsis. Used for disk model / network adapter names so a
+// long "Model · C:" or adapter name cuts off cleanly on the right instead of
+// wrapping or clipping mid-glyph. Width-estimate only; errs on the short side.
+fn fit_name(name: String, s: &AppSettings) -> String {
+    let fs = sz(11, s.secondary_font_offset, s) as f32;
+    let avail = (s.tile_width * s.ui_scale - 18.0).max(24.0);
+    let max_chars = ((avail / (fs * 0.56)).floor() as usize).max(4);
+    if name.chars().count() <= max_chars {
+        return name;
+    }
+    let t: String = name.chars().take(max_chars.saturating_sub(1)).collect();
+    format!("{}\u{2026}", t.trim_end())
+}
+
 // SubHeader: SecondaryFontSize (11+secondaryOffset), muted (0.8), secondary
 // font. Collapses when empty (matches the C# Text="" trigger).
 fn sub_header<'a>(label: String, p: Palette, s: &AppSettings) -> Element<'a, Message> {
@@ -101,25 +116,33 @@ fn small_unit<'a>(t: String, accent: Color, s: &AppSettings) -> Element<'a, Mess
         .into()
 }
 
-// Network/Disk stacked value: number at PrimaryFontSize (18+primaryOffset),
-// unit at UnitFontSize (12+primaryOffset) accent (C# AccentScale=0.75 path).
-fn line_value<'a>(v: String, u: String, p: Palette, accent: Color, s: &AppSettings) -> Element<'a, Message> {
-    // NOTE: the number cell is intentionally content-sized, not fixed-width.
-    // The widest value ("1023", 4 glyphs) only ever occurs at sub-KB rates where
-    // the unit is the narrowest ("B/s"); once the unit widens to "KB/s"/"MB/s"
-    // the value is ≤3 glyphs — so content sizing keeps the whole line inside the
-    // tile's tight width budget in every case. A fixed-width cell sized for the
-    // 4-glyph worst case would overflow/clip when paired with a wide unit.
+// One Network/Disk stat line: the NUMBER is pinned to the tile's centerline and
+// grows symmetrically as its digit count changes, with the arrow/label hugging it
+// on the left and the unit on the right. The trick: the two side cells are equal
+// `Length::Fill`, so they always split the leftover width evenly — keeping the
+// number dead-centre without measuring any text. `gap` is half the tile's spacing
+// setting, placed on each side so the centering stays symmetric.
+// Number at PrimaryFontSize (18+primaryOffset); unit at UnitFontSize accent.
+fn centered_stat_line<'a>(
+    left: Element<'a, Message>, v: String, u: String,
+    p: Palette, accent: Color, gap: f32, s: &AppSettings,
+) -> Element<'a, Message> {
+    let number = text(v).size(sz(18, s.primary_font_offset, s))
+        .font(named_font(&s.primary_font, Weight::Bold))
+        .wrapping(iced::widget::text::Wrapping::None)
+        .style(move |_| iced::widget::text::Style { color: Some(p.text) });
+    let unit = text(u).size(sz(12, s.primary_font_offset, s))
+        .font(named_font(&s.indicator_font, Weight::Semibold))
+        .wrapping(iced::widget::text::Wrapping::None)
+        .style(move |_| iced::widget::text::Style { color: Some(accent) });
     row![
-        text(v).size(sz(18, s.primary_font_offset, s))
-            .font(named_font(&s.primary_font, Weight::Bold))
-            .wrapping(iced::widget::text::Wrapping::None)
-            .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-        Space::with_width(3),
-        text(u).size(sz(12, s.primary_font_offset, s))
-            .font(named_font(&s.indicator_font, Weight::Semibold))
-            .wrapping(iced::widget::text::Wrapping::None)
-            .style(move |_| iced::widget::text::Style { color: Some(accent) }),
+        // Label/arrow pinned to the tile's LEFT edge so it never moves; the
+        // number stays centred because both side cells are equal Fill.
+        container(left).width(Length::Fill).align_x(iced::alignment::Horizontal::Left),
+        Space::with_width(gap),
+        number,
+        Space::with_width(gap),
+        container(unit).width(Length::Fill).align_x(iced::alignment::Horizontal::Left),
     ]
     .align_y(iced::Alignment::End)
     .into()
@@ -354,23 +377,16 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
     let label_size = sz(13, s.indicator_font_offset + s.disk_label_font_offset, s);
     let spacing = s.disk_label_spacing.max(0.0);
 
-    // Static layout: fixed label column + fixed-width left-aligned value column.
-    // Nothing shifts when R/W change digit count; the gap is the spacing slider.
-    // Fixed label column (28) + fixed wide value column (left-aligned), shared
-    // with the Network tile so values line up across tiles, never wrap, and
-    // never jump. The gap is the spacing slider.
-    let col_w = Length::Fixed(30.0);
+    // Each R:/W: line centers its number on the tile centerline (see
+    // centered_stat_line); the label hugs it on the left, the unit on the right,
+    // and the value grows symmetrically about the centre as its digits change.
     let dline = |lbl: &str, v: String, u: String| -> Element<'a, Message> {
-        // Value sizes to its content (no fill column squeezing it) so the number
-        // and unit never wrap/clip; the fixed label column keeps R:/W: aligned.
-        row![
-            container(text(lbl.to_string()).size(label_size)
-                .font(named_font(&s.indicator_font, Weight::Bold))
-                .style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-                .width(col_w).align_x(iced::alignment::Horizontal::Right),
-            Space::with_width(spacing),
-            line_value(v, u, p, accent, s),
-        ].align_y(iced::Alignment::Center).into()
+        let label: Element<'a, Message> = text(lbl.to_string()).size(label_size)
+            .font(named_font(&s.indicator_font, Weight::Bold))
+            .wrapping(iced::widget::text::Wrapping::None)
+            .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
+            .into();
+        centered_stat_line(label, v, u, p, accent, spacing * 0.5, s)
     };
     let mut lines = column![].spacing(4);
     if s.disk_show_read { lines = lines.push(dline("R:", rv, ru)); }
@@ -378,7 +394,7 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
 
     tile_container(column![
         header("Disk".into(), p, s),
-        sub_header(mount, p, s),
+        sub_header(fit_name(mount, s), p, s),
         Space::with_height(Length::Fill),
         container(lines).width(Length::Fill).center_x(Length::Fill),
         Space::with_height(Length::Fill),
@@ -431,7 +447,6 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
     // mode, the bloom/halo layers change. This keeps up/down arrows and all
     // indicator modes pixel-identical.
     let glow_w = (arrow_size as f32) * 1.4;
-    let col_w = Length::Fixed(glow_w);
 
     let nline = |down_dir: bool, active: bool, col: Color, v: String, u: String| -> Element<'a, Message> {
         // Exact vertical mirrors about y=16, so up and down are pixel-identical.
@@ -470,13 +485,9 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
             .width(Length::Fixed(glow_w)).height(Length::Fixed(glow_w))
             .style(|_t, _s| iced::widget::svg::Style { color: None })
             .into();
-        // Value sizes to its content (no fill column squeezing it), so the unit
-        // never wraps; the fixed arrow column keeps up/down arrows aligned.
-        row![
-            container(arrow).width(col_w).align_x(iced::alignment::Horizontal::Center),
-            Space::with_width(spacing),
-            line_value(v, u, p, accent, s),
-        ].align_y(iced::Alignment::Center).into()
+        // Center the number on the tile centerline; the arrow hugs it on the
+        // left and the unit on the right (see centered_stat_line).
+        centered_stat_line(arrow, v, u, p, accent, spacing * 0.5, s)
     };
     let mut lines = column![].spacing(4);
     if s.net_show_down { lines = lines.push(nline(true, down > 0, down_color, dv, du)); }
@@ -484,7 +495,7 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
 
     tile_container(column![
         header("Network".into(), p, s),
-        sub_header(label, p, s),
+        sub_header(fit_name(label, s), p, s),
         Space::with_height(Length::Fill),
         container(lines).width(Length::Fill).center_x(Length::Fill),
         Space::with_height(Length::Fill),

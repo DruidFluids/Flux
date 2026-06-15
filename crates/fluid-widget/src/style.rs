@@ -537,7 +537,7 @@ fn builtin_skin_style(name: &str) -> SkinStyle {
             tile_radius: 4.0, widget_radius: 4.0,
             tile_border: 2.0, widget_border: 2.0, tile_spacing: 6.0,
             border_src: BorderSource::Accent, border_alpha: 1.0,
-            accent_bar: 0.0, header_bar: 20.0, sheen: 0.0,
+            accent_bar: 0.0, header_bar: 6.0, sheen: 0.0,
             glow: 0.0, gradient: 0.2,
         },
         // ── Bold / glowing set ──
