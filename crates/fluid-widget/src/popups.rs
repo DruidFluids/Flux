@@ -962,8 +962,8 @@ pub fn picker_view<'a>(skins: bool, settings: &AppSettings, p: Palette, win_id: 
     let card_style = move |sel: bool| move |_: &iced::Theme, status: button::Status| {
         let hover = matches!(status, button::Status::Hovered);
         button::Style {
-            background: Some(iced::Background::Color(if sel { Color { a: 0.18, ..p.accent } } else { Color { a: p.tile.a * 0.6, ..p.tile } })),
-            border: Border { radius: 8.0.into(), width: 1.0, color: if sel || hover { p.accent } else { Color { a: 0.2, ..p.muted } } },
+            background: Some(iced::Background::Color(if sel { Color { a: 0.18, ..p.accent } } else { p.tile })),
+            border: Border { radius: 8.0.into(), width: 1.0, color: if sel || hover { p.accent } else { Color { a: 0.5, ..p.muted } } },
             ..Default::default()
         }
     };

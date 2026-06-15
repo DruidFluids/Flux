@@ -1136,11 +1136,14 @@ pub fn view<'a>(
 
     // The active section sits on a Soft-Premium card: tile surface, hairline
     // border, 16px corners, generous padding.
+    // Card surface is the theme bg (between the darker window and the lighter
+    // tile-colored controls), so the controls/inputs inside keep their contrast
+    // and outlines instead of going tile-on-tile and disappearing.
     let active_pane = container(tab_panes.remove(active))
         .width(Length::Fill)
         .padding(16)
         .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(p.tile)),
+            background: Some(iced::Background::Color(iced::Color { a: 1.0, ..p.bg })),
             border: Border { radius: 16.0.into(), width: 1.0, color: hairline },
             ..Default::default()
         });
