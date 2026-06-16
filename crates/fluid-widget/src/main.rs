@@ -2189,7 +2189,7 @@ impl App {
                     updates::CheckResult::Available(mut update) => {
                         self.update_status = "Update available!".into();
                         self.update_status_kind = 1;
-                        update.changelog = updates::changelog_bullets(&update.changelog);
+                        update.changelog = updates::whats_new(&update.changelog);
                         self.update_available = Some(update);
                     }
                     updates::CheckResult::Failed(e) => {
@@ -2478,7 +2478,7 @@ impl App {
             WindowKind::Updated => {
                 let ver = self.pending_update_popup.clone()
                     .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
-                let log = self.latest_changelog.as_ref().map(|(_, b)| b.clone()).unwrap_or_default();
+                let log = self.latest_changelog.as_ref().map(|(_, b)| updates::whats_new(b)).unwrap_or_default();
                 popups::updated_view(&ver, &log, p, id)
             }
             WindowKind::Utilities => popups::utilities_view(&self.blocklist_editor, &self.blocklist_status, p, id),

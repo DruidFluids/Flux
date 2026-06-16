@@ -47,8 +47,32 @@ const VERIFICATION_MD: &str = "## How updates work\n\nfluxid checks GitHub for t
 // Render a GitHub-flavoured-markdown release body as styled elements so the raw
 // `###` / `-` / `**` markers don't show. Line-based — handles headings, bullets
 // (with nesting), blank-line spacing, and strips inline bold/code markers.
+// Replace Markdown links `[text](url)` with just `text`, leaving other text intact.
+fn strip_md_links(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < s.len() {
+        let rest = &s[i..];
+        if rest.as_bytes()[0] == b'[' {
+            if let Some(mid) = rest.find("](") {
+                if let Some(end) = rest[mid + 2..].find(')') {
+                    out.push_str(&rest[1..mid]); // the link text
+                    i += mid + 2 + end + 1;       // skip past the closing ')'
+                    continue;
+                }
+            }
+        }
+        let ch = rest.chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
 pub(crate) fn changelog_md<'a>(body: &str, p: Palette) -> Element<'a, Message> {
-    let clean = |s: &str| s.replace("**", "").replace('`', "");
+    // Strip inline bold/code markers and flatten Markdown links to their text
+    // (this renderer can't make them clickable, so `[view the scan](url)` → `view the scan`).
+    let clean = |s: &str| strip_md_links(&s.replace("**", "").replace('`', ""));
     let body_col = iced::Color { a: 0.9, ..p.text };
     let line_txt = move |s: String, size: u16, w: iced::font::Weight, c: iced::Color| -> Element<'a, Message> {
         text(s).size(size).width(Length::Fill)
@@ -1126,8 +1150,9 @@ pub fn view<'a>(
         VERIFICATION_MD.to_string()
     } else {
         match (&update.available, &update.latest_changelog) {
+            // `log` is already trimmed; `body` is the raw latest release notes.
             (Some((_, log)), _) => log.clone(),
-            (None, Some((_, body))) => body.clone(),
+            (None, Some((_, body))) => crate::updates::whats_new(body),
             _ => "No release notes available \u{2014} check your internet connection, or open the \"Verification\" tab to read how updates work.".to_string(),
         }
     };

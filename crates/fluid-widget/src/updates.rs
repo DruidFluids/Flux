@@ -149,6 +149,18 @@ pub async fn latest_release() -> Result<(String, String), String> {
     Ok((tag, body))
 }
 
+/// Trim a release body down to the user-facing "what's new": everything up to
+/// (but not including) the operational `## Install` section, so the in-app
+/// changelog shows Highlights + Security without the download/hash boilerplate.
+pub fn whats_new(body: &str) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    for line in body.lines() {
+        if line.trim_start().starts_with("## Install") { break; }
+        out.push(line);
+    }
+    out.join("\n").trim().to_string()
+}
+
 /// Filter a release body down to changelog bullet lines (matches C#).
 pub fn changelog_bullets(body: &str) -> String {
     let bullets: Vec<&str> = body
