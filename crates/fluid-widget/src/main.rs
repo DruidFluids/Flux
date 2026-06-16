@@ -2168,7 +2168,8 @@ impl App {
                 match result {
                     updates::CheckResult::UpToDate => { self.update_status = "Up to date".into(); self.update_status_kind = 1; }
                     updates::CheckResult::Available(mut update) => {
-                        self.update_status = String::new();
+                        self.update_status = "Update available!".into();
+                        self.update_status_kind = 1;
                         update.changelog = updates::changelog_bullets(&update.changelog);
                         self.update_available = Some(update);
                     }
