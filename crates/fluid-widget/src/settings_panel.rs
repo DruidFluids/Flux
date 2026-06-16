@@ -539,35 +539,26 @@ pub fn view<'a>(
         // Soft, custom-drawn expand chevron (rounded strokes, not a font glyph).
         let chev_col = if open { p.accent } else { p.muted };
         let lblcol = if open { p.accent } else { p.text };
-        // Drag grip — press and drag to reorder this row (and the widget tile).
-        let grip = crate::style::with_tip(
+        // Drag handle: the grip dots + the tile label, spanning from the left
+        // edge to ~the middle — press and drag anywhere in here to reorder this
+        // row (and the widget tile). Expand/collapse lives on the chevron.
+        let drag_handle = crate::style::with_tip(
             mouse_area(
-                container(crate::style::drag_grip(if is_dragging { p.accent } else { p.muted }, 16.0))
-                    .padding(iced::Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 })
-                    .center_y(Length::Fill)
+                container(
+                    row![
+                        crate::style::drag_grip(if is_dragging { p.accent } else { p.muted }, 16.0),
+                        Space::with_width(10),
+                        text(name.to_string()).size(13).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                            .style(move |_| iced::widget::text::Style { color: Some(lblcol) }),
+                    ].align_y(iced::Alignment::Center)
+                )
+                .width(Length::FillPortion(2))
+                .padding(iced::Padding { top: 10.0, right: 4.0, bottom: 10.0, left: 6.0 })
+                .center_y(Length::Fill)
             )
             .interaction(iced::mouse::Interaction::Grab)
             .on_press(Message::StartTileDrag(name.to_string())),
             "Drag to reorder", p);
-        // The label fills the row width and is the expand click-target.
-        let expand = button(
-            row![
-                text(name.to_string()).size(13).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
-                    .style(move |_| iced::widget::text::Style { color: Some(lblcol) }),
-                Space::with_width(Length::Fill),
-            ].align_y(iced::Alignment::Center)
-        )
-        .width(Length::Fill)
-        .padding(iced::Padding { top: 10.0, right: 4.0, bottom: 10.0, left: 6.0 })
-        .style(move |_: &iced::Theme, status: button::Status| {
-            let hover = matches!(status, button::Status::Hovered);
-            button::Style {
-                background: Some(iced::Background::Color(if hover { iced::Color { a: p.tile.a * 0.5, ..p.tile } } else { iced::Color::TRANSPARENT })),
-                border: Border { radius: 6.0.into(), ..Border::default() },
-                ..Default::default()
-            }
-        })
-        .on_press(Message::ToggleTileSection(name.to_string()));
         let chev_btn = crate::style::with_tip(
             button(crate::style::expand_chevron(open, chev_col, 18.0))
                 .padding(iced::Padding { top: 7.0, right: 9.0, bottom: 7.0, left: 9.0 })
@@ -582,8 +573,9 @@ pub fn view<'a>(
                 ..Default::default()
             });
         let header = container(row![
-            grip,
-            expand,
+            drag_handle,
+            // Dead space between the drag handle (~middle) and the right controls.
+            Space::with_width(Length::FillPortion(1)),
             crate::style::with_tip(vis_chip(vis, name.to_string()), if vis { "Hide this tile" } else { "Show this tile" }, p),
             Space::with_width(10),
             sep,
