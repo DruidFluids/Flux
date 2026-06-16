@@ -9,7 +9,7 @@
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
-const API_URL: &str = "https://api.github.com/repos/DruidFluids/fluidMonitor/releases/latest";
+const API_URL: &str = "https://api.github.com/repos/DruidFluids/fluidmonitor-rs/releases/latest";
 
 /// A newer release that passed version comparison and is ready to download.
 #[derive(Debug, Clone)]
@@ -125,6 +125,26 @@ async fn fetch_checksum(client: &reqwest::Client, url: &str, exe_name: &str) -> 
 fn parse_version(v: &str) -> (u32, u32, u32) {
     let mut it = v.split(['.', '-']).filter_map(|s| s.parse::<u32>().ok());
     (it.next().unwrap_or(0), it.next().unwrap_or(0), it.next().unwrap_or(0))
+}
+
+/// Fetch the latest release's (version, changelog body) for display — no
+/// version comparison, so it works even when already up to date. Used to fill
+/// the Updates card with the newest release notes.
+pub async fn latest_release() -> Result<(String, String), String> {
+    let client = client()?;
+    let resp = client
+        .get(API_URL)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status().as_u16()));
+    }
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let tag = json["tag_name"].as_str().unwrap_or("").to_string();
+    let body = json["body"].as_str().unwrap_or("").trim().to_string();
+    Ok((tag, body))
 }
 
 /// Filter a release body down to changelog bullet lines (matches C#).

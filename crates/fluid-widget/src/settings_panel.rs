@@ -36,6 +36,7 @@ pub struct UpdateView {
     pub status: String,
     pub status_kind: u8, // 0 neutral, 1 good, 2 bad
     pub available: Option<(String, String)>, // version, changelog
+    pub latest_changelog: Option<(String, String)>, // latest release notes (version, body)
 }
 
 /// A click-to-capture hotkey field: shows the bound combo, "(click to set)"
@@ -1031,17 +1032,36 @@ pub fn view<'a>(
             text(update.status.clone()).size(11).style(move |_| iced::widget::text::Style { color: Some(status_color) })
         );
     }
-    if let Some((ver, changelog)) = &update.available {
+    // Changelog: prefer an available update's notes, else the latest release's
+    // notes — shown in a scrollable that fills the rest of the card.
+    let notes: Option<(String, String, bool)> = if let Some((ver, log)) = &update.available {
+        Some((ver.clone(), log.clone(), true))
+    } else {
+        update.latest_changelog.clone().map(|(v, b)| (v, b, false))
+    };
+    if let Some((ver, body, is_new)) = notes {
+        let ver = ver.trim_start_matches('v');
+        let head = if is_new { format!("New version \u{2014} v{ver}") } else { format!("What's new in v{ver}") };
+        let head_col = if is_new { p.accent } else { p.text };
+        updates_col = updates_col.push(Space::with_height(2));
         updates_col = updates_col.push(
-            text(format!("New version: v{ver}")).size(12)
+            text(head).size(11)
                 .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
-                .style(move |_| iced::widget::text::Style { color: Some(p.accent) })
+                .style(move |_| iced::widget::text::Style { color: Some(head_col) })
         );
         updates_col = updates_col.push(
-            container(scrollable(text(changelog.clone()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.text) })).height(Length::Fixed(80.0)))
-                .padding(6).width(Length::Fill)
-                .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(crate::style::field_bg(p))), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
+            container(
+                scrollable(
+                    text(body).size(10).width(Length::Fill)
+                        .style(move |_| iced::widget::text::Style { color: Some(iced::Color { a: 0.9, ..p.text }) })
+                ).width(Length::Fill).height(Length::Fill)
+            )
+            .padding(8).width(Length::Fill).height(Length::Fill)
+            .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(crate::style::field_bg(p))), border: Border { radius: 6.0.into(), ..Border::default() }, ..Default::default() })
         );
+    } else {
+        // No notes yet (offline / still loading) — keep the card from collapsing.
+        updates_col = updates_col.push(Space::with_height(Length::Fill));
     }
     updates_col = updates_col.push(
         row![
@@ -1050,7 +1070,7 @@ pub fn view<'a>(
         ]
     );
 
-    let updates = container(updates_col)
+    let updates = container(updates_col.height(Length::Fill))
     .padding([10, 12])
     .width(Length::Fill)
     .height(Length::Fill) // stretch to fill the Tools tab's remaining height

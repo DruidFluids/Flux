@@ -591,6 +591,8 @@ struct App {
     update_status: String,
     update_status_kind: u8, // 0 neutral, 1 good (green), 2 bad (red)
     update_available: Option<updates::PendingUpdate>,
+    // Latest GitHub release notes (version, body) shown in the Updates card.
+    latest_changelog: Option<(String, String)>,
     appearance_status: String,
     theme_store_franchise: Option<usize>,
     // Theme Store: theme names ticked for "Install selected" inside a pack.
@@ -676,6 +678,7 @@ enum Message {
     ShareCodeInput(String), CopyShareCode, ApplyShareCode, CloseShareDialog, CopiedFadeTick,
     CheckForUpdates,
     UpdateCheckDone(updates::CheckResult),
+    LatestReleaseDone(Result<(String, String), String>),
     DownloadUpdate,
     UpdateDownloadDone(Result<(), String>),
     UpdateLater,
@@ -764,6 +767,7 @@ impl App {
             blocklist_editor: iced::widget::text_editor::Content::with_text(&blocklist_text),
             blocklist_status: String::new(),
             update_checking: false, update_status: String::new(), update_status_kind: 0, update_available: None,
+            latest_changelog: None,
             appearance_status: String::new(),
             theme_store_franchise: None,
             theme_store_sel: std::collections::HashSet::new(),
@@ -886,7 +890,13 @@ impl App {
             size: self.settings_size(), position: window::Position::Centered, decorations: false, transparent: true, resizable: false,
             level: window::Level::AlwaysOnTop, platform_specific: no_taskbar(), ..Default::default()
         });
-        t.map(|id| Message::WindowOpened(id, WindowKind::Settings))
+        let open = t.map(|id| Message::WindowOpened(id, WindowKind::Settings));
+        // Fetch the latest release notes once per session to fill the Updates card.
+        if self.latest_changelog.is_none() {
+            Task::batch([open, Task::perform(updates::latest_release(), Message::LatestReleaseDone)])
+        } else {
+            open
+        }
     }
     fn open_popup(&self, kind: WindowKind, size: Size) -> Task<Message> {
         if self.windows.values().any(|k| *k == kind) { return Task::none(); }
@@ -2110,6 +2120,12 @@ impl App {
                 }
                 Task::none()
             }
+            Message::LatestReleaseDone(result) => {
+                if let Ok((ver, body)) = result {
+                    if !body.is_empty() { self.latest_changelog = Some((ver, body)); }
+                }
+                Task::none()
+            }
             Message::DownloadUpdate => {
                 let (url, sha) = match &self.update_available {
                     Some(u) => (u.url.clone(), u.sha256.clone()),
@@ -2319,6 +2335,7 @@ impl App {
                     status: self.update_status.clone(),
                     status_kind: self.update_status_kind,
                     available: self.update_available.as_ref().map(|u| (u.version.clone(), u.changelog.clone())),
+                    latest_changelog: self.latest_changelog.clone(),
                 };
                 // Fading "Copied!" toast opacity: solid ~0.9s, then fade out.
                 let copied_opacity = self.share_copied_at.map(|t| {
