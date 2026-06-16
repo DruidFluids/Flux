@@ -8,7 +8,7 @@
 
 Real-time CPU, GPU, RAM, network, and disk stats — always on your desktop, never in your way.
 
-[![Release](https://img.shields.io/badge/release-v1.0.1-5898a0)](../../releases)
+[![Release](https://img.shields.io/badge/release-v1.0.2-5898a0)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](#requirements)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20iced-dea584)](https://iced.rs)
 [![License](https://img.shields.io/badge/license-Personal%20Use-c0392b)](LICENSE)
@@ -116,7 +116,7 @@ fluxid is built with security-conscious defaults:
 - **No telemetry** — the app makes zero analytics calls. The only outbound connections are the optional update check, the optional PawnIO driver download (user-initiated), and LAN-only remote monitoring.
 - **PawnIO is never bundled** — the CPU temperature driver is downloaded on demand from its [official GitHub release](https://github.com/namazso/PawnIO.Setup/releases), and is never redistributed here.
 - **Verified updates** — the in-app updater refuses to run a downloaded installer unless its SHA-256 matches a checksum published alongside the release.
-- **Scanned on VirusTotal** — every release is scanned and the result is linked in its notes. v1.0.1: **[1 / 70](https://www.virustotal.com/gui/file/f126f937c4648db01ca0c0ad2fc8ffee6b15cc4dbd82906d0d969c38d372bcf8)** (a single false positive from one engine's unsigned-binary heuristic).
+- **Scanned on VirusTotal** — every release is scanned and the result is linked in its notes. v1.0.2: **[1 / 70](https://www.virustotal.com/gui/file/045bd73804dc3b1141adba89f52b960319047ae576c3cf342e5652f2571e9ec3)** (a single false positive from one engine's unsigned-binary heuristic).
 - **Unsigned build** — the installer is not code-signed, so Windows SmartScreen shows a one-time prompt. Verify any download against the `.sha256` published with each release before running it.
 - **Settings stay local** — all configuration lives in `%APPDATA%\fluxid`. Nothing is sent anywhere.
 - **Source-available** — every line is in this repo for inspection (see [License](#license)).
