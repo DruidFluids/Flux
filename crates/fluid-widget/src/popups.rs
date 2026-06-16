@@ -10,22 +10,39 @@ use crate::Message;
 // ── Shared chrome ──────────────────────────────────────────────────────────
 
 fn caption<'a>(title: &str, win_id: window::Id, p: Palette) -> Element<'a, Message> {
+    // Match the Settings title bar: a muted-coloured band with the brand mark +
+    // a centred title, the close button on the right, drawn in the theme bg
+    // colour for contrast. The whole band drags the window.
+    let on_bar = Color { a: 1.0, ..p.bg };
     let close = crate::style::with_tip(button(
-        text("\u{2715}").size(15).font(iced::Font::with_name("Segoe UI Symbol"))
-            .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
+        text("\u{2715}").size(13).font(iced::Font::with_name("Segoe UI Symbol"))
+            .style(move |_| iced::widget::text::Style { color: Some(on_bar) })
     ).padding([2, 8]).style(|_, _| button::Style { background: None, ..Default::default() })
         .on_press(Message::ClosePopup(win_id)), "Close", p);
-
+    let brand = crate::style::brand_pulse(on_bar, 16.0);
     mouse_area(
-        container(row![
-            text(title.to_string()).size(11)
-                .font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
-                .style(move |_| iced::widget::text::Style { color: Some(p.accent) }),
-            Space::with_width(Length::Fill),
-            close,
-        ].align_y(iced::Alignment::Center))
+        container(
+            row![
+                // Balances the close button so the brand+title group stays centred.
+                Space::with_width(Length::Fixed(34.0)),
+                Space::with_width(Length::Fill),
+                brand,
+                Space::with_width(8),
+                text(title.to_string()).size(13)
+                    .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                    .style(move |_| iced::widget::text::Style { color: Some(on_bar) }),
+                Space::with_width(Length::Fill),
+                close,
+            ].align_y(iced::Alignment::Center)
+        )
         .width(Length::Fill)
-        .padding(iced::Padding { top: 3.0, right: 4.0, bottom: 1.0, left: 6.0 })
+        .height(Length::Fixed(44.0))
+        .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 8.0 })
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(Color { a: 1.0, ..p.muted })),
+            border: Border { radius: iced::border::Radius { top_left: crate::style::win_radius(14.5), top_right: crate::style::win_radius(14.5), bottom_right: 0.0, bottom_left: 0.0 }, ..Border::default() },
+            ..Default::default()
+        })
     ).on_press(Message::DragWindow(win_id)).into()
 }
 
@@ -80,10 +97,14 @@ fn shell<'a>(title: &str, win_id: window::Id, p: Palette, body: Element<'a, Mess
     let window_bg = Color { r: p.bg.r * 0.88, g: p.bg.g * 0.88, b: p.bg.b * 0.88, ..p.bg };
     let accent_border = crate::style::lerp(window_bg, p.accent, 0.45);
     // Caption is flush in the top-left corner; only the body is inset.
+    // Thin accent hairline under the title bar, mirroring the Settings window.
+    let hairline = container(Space::new(Length::Fill, Length::Fixed(1.0)))
+        .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(Color { a: 0.30, ..p.accent })), ..Default::default() });
     container(column![
         caption(title, win_id, p),
+        hairline,
         container(body).width(Length::Fill).height(Length::Fill)
-            .padding(iced::Padding { top: 4.0, right: 16.0, bottom: 12.0, left: 16.0 }),
+            .padding(iced::Padding { top: 8.0, right: 16.0, bottom: 12.0, left: 16.0 }),
     ])
         .width(Length::Fill).height(Length::Fill)
         .style(move |_| iced::widget::container::Style {
@@ -1402,8 +1423,16 @@ pub fn picker_view<'a>(skins: bool, settings: &AppSettings, installed_open: bool
     // Stable id per list so the scroll position is kept while you click around
     // (and across re-opens within a session).
     let sid = iced::widget::scrollable::Id::new(if skins { "fluxid-skin-picker" } else { "fluxid-theme-picker" });
-    let body = scrollable(container(col).padding(iced::Padding { top: 4.0, right: 8.0, bottom: 8.0, left: 0.0 }))
+    let list = scrollable(container(col).padding(iced::Padding { top: 4.0, right: 8.0, bottom: 8.0, left: 0.0 }))
         .id(sid).height(Length::Fill);
+    // Bottom bar: a "Save and Close" action (selections apply live as you click).
+    let divider = container(Space::new(Length::Fill, 1))
+        .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(Color { a: 0.25, ..p.muted })), ..Default::default() });
+    let footer = container(
+        row![Space::with_width(Length::Fill), primary_btn("Save and Close", Message::ClosePopup(win_id), p)]
+            .align_y(iced::Alignment::Center)
+    ).width(Length::Fill).padding(iced::Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 });
+    let body = column![list, divider, footer].height(Length::Fill);
     shell(title, win_id, p, body.into())
 }
 
