@@ -1345,7 +1345,7 @@ pub fn view<'a>(
         .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 8.0 })
         .style(move |_| iced::widget::container::Style {
             // Title bar uses the theme's muted swatch directly.
-            background: Some(iced::Background::Color(iced::Color { a: 1.0, ..p.muted })),
+            background: Some(iced::Background::Color(iced::Color { a: 1.0, ..p.accent })),
             // Match the window's INNER corner radius (outer 20 − 1.5px border)
             // so the caption fills the rounded corner exactly — no window-bg
             // wedge (too small) and no poking past the border (too large).

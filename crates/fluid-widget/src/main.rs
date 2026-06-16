@@ -598,6 +598,8 @@ struct App {
     latest_changelog: Option<(String, String)>,
     // Updates card sub-tab: false = changelog, true = verification/how-it-works.
     updates_show_info: bool,
+    // When the most recent window opened, to drive the title-bar brand blip.
+    last_window_open: Option<Instant>,
     appearance_status: String,
     theme_store_franchise: Option<usize>,
     // Theme Store: theme names ticked for "Install selected" inside a pack.
@@ -685,6 +687,7 @@ enum Message {
     UpdateCheckDone(updates::CheckResult),
     LatestReleaseDone(Result<(String, String), String>),
     SetUpdatesInfo(bool),
+    BrandBlipTick,
     DownloadUpdate,
     UpdateDownloadDone(Result<(), String>),
     UpdateLater,
@@ -775,6 +778,7 @@ impl App {
             update_checking: false, update_status: String::new(), update_status_kind: 0, update_available: None,
             latest_changelog: None,
             updates_show_info: false,
+            last_window_open: None,
             appearance_status: String::new(),
             theme_store_franchise: None,
             theme_store_sel: std::collections::HashSet::new(),
@@ -1348,9 +1352,10 @@ impl App {
                     set_window_rounded(self.settings.round_corners);
                     return self.apply_click_through();
                 }
-                // A settings/popup opened: round its OS corners to match the
-                // toggle (so the square window corners don't poke past the card),
-                // then drop the widget below it.
+                // A settings/popup opened: blip its title-bar brand, round its OS
+                // corners to match the toggle, then drop the widget below it.
+                style::trigger_brand_blip();
+                self.last_window_open = Some(Instant::now());
                 set_all_windows_rounded(self.settings.round_corners);
                 self.update_widget_level()
             }
@@ -2137,6 +2142,8 @@ impl App {
                 Task::none()
             }
             Message::SetUpdatesInfo(v) => { self.updates_show_info = v; Task::none() }
+            // Just forces a redraw while the title-bar brand blip animates.
+            Message::BrandBlipTick => Task::none(),
             Message::DownloadUpdate => {
                 let (url, sha) = match &self.update_available {
                     Some(u) => (u.url.clone(), u.sha256.clone()),
@@ -2611,6 +2618,10 @@ impl App {
         // Only run the animation clock for the animated modes (Glow is static).
         if matches!(self.settings.network_traffic_indicator.as_str(), "Blink" | "Fade") {
             subs.push(iced::time::every(Duration::from_millis(60)).map(|_| Message::AnimTick));
+        }
+        // Drive the title-bar brand blip while it animates after a window opens.
+        if self.last_window_open.map(|t| t.elapsed() < Duration::from_millis(550)).unwrap_or(false) {
+            subs.push(iced::time::every(Duration::from_millis(16)).map(|_| Message::BrandBlipTick));
         }
         // While a hotkey field is armed, capture the next key combo.
         if self.capturing_hotkey.is_some() {

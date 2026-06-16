@@ -18,6 +18,22 @@ pub fn corners_rounded() -> bool { ROUND_CORNERS.load(Ordering::Relaxed) }
 /// A corner radius gated on the rounded-corners toggle (0.0 when off).
 pub fn win_radius(r: f32) -> f32 { if corners_rounded() { r } else { 0.0 } }
 
+/// Title-bar brand "blip": the logo briefly brightens + thickens when a window
+/// opens, then settles. Self-driven by the BrandPulse canvas reading the phase.
+static BRAND_BLIP: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+const BLIP_DUR: f32 = 0.45;
+/// Restart the blip — call when any window opens.
+pub fn trigger_brand_blip() { if let Ok(mut g) = BRAND_BLIP.lock() { *g = Some(std::time::Instant::now()); } }
+/// Blip progress 0..1 (1.0 = settled / no blip).
+pub fn brand_blip_phase() -> f32 {
+    match BRAND_BLIP.lock() {
+        Ok(g) => match *g { Some(t) => (t.elapsed().as_secs_f32() / BLIP_DUR).min(1.0), None => 1.0 },
+        Err(_) => 1.0,
+    }
+}
+/// Is a blip currently animating? (drives the redraw tick)
+pub fn brand_blip_active() -> bool { brand_blip_phase() < 1.0 }
+
 /// Rotate a colour's hue by `deg` degrees (keeping saturation/lightness), used
 /// to derive a set of distinct-but-harmonious accent-anchored hues — e.g. for
 /// the Tools cards, so they track the active theme instead of fixed colours.
@@ -139,11 +155,22 @@ impl canvas::Program<Message> for BrandPulse {
                 b.line_to(pt);
             }
         }
+        // One-shot "blip" on window open: briefly brighter + thicker, easing back.
+        let phase = brand_blip_phase();
+        let e = 1.0 - (1.0 - phase).powi(3); // ease-out
+        let lift = (1.0 - e) * 0.55;
+        let col = Color {
+            r: self.color.r + (1.0 - self.color.r) * lift,
+            g: self.color.g + (1.0 - self.color.g) * lift,
+            b: self.color.b + (1.0 - self.color.b) * lift,
+            a: self.color.a,
+        };
+        let width = (r * 0.11).max(1.6) * (1.0 + (1.0 - e) * 0.65);
         frame.stroke(
             &b.build(),
             Stroke::default()
-                .with_width((r * 0.11).max(1.6))
-                .with_color(self.color)
+                .with_width(width)
+                .with_color(col)
                 .with_line_cap(LineCap::Round)
                 .with_line_join(LineJoin::Round),
         );

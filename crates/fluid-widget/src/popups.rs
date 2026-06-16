@@ -39,7 +39,7 @@ fn caption<'a>(title: &str, win_id: window::Id, p: Palette) -> Element<'a, Messa
         .height(Length::Fixed(44.0))
         .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 8.0 })
         .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(Color { a: 1.0, ..p.muted })),
+            background: Some(iced::Background::Color(Color { a: 1.0, ..p.accent })),
             border: Border { radius: iced::border::Radius { top_left: crate::style::win_radius(14.5), top_right: crate::style::win_radius(14.5), bottom_right: 0.0, bottom_left: 0.0 }, ..Border::default() },
             ..Default::default()
         })
