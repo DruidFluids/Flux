@@ -485,8 +485,7 @@ fn warn_view_for(warnings: &[fluid_core::settings::TileWarning], kind: &str, sna
         let hot = style::parse_hex(&w.gradient_color, Color::from_rgb(1.0, 0.13, 0.0));
         temp.and_then(|t| { let dist = w.threshold - t as f64; if dist <= 15.0 { Some(style::gradient_color(dist, hot)) } else { None } })
     } else { None };
-    // Remote tiles aren't change-animated locally — settled pop (1.0).
-    WarnView { flash: exceeded && w.flash_enabled && flash_on, accent_override, pop: 1.0 }
+    WarnView { flash: exceeded && w.flash_enabled && flash_on, accent_override }
 }
 
 // A small glowing connection-status dot: a bright core inside a soft same-colour
@@ -607,8 +606,6 @@ struct App {
     share_copied_at: Option<Instant>,
     // Active tile-row drag-reorder in Settings.
     tile_drag: Option<TileDrag>,
-    // Per-tile soft-pop: (last displayed value signature, time it last changed).
-    tile_pops: HashMap<String, (String, Instant)>,
     // Picker popup mode: false = themes, true = skins.
     picker_skins: bool,
     // Saved-Themes slot pending delete confirmation.
@@ -698,7 +695,6 @@ enum Message {
     SwitchWidgetDevice(Option<String>), SetShowRemoteStatusDot(bool),
     ToggleTileSection(String), SetTileField(String, bool),
     StartTileDrag(String), TileDragMove(f32), TileDragEnd, DragAnimTick,
-    PopAnimTick,
     CpuDriverMoreInfo, CpuDriverBack,
     CpuDriverInstall, CpuDriverUninstall,
     CpuDriverInstallDone(cpu_driver::Outcome),
@@ -770,7 +766,6 @@ impl App {
             share_dialog: None,
             share_copied_at: None,
             tile_drag: None,
-            tile_pops: HashMap::new(),
             picker_skins: false,
             confirm_delete_slot: None,
         };
@@ -1054,75 +1049,9 @@ impl App {
         }
     }
     fn warn_view(&self, kind: &str) -> WarnView {
-        let pop = self.tile_pop_progress(kind);
         match self.warn_state.get(kind) {
-            Some(&(flash, ov)) => WarnView { flash: flash && self.flash_on, accent_override: ov, pop },
-            None => WarnView { pop, ..WarnView::default() },
-        }
-    }
-    // Soft-pop progress for a tile's primary value (1.0 = settled). Driven by
-    // value changes detected on each SensorTick.
-    fn tile_pop_progress(&self, kind: &str) -> f32 {
-        const POP_DUR: f32 = 0.34;
-        match self.tile_pops.get(kind) {
-            Some((_, at)) => (at.elapsed().as_secs_f32() / POP_DUR).min(1.0),
-            None => 1.0,
-        }
-    }
-    // Display-accurate signature of a tile's primary value(s) — when this
-    // changes between ticks, the tile gets a fresh pop.
-    fn tile_value_sig(&self, kind: &str) -> String {
-        let s = &self.settings;
-        let snap = &self.snapshot;
-        let pct = |v: f32| format!("{:.0}", if v.is_finite() { v.clamp(0.0, 999.0) } else { 0.0 });
-        match kind {
-            "CPU" => {
-                let t = if s.cpu_show_temp { fmt::fmt_temp(snap.cpu.temperature_c, s).map(|(v, _)| v).unwrap_or_default() } else { String::new() };
-                format!("{}|{}", t, pct(snap.cpu.usage_percent))
-            }
-            "GPU" => {
-                let t = if s.gpu_show_temp { fmt::fmt_temp(snap.gpu.temperature_c, s).map(|(v, _)| v).unwrap_or_default() } else { String::new() };
-                format!("{}|{}", t, pct(snap.gpu.usage_percent))
-            }
-            "RAM" => format!("{:.1}", snap.ram.used_mb / 1024.0),
-            "Clock" => {
-                // The popped element is the "h:mm" time (matches clock_tile),
-                // so the clock pops once a minute as the minute rolls over.
-                use chrono::Timelike;
-                let now = chrono::Local::now();
-                let h12 = { let x = now.hour() % 12; if x == 0 { 12 } else { x } };
-                format!("{}:{:02}", h12, now.minute())
-            }
-            "Network" => {
-                let sel = &s.network_adapter_name;
-                let (down, up): (u64, u64) = if sel.is_empty() {
-                    (snap.network.interfaces.iter().map(|i| i.download_bytes_sec).sum(),
-                     snap.network.interfaces.iter().map(|i| i.upload_bytes_sec).sum())
-                } else {
-                    snap.network.interfaces.iter().find(|i| &i.name == sel)
-                        .map(|i| (i.download_bytes_sec, i.upload_bytes_sec)).unwrap_or((0, 0))
-                };
-                format!("{}|{}", fmt::fmt_net(down as f64).0, fmt::fmt_net(up as f64).0)
-            }
-            "Disk" => {
-                let sel = snap.disk.drives.iter()
-                    .find(|d| d.mount.trim_end_matches('\\').eq_ignore_ascii_case(s.selected_disk_mount.trim_end_matches('\\')))
-                    .or_else(|| snap.disk.drives.first());
-                let (r, w) = sel.map(|d| (d.read_bytes_sec as f64, d.write_bytes_sec as f64)).unwrap_or((0.0, 0.0));
-                format!("{}|{}", fmt::fmt_disk(r).0, fmt::fmt_disk(w).0)
-            }
-            _ => String::new(),
-        }
-    }
-    // After a fresh snapshot: bump the pop timer for any tile whose displayed
-    // value changed.
-    fn refresh_tile_pops(&mut self) {
-        const KINDS: [&str; 6] = ["CPU", "GPU", "RAM", "Network", "Disk", "Clock"];
-        let sigs: Vec<(&str, String)> = KINDS.iter().map(|k| (*k, self.tile_value_sig(k))).collect();
-        let now = Instant::now();
-        for (k, sig) in sigs {
-            let changed = self.tile_pops.get(k).map(|(old, _)| old != &sig).unwrap_or(true);
-            if changed { self.tile_pops.insert(k.to_string(), (sig, now)); }
+            Some(&(flash, ov)) => WarnView { flash: flash && self.flash_on, accent_override: ov },
+            None => WarnView::default(),
         }
     }
     fn theme_name(&self) -> String {
@@ -1311,15 +1240,11 @@ impl App {
             Message::SensorTick => {
                 let poller = self.poller.get_or_insert_with(SensorPoller::new);
                 self.snapshot = poller.poll(); self.eval_warnings();
-                // Pop any tile whose displayed value just changed.
-                self.refresh_tile_pops();
                 // Feed the TCP server so connected remotes receive this machine.
                 if let Some(r) = &self.remote { r.push_snapshot(self.snapshot.clone()); }
                 Task::none()
             }
             Message::FlashTick => { self.flash_on = !self.flash_on; Task::none() }
-            // Just forces a redraw so tile_pop_progress advances during a pop.
-            Message::PopAnimTick => Task::none(),
             Message::AnimTick => {
                 // Continuous seconds accumulator (~60ms/tick); modes derive their
                 // own-speed waves from it.
@@ -2428,7 +2353,7 @@ impl App {
         let name = dev.map(|d| d.name.clone()).unwrap_or_else(|| "Remote".into());
         let connected = self.remote_conn.get(&dev_id).copied().unwrap_or(false);
         let snap = self.remote_snapshots.get(&dev_id).cloned().unwrap_or_default();
-        let no_warn = tile::WarnView { flash: false, accent_override: None, pop: 1.0 };
+        let no_warn = tile::WarnView { flash: false, accent_override: None };
 
         // Build a per-device settings view: its colours (unless synced), opacity,
         // labels, and tile subset. Tile fns don't borrow `s` into their output.
@@ -2642,10 +2567,6 @@ impl App {
         // Only run the animation clock for the animated modes (Glow is static).
         if matches!(self.settings.network_traffic_indicator.as_str(), "Blink" | "Fade") {
             subs.push(iced::time::every(Duration::from_millis(60)).map(|_| Message::AnimTick));
-        }
-        // While any tile's value is mid-pop, redraw at ~60fps so it animates.
-        if self.tile_pops.values().any(|(_, at)| at.elapsed().as_secs_f32() < 0.34) {
-            subs.push(iced::time::every(Duration::from_millis(16)).map(|_| Message::PopAnimTick));
         }
         // While a hotkey field is armed, capture the next key combo.
         if self.capturing_hotkey.is_some() {
