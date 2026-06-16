@@ -61,7 +61,7 @@ if ($stats) {
     Write-Host "Markdown for the release notes / README:" -ForegroundColor Cyan
     $dash = [char]0x2014
     $tick = [char]0x60
-    Write-Host "- **$($stats.malicious)/$total clean on VirusTotal** $dash [view the scan]($permalink). SHA-256 $tick$sha$tick."
+    Write-Host "- **$($stats.malicious)/$total on VirusTotal** $dash [view the scan]($permalink). SHA-256 $tick$sha$tick."
 } else {
     Write-Host "Could not retrieve stats yet. Try again shortly: $permalink" -ForegroundColor Yellow
 }
