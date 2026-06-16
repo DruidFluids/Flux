@@ -36,7 +36,7 @@ fn caption<'a>(title: &str, win_id: window::Id, p: Palette) -> Element<'a, Messa
             ].align_y(iced::Alignment::Center)
         )
         .width(Length::Fill)
-        .height(Length::Fixed(44.0))
+        .center_y(Length::Fixed(44.0)) // fixed-height band with the title vertically centred
         .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 8.0 })
         .style(move |_| iced::widget::container::Style {
             background: Some(iced::Background::Color(Color { a: 1.0, ..p.accent })),
