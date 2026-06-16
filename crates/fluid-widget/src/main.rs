@@ -805,11 +805,14 @@ impl App {
             size, position, decorations: false, transparent: true, resizable: false, level, icon, ..Default::default()
         });
         let open_task = open.map(|id| Message::WindowOpened(id, WindowKind::Widget));
-        // Auto mode: silently check for updates on launch.
+        // Always fetch the latest release notes on launch (no install) so the
+        // Updates changelog is ready for the user to read.
+        let notes = Task::perform(updates::latest_release(), Message::LatestReleaseDone);
+        // Auto mode additionally runs a version check (still no auto-install).
         let task = if app.settings.update_check_mode == fluid_core::settings::UpdateMode::Auto {
-            Task::batch([open_task, Task::done(Message::CheckForUpdates)])
+            Task::batch([open_task, notes, Task::done(Message::CheckForUpdates)])
         } else {
-            open_task
+            Task::batch([open_task, notes])
         };
         (app, task)
     }

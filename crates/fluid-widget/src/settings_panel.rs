@@ -718,7 +718,13 @@ pub fn view<'a>(
     tcol = tcol.push(Space::with_height(14));
     tcol = tcol.push(sh("Behavior", "How the widget behaves on your desktop."));
     tcol = tcol.push(behavior);
-    let tiles_tab: Element<'a, Message> = tcol.into();
+    // Understated, centered hint at the very top of the Tiles tab.
+    let drag_hint = container(
+        text("drag to reorder tiles").size(10)
+            .style(move |_| iced::widget::text::Style { color: Some(iced::Color { a: 0.65, ..p.muted }) })
+    ).width(Length::Fill).center_x(Length::Fill)
+        .padding(iced::Padding { top: 0.0, right: 0.0, bottom: 8.0, left: 0.0 });
+    let tiles_tab: Element<'a, Message> = column![drag_hint, tcol].into();
 
     // ════════════════════════════════════════════════════════════
     //  RIGHT COLUMN  (Appearance / Font / Remote / Updates)
