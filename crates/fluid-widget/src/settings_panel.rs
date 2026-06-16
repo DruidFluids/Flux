@@ -38,6 +38,7 @@ pub struct UpdateView {
     pub available: Option<(String, String)>, // version, changelog
     pub latest_changelog: Option<(String, String)>, // latest release notes (version, body)
     pub show_info: bool, // Updates card sub-tab: false = changelog, true = verification info
+    pub progress: Option<f32>, // Some(fraction) while an update is downloading/verifying.
 }
 
 // Explainer shown in the Updates card's "Verification" sub-tab.
@@ -46,7 +47,7 @@ const VERIFICATION_MD: &str = "## How updates work\n\nfluxid checks GitHub for t
 // Render a GitHub-flavoured-markdown release body as styled elements so the raw
 // `###` / `-` / `**` markers don't show. Line-based — handles headings, bullets
 // (with nesting), blank-line spacing, and strips inline bold/code markers.
-fn changelog_md<'a>(body: &str, p: Palette) -> Element<'a, Message> {
+pub(crate) fn changelog_md<'a>(body: &str, p: Palette) -> Element<'a, Message> {
     let clean = |s: &str| s.replace("**", "").replace('`', "");
     let body_col = iced::Color { a: 0.9, ..p.text };
     let line_txt = move |s: String, size: u16, w: iced::font::Weight, c: iced::Color| -> Element<'a, Message> {
@@ -1083,17 +1084,33 @@ pub fn view<'a>(
         pill("Off".into(), update.mode == fluid_core::settings::UpdateMode::Off, Message::SetUpdateMode("Off".into())),
         Space::with_width(Length::Fill),
     ].spacing(4).align_y(iced::Alignment::Center);
-    if update.available.is_some() {
-        action_row = action_row.push(inline_btn("Download", Message::DownloadUpdate));
-        action_row = action_row.push(inline_btn("Later", Message::UpdateLater));
-    } else {
-        action_row = action_row.push(inline_btn("Check now", Message::CheckForUpdates));
+    // While downloading, the action buttons give way to the live progress bar.
+    if update.progress.is_none() {
+        if update.available.is_some() {
+            action_row = action_row.push(inline_btn("Download", Message::DownloadUpdate));
+            action_row = action_row.push(inline_btn("Later", Message::UpdateLater));
+        } else {
+            action_row = action_row.push(inline_btn("Check now", Message::CheckForUpdates));
+        }
     }
     updates_col = updates_col.push(action_row);
 
     if !update.status.is_empty() {
         updates_col = updates_col.push(
             text(update.status.clone()).size(11).style(move |_| iced::widget::text::Style { color: Some(status_color) })
+        );
+    }
+    // Live download/verify progress bar, in the accent colour.
+    if let Some(frac) = update.progress {
+        updates_col = updates_col.push(Space::with_height(2));
+        updates_col = updates_col.push(
+            iced::widget::progress_bar(0.0..=1.0, frac)
+                .height(Length::Fixed(6.0))
+                .style(move |_: &iced::Theme| iced::widget::progress_bar::Style {
+                    background: iced::Background::Color(iced::Color { a: 0.18, ..p.muted }),
+                    bar: iced::Background::Color(p.accent),
+                    border: Border { radius: 3.0.into(), ..Border::default() },
+                })
         );
     }
     // Sub-tabs: "Changelog" (what's new) vs "Verification" (how updates are

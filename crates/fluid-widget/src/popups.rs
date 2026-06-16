@@ -471,6 +471,54 @@ pub fn help_view<'a>(_settings: &AppSettings, p: Palette, win_id: window::Id) ->
     shell("Help", win_id, p, body.into())
 }
 
+// ── "Updated to vX.Y.Z" notice (shown on first launch after an update) ───────
+
+pub const UPDATED_SIZE: iced::Size = iced::Size::new(480.0, 540.0);
+
+/// First-launch-after-update notice: a celebratory header plus the new release's
+/// notes, rendered exactly like the Updates tab's changelog, and a Close button.
+pub fn updated_view<'a>(version: &str, changelog: &str, p: Palette, win_id: window::Id) -> Element<'a, Message> {
+    let header = column![
+        text(format!("Updated to v{version}")).size(17)
+            .font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
+            .style(move |_| iced::widget::text::Style { color: Some(p.accent) }),
+        text("fluxid is now up to date. Here's what's new:").size(11)
+            .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+    ].spacing(2);
+
+    let notes: Element<'a, Message> = if changelog.trim().is_empty() {
+        text("Release notes aren't available right now — check the Updates tab in Settings.")
+            .size(11).style(move |_| iced::widget::text::Style { color: Some(Color { a: 0.9, ..p.text }) }).into()
+    } else {
+        crate::settings_panel::changelog_md(changelog, p)
+    };
+    // Notes box styled like the Updates card: a subtle tile-coloured panel.
+    let notes_box = container(scrollable(container(notes).padding(iced::Padding { top: 2.0, right: 10.0, bottom: 2.0, left: 2.0 })).height(Length::Fill))
+        .width(Length::Fill).height(Length::Fill)
+        .padding(10)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(Color { a: 0.5, ..p.tile })),
+            border: Border { radius: 8.0.into(), width: 1.0, color: Color { a: 0.25, ..p.muted } },
+            ..Default::default()
+        });
+
+    let footer = column![
+        container(Space::new(Length::Fill, 1))
+            .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(Color { a: 0.25, ..p.muted })), ..Default::default() }),
+        container(row![Space::with_width(Length::Fill), primary_btn("Close", Message::ClosePopup(win_id), p)].align_y(iced::Alignment::Center))
+            .width(Length::Fill).padding(iced::Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 }),
+    ];
+
+    let body = column![
+        header,
+        Space::with_height(10),
+        notes_box,
+        Space::with_height(10),
+        footer,
+    ].height(Length::Fill);
+    shell("Updated", win_id, p, body.into())
+}
+
 // ── Optional CPU sensor driver (PawnIO) ─────────────────────────────────────
 //
 // Mirrors the C# CpuTempDialog: a pitch + "More info" + Install, a progress

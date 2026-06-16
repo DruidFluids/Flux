@@ -406,7 +406,7 @@ fn cursor_logical_pos() -> Option<(f32, f32)> {
 fn cursor_logical_pos() -> Option<(f32, f32)> { None }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum WindowKind { Widget, Settings, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, Remote, WindowPicker, ThemeStore, PopoutConfig, CpuDriver, Picker, ConfirmDelete }
+enum WindowKind { Widget, Settings, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, Remote, WindowPicker, ThemeStore, PopoutConfig, CpuDriver, Picker, ConfirmDelete, Updated }
 
 // Settings window is a single FIXED size for every tab — it never grows or
 // shrinks when switching tabs. The height is sized to the tallest tab
@@ -436,6 +436,7 @@ fn kind_key(kind: WindowKind) -> Option<&'static str> {
         WindowKind::CpuDriver => Some("cpudriver"),
         WindowKind::Picker => Some("picker"),
         WindowKind::ConfirmDelete => Some("confirmdelete"),
+        WindowKind::Updated => Some("updated"),
         WindowKind::Popout => Some("popout"),
         WindowKind::Widget | WindowKind::Settings | WindowKind::WidgetMenu => None,
     }
@@ -594,6 +595,11 @@ struct App {
     update_status: String,
     update_status_kind: u8, // 0 neutral, 1 good (green), 2 bad (red)
     update_available: Option<updates::PendingUpdate>,
+    // Some(fraction) while an update is downloading/verifying — drives the bar.
+    update_progress: Option<f32>,
+    // Set on a post-update launch so the "Updated to vX" notice opens once the
+    // release notes have been fetched.
+    pending_update_popup: Option<String>,
     // Latest GitHub release notes (version, body) shown in the Updates card.
     latest_changelog: Option<(String, String)>,
     // Updates card sub-tab: false = changelog, true = verification/how-it-works.
@@ -693,7 +699,8 @@ enum Message {
     SetUpdatesInfo(bool),
     BrandBlipTick,
     DownloadUpdate,
-    UpdateDownloadDone(Result<(), String>),
+    UpdateProgress(updates::UpdateProgress),
+    PerformUpdateInstall(std::path::PathBuf),
     UpdateLater,
     PresetSlotClick(u8),
     OpenThemePicker, OpenSkinPicker, ApplyThemePreset(usize), ApplyInstalledTheme(usize), ApplySkin(String),
@@ -766,7 +773,7 @@ impl App {
         let (sid, wid, gid, eid) = (si.id().clone(), wi.id().clone(), gi.id().clone(), ei.id().clone());
         menu.append(&si).ok(); menu.append(&wi).ok(); menu.append(&gi).ok(); menu.append(&ei).ok();
         let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("fluxid").with_icon(make_tray_icon()).build().expect("tray");
-        let app = Self {
+        let mut app = Self {
             settings, snapshot: SensorSnapshot::default(), poller: None,
             windows: BTreeMap::new(), warn_state: HashMap::new(),
             flash_on: false, anim_t: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, settings_tab: 0, game_mode: false,
@@ -780,6 +787,7 @@ impl App {
             blocklist_editor: iced::widget::text_editor::Content::with_text(&blocklist_text),
             blocklist_status: String::new(),
             update_checking: false, update_status: String::new(), update_status_kind: 0, update_available: None,
+            update_progress: None, pending_update_popup: None,
             latest_changelog: None,
             updates_show_info: false,
             last_window_open: None,
@@ -804,6 +812,17 @@ impl App {
             picker_skins: false,
             confirm_delete_slot: None,
         };
+        // If a marker from a just-completed self-update is present, greet the
+        // user with the "Updated to vX" notice once the release notes arrive.
+        if let Some(ver) = updates::take_update_marker() {
+            // Only celebrate if the running build actually is the installed version.
+            if ver == env!("CARGO_PKG_VERSION") {
+                app.update_status = format!("Updated to v{ver} \u{2713}");
+                app.update_status_kind = 1;
+                app.pending_update_popup = Some(ver);
+            }
+        }
+
         let size = app.widget_size();
         let position = if app.settings.first_run_complete {
             window::Position::Specific(Point::new(app.settings.window_x as f32, app.settings.window_y as f32))
@@ -2185,6 +2204,10 @@ impl App {
                 if let Ok((ver, body)) = result {
                     if !body.is_empty() { self.latest_changelog = Some((ver, body)); }
                 }
+                // Post-update: now that the notes are in, show the "Updated" notice.
+                if self.pending_update_popup.is_some() {
+                    return self.open_popup(WindowKind::Updated, popups::UPDATED_SIZE);
+                }
                 Task::none()
             }
             Message::SetUpdatesInfo(v) => { self.updates_show_info = v; Task::none() }
@@ -2195,15 +2218,54 @@ impl App {
                     Some(u) => (u.url.clone(), u.sha256.clone()),
                     None => return Task::none(),
                 };
-                self.update_status = "Downloading\u{2026}".into();
+                self.update_status = "Downloading update\u{2026}".into();
                 self.update_status_kind = 0;
-                Task::perform(updates::download_and_launch(url, sha), Message::UpdateDownloadDone)
+                self.update_progress = Some(0.0);
+                // Stream the download so the app stays open with a live progress bar.
+                Task::run(updates::download_stream(url, sha), Message::UpdateProgress)
             }
-            Message::UpdateDownloadDone(result) => match result {
-                Ok(()) => iced::exit(),
-                Err(e) => { self.update_status = format!("Download failed: {e}"); self.update_status_kind = 2; Task::none() }
+            Message::UpdateProgress(p) => match p {
+                updates::UpdateProgress::Downloading(frac) => {
+                    self.update_progress = Some(frac);
+                    self.update_status = format!("Downloading update\u{2026} {}%", (frac * 100.0).round() as u32);
+                    self.update_status_kind = 0;
+                    Task::none()
+                }
+                updates::UpdateProgress::Verifying => {
+                    self.update_progress = Some(1.0);
+                    self.update_status = "Verifying download\u{2026}".into();
+                    self.update_status_kind = 0;
+                    Task::none()
+                }
+                updates::UpdateProgress::Ready(path) => {
+                    // Leave a marker so the freshly-installed build shows the notice.
+                    if let Some(u) = &self.update_available { updates::write_update_marker(&u.version); }
+                    self.update_progress = Some(1.0);
+                    self.update_status = "Update ready \u{2014} restarting to install\u{2026}".into();
+                    self.update_status_kind = 1;
+                    // Brief beat so the message is visible, then hand off + exit.
+                    Task::perform(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(1400)).await;
+                        path
+                    }, Message::PerformUpdateInstall)
+                }
+                updates::UpdateProgress::Failed(e) => {
+                    self.update_progress = None;
+                    self.update_status = format!("Update failed: {e}");
+                    self.update_status_kind = 2;
+                    Task::none()
+                }
             },
-            Message::UpdateLater => { self.update_available = None; self.update_status = String::new(); Task::none() }
+            Message::PerformUpdateInstall(path) => {
+                if let Err(e) = updates::launch_installer(&path) {
+                    self.update_progress = None;
+                    self.update_status = format!("Could not start installer: {e}");
+                    self.update_status_kind = 2;
+                    return Task::none();
+                }
+                iced::exit()
+            }
+            Message::UpdateLater => { self.update_available = None; self.update_status = String::new(); self.update_progress = None; Task::none() }
             Message::ExportAppearance => {
                 // Open the dialog pre-filled with the current code (visible + copyable).
                 self.share_dialog = Some((true, self.appearance_share_code()));
@@ -2401,6 +2463,7 @@ impl App {
                     available: self.update_available.as_ref().map(|u| (u.version.clone(), u.changelog.clone())),
                     latest_changelog: self.latest_changelog.clone(),
                     show_info: self.updates_show_info,
+                    progress: self.update_progress,
                 };
                 // Fading "Copied!" toast opacity: solid ~0.9s, then fade out.
                 let copied_opacity = self.share_copied_at.map(|t| {
@@ -2412,6 +2475,12 @@ impl App {
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id, self.capturing_hotkey == Some(hotkeys::HotkeyTarget::GameMode)),
             WindowKind::Help => popups::help_view(&self.settings, p, id),
+            WindowKind::Updated => {
+                let ver = self.pending_update_popup.clone()
+                    .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
+                let log = self.latest_changelog.as_ref().map(|(_, b)| b.clone()).unwrap_or_default();
+                popups::updated_view(&ver, &log, p, id)
+            }
             WindowKind::Utilities => popups::utilities_view(&self.blocklist_editor, &self.blocklist_status, p, id),
             WindowKind::Remote => {
                 let remote = settings_panel::RemoteView {

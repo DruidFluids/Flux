@@ -169,34 +169,107 @@ fn sha256_hex(bytes: &[u8]) -> String {
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Download the installer to %TEMP%, **verify its SHA-256**, then launch it
-/// silently. Refuses to run if the checksum is missing or mismatched. The
-/// caller exits the app on success.
-pub async fn download_and_launch(url: String, expected_sha256: Option<String>) -> Result<(), String> {
+/// Progress events streamed from `download_stream` so the UI can show a live
+/// bar and keep the app open through the whole download + verify.
+#[derive(Debug, Clone)]
+pub enum UpdateProgress {
+    /// Fraction downloaded, 0.0..=1.0 (or `None` total → treated as indeterminate).
+    Downloading(f32),
+    /// Bytes are in; the SHA-256 is being checked.
+    Verifying,
+    /// Verified installer written to this path, ready to launch.
+    Ready(std::path::PathBuf),
+    /// Something went wrong; carries a user-facing message.
+    Failed(String),
+}
+
+/// Stream the installer download, reporting progress, then verify its SHA-256
+/// and write it to %TEMP%. Yields `Ready(path)` on success or `Failed(msg)` on
+/// any error (including a missing/mismatched checksum). The caller launches the
+/// installer (see `launch_installer`) and exits once it has `Ready`.
+pub fn download_stream(
+    url: String,
+    expected_sha256: Option<String>,
+) -> impl iced::futures::Stream<Item = UpdateProgress> {
+    use iced::futures::SinkExt;
+    iced::stream::channel(16, move |mut out| async move {
+        match download_inner(&url, expected_sha256, &mut out).await {
+            Ok(path) => { let _ = out.send(UpdateProgress::Ready(path)).await; }
+            Err(e) => { let _ = out.send(UpdateProgress::Failed(e)).await; }
+        }
+    })
+}
+
+type ProgressSender = iced::futures::channel::mpsc::Sender<UpdateProgress>;
+
+async fn download_inner(
+    url: &str,
+    expected_sha256: Option<String>,
+    out: &mut ProgressSender,
+) -> Result<std::path::PathBuf, String> {
+    use iced::futures::{SinkExt, StreamExt};
     let expected = expected_sha256
         .ok_or_else(|| "No checksum published for this release — update aborted for safety".to_string())?;
-
-    let resp = client()?.get(&url).send().await.map_err(|e| e.to_string())?;
+    let resp = client()?.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status().as_u16()));
     }
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-
+    let total = resp.content_length().unwrap_or(0);
+    let mut bytes: Vec<u8> = Vec::with_capacity(total as usize);
+    let mut body = resp.bytes_stream();
+    let mut last = -1.0f32;
+    let _ = out.send(UpdateProgress::Downloading(0.0)).await;
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        bytes.extend_from_slice(&chunk);
+        if total > 0 {
+            let frac = (bytes.len() as f32 / total as f32).min(1.0);
+            // Throttle to ~1% steps so we don't flood the UI thread.
+            if frac - last >= 0.01 {
+                last = frac;
+                let _ = out.send(UpdateProgress::Downloading(frac)).await;
+            }
+        }
+    }
+    let _ = out.send(UpdateProgress::Downloading(1.0)).await;
+    let _ = out.send(UpdateProgress::Verifying).await;
     let actual = sha256_hex(&bytes);
     if !actual.eq_ignore_ascii_case(expected.trim()) {
         return Err("Integrity check failed (checksum mismatch) — update aborted".into());
     }
-
     let fname = url.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("fluxid-setup.exe");
     let path = std::env::temp_dir().join(fname);
     std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    Ok(path)
+}
 
+/// Launch a verified installer silently. Called right before the app exits so
+/// the installer can replace the (now-unlocked) executable and relaunch it.
+pub fn launch_installer(path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new(&path)
+        std::process::Command::new(path)
             .args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
             .spawn()
             .map_err(|e| e.to_string())?;
     }
+    let _ = path;
     Ok(())
+}
+
+/// Drop a marker in the config dir so the *next* launch (the freshly-installed
+/// build) knows it just updated and can show the "Updated to vX.Y.Z" notice.
+pub fn write_update_marker(version: &str) {
+    let dir = fluid_core::settings::AppSettings::config_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(dir.join(".updated"), version);
+}
+
+/// Read and clear the update marker, returning the version that was installed.
+pub fn take_update_marker() -> Option<String> {
+    let path = fluid_core::settings::AppSettings::config_dir().join(".updated");
+    let v = std::fs::read_to_string(&path).ok()?;
+    let _ = std::fs::remove_file(&path);
+    let v = v.trim().to_string();
+    if v.is_empty() { None } else { Some(v) }
 }
