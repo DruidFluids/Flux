@@ -853,6 +853,16 @@ impl App {
         for c in CANONICAL {
             if !order.iter().any(|t| t == c) { order.push(c.to_string()); }
         }
+        // While a tile is being dragged in Settings, preview the new order LIVE on
+        // the widget — move the dragged tile to the (eased) drop slot, so the
+        // widget reflows in sync with the Settings drag animation.
+        if let Some(drag) = &self.tile_drag {
+            let n = order.len();
+            let target = (drag.gap_anim.round() as i64).clamp(0, n as i64 - 1) as usize;
+            if let Some(cur) = order.iter().position(|t| t == &drag.name) {
+                if cur != target { let item = order.remove(cur); order.insert(target, item); }
+            }
+        }
         let enabled = if self.game_mode { &self.settings.game_mode_tiles } else { &self.settings.visible_tiles };
         order.into_iter()
             .filter(|t| enabled.iter().any(|v| v == t))

@@ -31,17 +31,23 @@ function Get-Stats($sha) {
 $stats = Get-Stats $sha
 if (-not $stats) {
     Write-Host "Uploading $([System.IO.Path]::GetFileName($File)) to VirusTotal..." -ForegroundColor Cyan
-    # multipart upload (files <= 32 MB use the simple endpoint)
-    $r = Invoke-RestMethod -Method Post -Uri "https://www.virustotal.com/api/v3/files" -Headers $hdr -Form @{ file = Get-Item $File }
-    $analysisId = $r.data.id
+    # PowerShell 5.1's Invoke-RestMethod has no -Form, so use the bundled curl.exe
+    # for the multipart upload (files <= 32 MB use the simple endpoint).
+    $curl = "$env:SystemRoot\System32\curl.exe"
+    & $curl -s -X POST "https://www.virustotal.com/api/v3/files" -H "x-apikey: $key" -F "file=@$File" | Out-Null
+    Write-Host "  uploaded; waiting for analysis to complete..." -ForegroundColor Cyan
+    # The file hash is deterministic, so poll the file endpoint directly until the
+    # engines finish (more robust than the /analyses/<id> endpoint).
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $done = $false
     do {
         Start-Sleep -Seconds 15
-        $a = Invoke-RestMethod -Method Get -Uri "https://www.virustotal.com/api/v3/analyses/$analysisId" -Headers $hdr
-        $status = $a.data.attributes.status
-        Write-Host "  analysis status: $status"
-    } while ($status -ne "completed" -and (Get-Date) -lt $deadline)
-    $stats = Get-Stats $sha
+        $stats = Get-Stats $sha
+        $count = 0
+        if ($stats) { $count = $stats.malicious + $stats.suspicious + $stats.undetected + $stats.harmless }
+        if ($count -gt 0) { $done = $true }
+        Write-Host "  engines reported so far: $count"
+    } while (-not $done -and (Get-Date) -lt $deadline)
 }
 
 if ($stats) {
@@ -53,7 +59,9 @@ if ($stats) {
     Write-Host "  Permalink:  $permalink"
     Write-Host ""
     Write-Host "Markdown for the release notes / README:" -ForegroundColor Cyan
-    Write-Host ("- **{0}/{1} on VirusTotal** — [view the scan]({2}). SHA-256 \`{3}\`." -f $stats.malicious, $total, $permalink, $sha)
+    $dash = [char]0x2014
+    $tick = [char]0x60
+    Write-Host "- **$($stats.malicious)/$total clean on VirusTotal** $dash [view the scan]($permalink). SHA-256 $tick$sha$tick."
 } else {
     Write-Host "Could not retrieve stats yet. Try again shortly: $permalink" -ForegroundColor Yellow
 }
