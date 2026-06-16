@@ -14,6 +14,12 @@ pub const RULE_NAME: &str = "fluxid Remote Sensor";
 /// appears as a fallback.
 #[cfg(target_os = "windows")]
 pub fn ensure_rule(port: u16) {
+    // The installer pre-creates this rule, so normally there's nothing to do and
+    // no prompt. Only fall back to adding it (one elevated UAC) if it's genuinely
+    // missing — e.g. a portable run that never went through setup.
+    if rule_exists() {
+        return;
+    }
     let bat = std::env::temp_dir().join("fluxid_fw_add.bat");
     let script = format!(
         "@echo off\r\n\
@@ -27,6 +33,19 @@ pub fn ensure_rule(port: u16) {
         return;
     }
     run_elevated("cmd.exe", &format!("/c \"{}\"", bat.display()));
+}
+
+/// Does the named inbound rule already exist? (No elevation needed — query only.)
+#[cfg(target_os = "windows")]
+fn rule_exists() -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    std::process::Command::new("netsh")
+        .args(["advfirewall", "firewall", "show", "rule", &format!("name={RULE_NAME}")])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 /// Launch `file params` elevated (UAC) with a hidden window, fire-and-forget.

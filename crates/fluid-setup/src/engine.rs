@@ -430,7 +430,14 @@ mod imp {
             rep.step("Enabled start with Windows".to_string());
         }
 
-        // 7. Launch.
+        // 7. Pre-authorize the remote-monitoring firewall rule now, so the widget
+        // never has to pop a firewall/UAC prompt at runtime. Best-effort (one UAC
+        // if the installer isn't already elevated). Removed on uninstall.
+        if add_firewall_rule(5199) {
+            rep.step("Configured firewall rule".to_string());
+        }
+
+        // 8. Launch.
         if opts.launch_after {
             launch(opts.scope)?;
             rep.step("Launched fluxid".to_string());
@@ -518,6 +525,29 @@ mod imp {
             run_elevated_wait(Path::new("netsh.exe"), &args);
         }
         true
+    }
+
+    /// Create the remote-monitoring inbound rule (delete-then-add for
+    /// idempotency). Needs elevation; runs directly when the installer is
+    /// already elevated, otherwise one UAC prompt. Returns true if attempted.
+    fn add_firewall_rule(port: u16) -> bool {
+        let combined = format!(
+            "netsh advfirewall firewall delete rule name=\"{FIREWALL_RULE}\" >nul 2>&1 & \
+             netsh advfirewall firewall add rule name=\"{FIREWALL_RULE}\" dir=in action=allow \
+             protocol=tcp localport={port} profile=private \
+             description=\"fluxid remote hardware sensor feed\""
+        );
+        let params = format!("/c {combined}");
+        if is_elevated() {
+            Command::new("cmd.exe")
+                .raw_arg(&params)
+                .creation_flags(CREATE_NO_WINDOW)
+                .status()
+                .is_ok()
+        } else {
+            run_elevated_wait(Path::new("cmd.exe"), &params);
+            true
+        }
     }
 
     fn firewall_rule_exists() -> bool {
