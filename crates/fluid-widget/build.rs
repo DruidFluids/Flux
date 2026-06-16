@@ -1,4 +1,4 @@
-//! Embeds the Fluxid logo as the Windows executable icon (shown in Explorer, the
+//! Embeds the fluxid logo as the Windows executable icon (shown in Explorer, the
 //! taskbar, and Alt-Tab). Rust binaries carry no icon resource by default, so
 //! without this the exe shows a blank/default icon.
 //!

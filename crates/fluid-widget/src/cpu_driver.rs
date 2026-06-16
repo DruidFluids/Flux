@@ -1,6 +1,6 @@
 //! Optional CPU-temperature sensor driver (PawnIO) management.
 //!
-//! Faithful port of the C# `CpuSensorDriver`. Fluxid **never bundles or
+//! Faithful port of the C# `CpuSensorDriver`. fluxid **never bundles or
 //! redistributes the driver**. When the user explicitly opts in, this downloads
 //! the official signed installer from PawnIO's own release URL, verifies its
 //! Authenticode signature, and runs it silently elevated (one Windows UAC
@@ -91,12 +91,12 @@ fn temp_installer_path() -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    std::env::temp_dir().join(format!("Fluxid_sensor_{stamp:x}.exe"))
+    std::env::temp_dir().join(format!("fluxid_sensor_{stamp:x}.exe"))
 }
 
 async fn download_installer() -> Result<Vec<u8>, String> {
     let client = reqwest::Client::builder()
-        .user_agent("Fluxid")
+        .user_agent("fluxid")
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;

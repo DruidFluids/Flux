@@ -10,7 +10,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 /// Display name everywhere the user sees it, and the registry value name.
-pub const APP_NAME: &str = "Fluxid";
+pub const APP_NAME: &str = "fluxid";
 /// Filename of the installed widget.
 pub const EXE_NAME: &str = "fluxid.exe";
 /// Filename the installer copies itself to so it can act as the uninstaller.
@@ -18,18 +18,18 @@ pub const UNINSTALL_EXE: &str = "uninstall.exe";
 pub const PUBLISHER: &str = "Matt Hakes";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// HKCU value the widget itself also writes — keep in sync with fluid-widget.
-const RUN_VALUE: &str = "Fluxid";
+const RUN_VALUE: &str = "fluxid";
 const RUN_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const UNINSTALL_SUBKEY: &str =
-    r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Fluxid";
+    r"Software\Microsoft\Windows\CurrentVersion\Uninstall\fluxid";
 
-/// Where Fluxid is installed — and therefore which registry hive / shell
+/// Where fluxid is installed — and therefore which registry hive / shell
 /// folders are used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
-    /// `%LOCALAPPDATA%\Fluxid`, HKCU, no elevation required.
+    /// `%LOCALAPPDATA%\fluxid`, HKCU, no elevation required.
     PerUser,
-    /// `%ProgramFiles%\Fluxid`, HKLM, requires elevation.
+    /// `%ProgramFiles%\fluxid`, HKLM, requires elevation.
     AllUsers,
 }
 
@@ -60,7 +60,7 @@ pub struct InstallOptions {
 #[derive(Debug, Clone, Copy)]
 pub struct UninstallOptions {
     pub scope: Scope,
-    /// Also delete `%APPDATA%\Fluxid` (user settings, themes, skins).
+    /// Also delete `%APPDATA%\fluxid` (user settings, themes, skins).
     pub remove_settings: bool,
 }
 
@@ -225,7 +225,7 @@ mod imp {
         }
     }
 
-    /// `%APPDATA%\Fluxid` — the widget's per-user settings/themes/skins dir.
+    /// `%APPDATA%\fluxid` — the widget's per-user settings/themes/skins dir.
     fn settings_dir() -> Result<PathBuf> {
         use windows::Win32::UI::Shell::FOLDERID_RoamingAppData;
         Ok(known_folder(&FOLDERID_RoamingAppData)?.join(APP_NAME))
@@ -314,7 +314,7 @@ mod imp {
         set("InstallLocation", &dir.to_string_lossy())?;
         set("UninstallString", &uninstall_cmd)?;
         set("QuietUninstallString", &quiet_cmd)?;
-        set("URLInfoAbout", "https://github.com/DruidFluids/fluidmonitor-rs")?;
+        set("URLInfoAbout", "https://github.com/DruidFluids/fluxid")?;
         key.set_value("EstimatedSize", &size_kb)
             .map_err(|e| err(format!("set EstimatedSize: {e}")))?;
         key.set_value("NoModify", &1u32).ok();
@@ -338,6 +338,8 @@ mod imp {
                 .map_err(|e| err(format!("set Run value: {e}")))?;
         } else {
             let _ = key.delete_value(RUN_VALUE);
+            // Clean up pre-rename Run entries too.
+            let _ = key.delete_value("Fluxid");
             let _ = key.delete_value("fluidMonitor");
         }
         Ok(())
@@ -374,7 +376,7 @@ mod imp {
     pub fn install(opts: InstallOptions) -> Result<Report> {
         if !crate::payload::is_bundled() {
             return Err(err(
-                "This is a development build with no bundled Fluxid payload. \
+                "This is a development build with no bundled fluxid payload. \
                  Build with scripts/Build-Setup.ps1 to produce an installable exe.",
             ));
         }
@@ -406,14 +408,14 @@ mod imp {
         let sm = start_menu_dir(opts.scope)?;
         std::fs::create_dir_all(&sm).ok();
         let sm_lnk = sm.join(format!("{APP_NAME}.lnk"));
-        create_shortcut(&sm_lnk, &exe, &dir, "Fluxid system monitor")?;
+        create_shortcut(&sm_lnk, &exe, &dir, "fluxid system monitor")?;
         rep.step("Created Start Menu shortcut".to_string());
 
         // 4. Desktop shortcut (optional).
         if opts.desktop_shortcut {
             let dt = desktop_dir(opts.scope)?;
             let dt_lnk = dt.join(format!("{APP_NAME}.lnk"));
-            create_shortcut(&dt_lnk, &exe, &dir, "Fluxid system monitor")?;
+            create_shortcut(&dt_lnk, &exe, &dir, "fluxid system monitor")?;
             rep.step("Created desktop shortcut".to_string());
         }
 
@@ -431,7 +433,7 @@ mod imp {
         // 7. Launch.
         if opts.launch_after {
             launch(opts.scope)?;
-            rep.step("Launched Fluxid".to_string());
+            rep.step("Launched fluxid".to_string());
         }
 
         Ok(rep)
@@ -443,7 +445,7 @@ mod imp {
         Command::new(dir.join(EXE_NAME))
             .current_dir(&dir)
             .spawn()
-            .map_err(|e| err(format!("launch Fluxid: {e}")))?;
+            .map_err(|e| err(format!("launch fluxid: {e}")))?;
         Ok(())
     }
 
@@ -453,7 +455,7 @@ mod imp {
         let exe = dir.join(EXE_NAME);
 
         kill_running_widget();
-        rep.step("Stopped Fluxid".to_string());
+        rep.step("Stopped fluxid".to_string());
 
         // Shortcuts.
         if let Ok(sm) = start_menu_dir(opts.scope) {
@@ -494,7 +496,7 @@ mod imp {
 
     /// Inbound firewall rule the widget adds for remote monitoring. Keep this
     /// name in sync with `fluid-widget/src/firewall.rs` (`RULE_NAME`).
-    const FIREWALL_RULE: &str = "Fluxid Remote Sensor";
+    const FIREWALL_RULE: &str = "fluxid Remote Sensor";
 
     /// Remove the remote-monitoring firewall rule if present. Returns true if a
     /// rule existed and a delete was issued. Querying needs no elevation; the
@@ -590,19 +592,19 @@ mod imp {
         false
     }
     pub fn relaunch_elevated_wait(_args: &[String]) -> Result<Option<i32>> {
-        Err(err("The Fluxid installer is Windows-only."))
+        Err(err("The fluxid installer is Windows-only."))
     }
     pub fn install_dir(_scope: Scope) -> Result<PathBuf> {
-        Err(err("The Fluxid installer is Windows-only."))
+        Err(err("The fluxid installer is Windows-only."))
     }
     pub fn install(_opts: InstallOptions) -> Result<Report> {
-        Err(err("The Fluxid installer is Windows-only."))
+        Err(err("The fluxid installer is Windows-only."))
     }
     pub fn uninstall(_opts: UninstallOptions) -> Result<Report> {
-        Err(err("The Fluxid installer is Windows-only."))
+        Err(err("The fluxid installer is Windows-only."))
     }
     pub fn launch(_scope: Scope) -> Result<()> {
-        Err(err("The Fluxid installer is Windows-only."))
+        Err(err("The fluxid installer is Windows-only."))
     }
 }
 

@@ -1,4 +1,4 @@
-//! TLS client that connects to a remote fluidMonitor feed, authenticates with
+//! TLS client that connects to a remote fluxid feed, authenticates with
 //! the HMAC challenge, and streams snapshots. Auto-reconnects on drop with a
 //! watchdog. Mirrors the C# `RemoteTcpClient`.
 

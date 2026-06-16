@@ -1,4 +1,4 @@
-//! Access to the embedded Fluxid widget payload.
+//! Access to the embedded fluxid widget payload.
 //!
 //! `build.rs` produces `OUT_DIR/payload.bin` — either the real `fluxid.exe`
 //! (packaged build) or an empty placeholder (plain `cargo build`).

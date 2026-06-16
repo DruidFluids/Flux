@@ -1,4 +1,4 @@
-# Fluxid (fluidmonitor-rs) — Session Log
+# fluxid (fluxid) — Session Log
 
 ## Session: 2026-06-15 (overnight autonomous polish)
 
@@ -9,8 +9,8 @@ repo is a **mature, feature-complete product**:
 - `cargo build` — **clean** (0 errors).
 - `cargo clippy --workspace` — **clean** (0 warnings).
 - `target\debug\fluxid.exe` — **launches**, borderless always-on-top window
-  ("Fluxid Widget"), no panics on stderr. (Binary is `fluxid`, not
-  `fluidmonitor`.)
+  ("fluxid Widget"), no panics on stderr. (Binary is `fluxid`, not
+  `fluxid`.)
 
 Everything in the brief's Phases 1–7 already exists and is polished:
 
@@ -162,7 +162,7 @@ one exe, make shortcuts, register the uninstaller, apply opt-ins, launch.
   0-byte placeholder so plain `cargo build --workspace` stays green (installer
   detects empty payload and refuses to install — "dev build").
 - **Per-user vs all-users** (`engine.rs::Scope`): per-user → `%LOCALAPPDATA%\
-  Fluxid`, HKCU, no UAC; all-users → `%ProgramFiles%\Fluxid`, HKLM, needs
+  fluxid`, HKCU, no UAC; all-users → `%ProgramFiles%\fluxid`, HKLM, needs
   elevation → the unelevated GUI relaunches itself `--apply` with the `runas`
   verb (`ShellExecuteExW`) and waits, then launches the widget unelevated.
 - **Operations** (`engine.rs`): copy exe, copy self→uninstall.exe, Start Menu
@@ -170,7 +170,7 @@ one exe, make shortcuts, register the uninstaller, apply opt-ins, launch.
   registry entry (DisplayName/Version/Publisher/DisplayIcon/InstallLocation/
   Uninstall+QuietUninstallString/EstimatedSize/NoModify/NoRepair), HKCU `Run`
   for startup, launch-on-finish. Uninstall reverses all of it (taskkill /F
-  fluxid first, like the C#; optional `%APPDATA%\Fluxid` settings wipe; defers
+  fluxid first, like the C#; optional `%APPDATA%\fluxid` settings wipe; defers
   install-dir removal — which holds the running uninstaller — to a detached
   `cmd /C ping … & rmdir`).
 - **Deferred to in-app (intentional, no divergent flows):** PawnIO driver (has a
@@ -178,7 +178,7 @@ one exe, make shortcuts, register the uninstaller, apply opt-ins, launch.
 
 ### Packaging
 - `scripts/Build-Setup.ps1`: release-builds fluxid → sets `FLUXID_PAYLOAD` →
-  release-builds fluid-setup (embeds) → copies to `dist\fluidmonitor-setup-v<ver>
+  release-builds fluid-setup (embeds) → copies to `dist\fluxid-setup-v<ver>
   .exe` + writes a `.sha256` sidecar (release flow publishes checksums). `dist/`
   gitignored. Output verified: single 20.3 MB self-contained installer.
 
@@ -231,7 +231,7 @@ one exe, make shortcuts, register the uninstaller, apply opt-ins, launch.
   workspace table) and `docs/INSTALLER.md` (quick start, scope table, full
   switch reference with examples, what-gets-created layout, uninstall, build
   steps, architecture, signing/SmartScreen). Fixed ARP `URLInfoAbout` to the
-  real remote `DruidFluids/fluidmonitor-rs`.
+  real remote `DruidFluids/fluxid`.
 - Verified: `--apply --no-desktop --no-launch` → start-menu yes, desktop
   skipped, startup on, fluxid not launched; silent uninstall full cleanup;
   `--help` + `/?` print correctly; themed GUI launches without crashing.
@@ -244,7 +244,7 @@ step indicator on top → centered content → divider → centered button pair.
   container styles, white `heading`, `accent_text`. Window 500×500, logo icon.
 - `main.rs`: `frame(step, content, buttons, center)` assembles every page;
   `step_bar` (4 accent segments). Pages return `(content, buttons)`. Welcome =
-  badge + "Fluxid" + version + MIT line; Options; Installing; Done = ✓ checklist.
+  badge + "fluxid" + version + MIT line; Options; Installing; Done = ✓ checklist.
 - Hidden `--page welcome|options|installing|done` to open the wizard on a page
   (QA/screenshots); Done injects a sample outcome.
 - **Captured all 4 pages via DPI-aware PrintWindow(PW_RENDERFULLCONTENT)** and
@@ -260,7 +260,7 @@ step indicator on top → centered content → divider → centered button pair.
 ### Round 4 — fix black console window on launch (found during install review)
 User saw a big black window (912×517, title = the exe path) appear next to the
 widget after installing. Diagnosed by enumerating fluxid's visible windows: it
-had the tile (146×614 "Fluxid Widget"), the 15×15 tray helper, AND a 912×517
+had the tile (146×614 "fluxid Widget"), the 15×15 tray helper, AND a 912×517
 decorated window titled with the exe path — i.e. a **Windows console**.
 `fluid-widget` had no `windows_subsystem` attribute, so fluxid.exe was a
 console-subsystem app; launching it (installer, Start Menu, desktop shortcut)
@@ -309,14 +309,14 @@ no matter what — the rounded look was the *tiles*), switched to OS-level round
   sit flush at the widget top). `with_tip` now uses `Position::Right` + `.gap(8)`
   so they open cleanly to the side.
 - **Uninstall removes the firewall rule** (`engine.rs`): the widget adds a
-  "Fluxid Remote Sensor" inbound TCP rule when remote monitoring is enabled;
+  "fluxid Remote Sensor" inbound TCP rule when remote monitoring is enabled;
   uninstall now queries for it (no elevation) and, if present, deletes it
   elevated (one UAC) — no stale inbound allow rule left behind.
 
 ### Round 7 — snap-to-centerline fix, tooltip follow-cursor, tile glyphs + alignment
 - **Snap-to-"centerline" bug**: `own_window_rects` (window-snap targets) actually
   enumerated EVERY visible window >120px, so the widget docked to any nearby
-  third-party window — including one centered on screen. Filtered to Fluxid's OWN
+  third-party window — including one centered on screen. Filtered to fluxid's OWN
   process (GetWindowThreadProcessId == GetCurrentProcessId) so it only docks to
   its own settings/popup windows, as the name/comment always intended.
 - **Tooltips follow the cursor**: Position::Top flipped under the cursor for the

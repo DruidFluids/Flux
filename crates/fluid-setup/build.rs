@@ -1,4 +1,4 @@
-//! Embeds the Fluxid payload (the widget exe) into the installer at build time.
+//! Embeds the fluxid payload (the widget exe) into the installer at build time.
 //!
 //! The packaging script (`scripts/Build-Setup.ps1`) release-builds `fluxid.exe`
 //! and points `FLUXID_PAYLOAD` at it before building this crate. We copy that
@@ -25,7 +25,7 @@ fn main() {
             match fs::copy(&src, &dest) {
                 Ok(n) => {
                     println!(
-                        "cargo:warning=Embedded Fluxid payload ({n} bytes) from {}",
+                        "cargo:warning=Embedded fluxid payload ({n} bytes) from {}",
                         src.display()
                     );
                 }

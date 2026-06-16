@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "fluidmonitor-setup"
+name = "fluxid-setup"
 path = "src/main.rs"
 
 [dependencies]

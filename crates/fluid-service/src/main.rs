@@ -16,7 +16,7 @@ fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    tracing::info!("fluidMonitor sensor service starting");
+    tracing::info!("fluxid sensor service starting");
 
     let (tx, rx) = mpsc::channel();
 

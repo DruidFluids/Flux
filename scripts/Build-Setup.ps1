@@ -1,8 +1,8 @@
-# Build-Setup.ps1 — builds the Fluxid widget, then bundles it into the custom
-# installer (fluidmonitor-setup.exe).
+# Build-Setup.ps1 — builds the fluxid widget, then bundles it into the custom
+# installer (fluxid-setup.exe).
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File scripts\Build-Setup.ps1
-# Output: dist\fluidmonitor-setup-v<version>.exe
+# Output: dist\fluxid-setup-v<version>.exe
 #
 # How it works: release-build fluxid.exe, point FLUXID_PAYLOAD at it, then
 # release-build fluid-setup. Its build.rs embeds the exe via include_bytes!, so
@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $root
 
-Write-Host "=== Fluxid: Build-Setup ===" -ForegroundColor Cyan
+Write-Host "=== fluxid: Build-Setup ===" -ForegroundColor Cyan
 
 # A running widget locks fluxid.exe; stop it before building over it.
 Get-Process fluxid -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -36,7 +36,7 @@ $buildExit = $LASTEXITCODE
 Remove-Item Env:\FLUXID_PAYLOAD -ErrorAction SilentlyContinue
 if ($buildExit -ne 0) { throw "fluid-setup release build failed" }
 
-$setup = Join-Path $root 'target\release\fluidmonitor-setup.exe'
+$setup = Join-Path $root 'target\release\fluxid-setup.exe'
 if (-not (Test-Path $setup)) { throw "installer not found at $setup" }
 $setupMb = [math]::Round((Get-Item $setup).Length / 1MB, 1)
 Write-Host "  Installer built ($setupMb MB)" -ForegroundColor Green
@@ -48,12 +48,12 @@ if (-not $version) { $version = 'dev' }
 
 $dist = Join-Path $root 'dist'
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
-$out = Join-Path $dist "fluidmonitor-setup-v$version.exe"
+$out = Join-Path $dist "fluxid-setup-v$version.exe"
 Copy-Item $setup $out -Force
 
 # SHA-256 alongside (the release flow publishes these — see distribution memory).
 $hash = (Get-FileHash $out -Algorithm SHA256).Hash
-"$hash  fluidmonitor-setup-v$version.exe" | Out-File -FilePath "$out.sha256" -Encoding ascii
+"$hash  fluxid-setup-v$version.exe" | Out-File -FilePath "$out.sha256" -Encoding ascii
 
 Write-Host "`n=== Build complete ===" -ForegroundColor Cyan
 Write-Host "  Installer: $out" -ForegroundColor Yellow

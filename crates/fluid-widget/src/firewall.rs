@@ -6,7 +6,7 @@
 //! UAC prompt, after which Windows won't pop the raw "allow app" dialog on bind.
 
 /// Firewall rule name — identical to the C# app so the two never double-up.
-pub const RULE_NAME: &str = "Fluxid Remote Sensor";
+pub const RULE_NAME: &str = "fluxid Remote Sensor";
 
 /// Add (idempotently) the inbound allow rule for the feed. Runs an elevated
 /// batch — `delete` then `add` — so a single UAC covers both. Best-effort: if
@@ -20,7 +20,7 @@ pub fn ensure_rule(port: u16) {
          netsh advfirewall firewall delete rule name=\"{RULE_NAME}\" >nul 2>&1\r\n\
          netsh advfirewall firewall add rule name=\"{RULE_NAME}\" dir=in action=allow \
          protocol=tcp localport={port} profile=private \
-         description=\"Fluxid remote hardware sensor feed\"\r\n\
+         description=\"fluxid remote hardware sensor feed\"\r\n\
          del \"%~f0\"\r\n"
     );
     if std::fs::write(&bat, script).is_err() {

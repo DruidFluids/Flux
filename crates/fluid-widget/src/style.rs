@@ -69,7 +69,7 @@ pub fn expand_chevron<'a>(open: bool, color: Color, size: f32) -> Element<'a, Me
         .into()
 }
 
-/// The Fluxid brand mark: a small accent "activity pulse" (ECG) stroke — same
+/// The fluxid brand mark: a small accent "activity pulse" (ECG) stroke — same
 /// motif as the installer badge. Used to dress up the Settings title bar.
 struct BrandPulse {
     color: Color,
@@ -117,7 +117,7 @@ impl canvas::Program<Message> for BrandPulse {
     }
 }
 
-/// The Fluxid brand pulse mark as a fixed-size element.
+/// The fluxid brand pulse mark as a fixed-size element.
 pub fn brand_pulse<'a>(color: Color, size: f32) -> Element<'a, Message> {
     canvas::Canvas::new(BrandPulse { color })
         .width(iced::Length::Fixed(size))
@@ -733,7 +733,7 @@ fn builtin_skin_style(name: &str) -> SkinStyle {
 
 // ── User-installed skins (data-only) ─────────────────────────────────────────
 //
-// Skins live as JSON files in `%APPDATA%\Fluxid\…\skins\*.json`. They are
+// Skins live as JSON files in `%APPDATA%\fluxid\…\skins\*.json`. They are
 // pure data (geometry numbers + a border source enum) — never code — parsed
 // with serde, range-clamped, and unable to shadow a built-in skin name. Loaded
 // once, lazily, on first use; drop a file in and restart to pick it up.
@@ -798,8 +798,8 @@ pub fn ensure_skins_dir() -> std::path::PathBuf {
 }
 
 #[allow(dead_code)]
-const EXAMPLE_SKIN: &str = r#"// Fluxid skin file — copy this to "<YourName>.json" (drop the .txt),
-// edit the values, and restart Fluxid. Skins are pure data: only the
+const EXAMPLE_SKIN: &str = r#"// fluxid skin file — copy this to "<YourName>.json" (drop the .txt),
+// edit the values, and restart fluxid. Skins are pure data: only the
 // fields below are read, all are optional, and values are range-clamped.
 //
 //   border_src: "Transparent" | "Muted" | "Accent" | "Text"

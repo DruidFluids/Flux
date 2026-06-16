@@ -1,4 +1,4 @@
-//! Shared data model for Fluxid: persisted settings and sensor snapshots.
+//! Shared data model for fluxid: persisted settings and sensor snapshots.
 
 pub mod settings;
 pub mod sensor_data;

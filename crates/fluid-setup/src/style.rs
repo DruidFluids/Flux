@@ -1,4 +1,4 @@
-//! Installer visual style — a centered, modern wizard that uses Fluxid's
+//! Installer visual style — a centered, modern wizard that uses fluxid's
 //! built-in **"Dark (default)"** palette so setup looks like the app it
 //! installs. Colors come from `THEME_PRESETS[0]` in
 //! `fluid-widget/src/style.rs`: bg `#1E1E22`, accent `#00A8FF`, text `#E8E8EC`,
@@ -31,11 +31,11 @@ const DIVIDER: Color = rgb(0x30, 0x30, 0x38);
 const SEG_EMPTY: Color = rgb(0x3A, 0x3A, 0x44);
 
 /// The app theme: a custom dark palette built from the widget's defaults so
-/// iced's stock widget styling (radios, checkboxes) already lands on the Fluxid
+/// iced's stock widget styling (radios, checkboxes) already lands on the fluxid
 /// accent without per-widget overrides.
 pub fn theme() -> Theme {
     Theme::custom(
-        "Fluxid Dark".to_string(),
+        "fluxid Dark".to_string(),
         iced::theme::Palette {
             background: BG,
             text: TEXT,

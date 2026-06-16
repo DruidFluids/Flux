@@ -1,4 +1,4 @@
-//! Remote monitoring for fluidMonitor: share this machine's sensors over TLS
+//! Remote monitoring for fluxid: share this machine's sensors over TLS
 //! and consume other machines' feeds.
 //!
 //! The [`RemoteManager`] owns a background tokio runtime that runs the server

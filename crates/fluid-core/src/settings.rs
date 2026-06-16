@@ -322,18 +322,22 @@ impl AppSettings {
         self.warnings.iter_mut().find(|w| w.kind == kind).unwrap()
     }
     pub fn config_dir() -> PathBuf {
-        directories::ProjectDirs::from("com", "Fluxid", "Fluxid").map(|d| d.config_dir().to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
+        directories::ProjectDirs::from("com", "fluxid", "fluxid").map(|d| d.config_dir().to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
     }
-    /// Pre-rename config location ("fluidMonitor"), for one-time migration.
-    fn legacy_config_dir() -> Option<PathBuf> {
-        directories::ProjectDirs::from("com", "fluidmonitor", "fluidMonitor").map(|d| d.config_dir().to_path_buf())
+    /// Pre-rename config locations, newest first, for one-time migration:
+    /// "Fluxid" (the previous capitalised name) then "fluidMonitor" (the C# app).
+    fn legacy_config_dirs() -> Vec<PathBuf> {
+        [("Fluxid", "Fluxid"), ("fluidmonitor", "fluidMonitor")]
+            .iter()
+            .filter_map(|(org, app)| directories::ProjectDirs::from("com", org, app).map(|d| d.config_dir().to_path_buf()))
+            .collect()
     }
-    /// Copy the old fluidMonitor config into the new Fluxid location once, so a
-    /// rename doesn't lose the user's themes, devices, presets, etc.
+    /// Copy the most recent pre-rename config into the new fluxid location once,
+    /// so the rename doesn't lose the user's themes, devices, presets, etc.
     fn migrate_legacy() {
         let new_dir = Self::config_dir();
         if new_dir.join("settings.json").exists() { return; }
-        if let Some(old_dir) = Self::legacy_config_dir() {
+        for old_dir in Self::legacy_config_dirs() {
             if old_dir.join("settings.json").exists() {
                 let _ = std::fs::create_dir_all(&new_dir);
                 if let Ok(entries) = std::fs::read_dir(&old_dir) {
@@ -356,6 +360,7 @@ impl AppSettings {
                         }
                     }
                 }
+                break; // migrated from the newest available source
             }
         }
     }

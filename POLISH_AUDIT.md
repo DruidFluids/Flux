@@ -1,4 +1,4 @@
-# fluidMonitor-rs — Polish Audit
+# fluxid-rs — Polish Audit
 
 A multi-pass, file-by-file polish run: lint cleanup, dead-code pruning,
 documentation, and correctness review. Each pass is documented below with

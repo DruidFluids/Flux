@@ -9,8 +9,8 @@
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
-// The public releases live on the original repo; fluidmonitor-rs is private.
-const API_URL: &str = "https://api.github.com/repos/DruidFluids/fluidMonitor/releases/latest";
+// The public releases live on the original repo; fluxid is private.
+const API_URL: &str = "https://api.github.com/repos/DruidFluids/fluxid/releases/latest";
 
 /// A newer release that passed version comparison and is ready to download.
 #[derive(Debug, Clone)]
@@ -32,7 +32,7 @@ pub enum CheckResult {
 
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent("Fluxid-updater")
+        .user_agent("fluxid-updater")
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())
@@ -186,7 +186,7 @@ pub async fn download_and_launch(url: String, expected_sha256: Option<String>) -
         return Err("Integrity check failed (checksum mismatch) — update aborted".into());
     }
 
-    let fname = url.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("Fluxid-setup.exe");
+    let fname = url.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("fluxid-setup.exe");
     let path = std::env::temp_dir().join(fname);
     std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
 

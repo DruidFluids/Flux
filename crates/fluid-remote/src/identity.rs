@@ -27,7 +27,7 @@ pub struct ServerIdentity {
 impl ServerIdentity {
     /// Generate a fresh self-signed cert + random HMAC secret.
     pub fn generate() -> Result<Self> {
-        let cert = rcgen::generate_simple_self_signed(vec!["fluidMonitor".to_string()])
+        let cert = rcgen::generate_simple_self_signed(vec!["fluxid".to_string()])
             .context("generating self-signed certificate")?;
         let cert_der = cert.cert.der().to_vec();
         let key_der = cert.key_pair.serialize_der();

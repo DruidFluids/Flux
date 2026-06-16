@@ -1,4 +1,4 @@
-//! Fluxid setup — a self-contained custom installer.
+//! fluxid setup — a self-contained custom installer.
 //!
 //! Three modes, chosen by CLI args:
 //! * (no args) → the iced wizard GUI.
@@ -103,7 +103,7 @@ fn run_apply_cli(args: &[String]) -> i32 {
         Ok(_) => 0,
         Err(e) => {
             if !silent {
-                msgbox(&format!("Install failed:\n\n{e}"), "Fluxid Setup", true);
+                msgbox(&format!("Install failed:\n\n{e}"), "fluxid Setup", true);
             }
             1
         }
@@ -119,13 +119,13 @@ fn run_uninstall_cli(args: &[String]) -> i32 {
     match engine::uninstall(opts) {
         Ok(_) => {
             if !silent {
-                msgbox("Fluxid has been uninstalled.", "Fluxid", false);
+                msgbox("fluxid has been uninstalled.", "fluxid", false);
             }
             0
         }
         Err(e) => {
             if !silent {
-                msgbox(&format!("Uninstall failed:\n\n{e}"), "Fluxid", true);
+                msgbox(&format!("Uninstall failed:\n\n{e}"), "fluxid", true);
             }
             1
         }
@@ -133,7 +133,7 @@ fn run_uninstall_cli(args: &[String]) -> i32 {
 }
 
 const HELP_TEXT: &str = "\
-Fluxid Setup — command-line switches
+fluxid Setup — command-line switches
 
   (no switches)         Launch the graphical setup wizard.
 
@@ -148,13 +148,13 @@ Install options (default: install everything, per-user)
   --scope per-user      Install for the current user (no admin). Default.
   --scope all-users     Install for all users (prompts for administrator).
   --no-desktop          Do not create a desktop shortcut.
-  --no-startup          Do not start Fluxid with Windows.
-  --no-launch           Do not launch Fluxid when setup finishes.
+  --no-startup          Do not start fluxid with Windows.
+  --no-launch           Do not launch fluxid when setup finishes.
   --all                 Enable every optional feature (the default).
 
 Uninstall options
-  --scope <type>        Match the scope Fluxid was installed with.
-  --remove-settings     Also delete %APPDATA%\\Fluxid (settings/themes/skins).
+  --scope <type>        Match the scope fluxid was installed with.
+  --remove-settings     Also delete %APPDATA%\\fluxid (settings/themes/skins).
   /S, --silent          Uninstall with no message boxes.
 
 Every switch accepts --flag, -flag or /flag (case-insensitive).";
@@ -163,7 +163,7 @@ fn show_help() {
     // Console for dev/debug builds; a message box for the windowed release.
     println!("{HELP_TEXT}");
     #[cfg(all(windows, not(debug_assertions)))]
-    msgbox(HELP_TEXT, "Fluxid Setup", false);
+    msgbox(HELP_TEXT, "fluxid Setup", false);
 }
 
 #[cfg(windows)]
@@ -201,7 +201,7 @@ mod gui {
             icon: load_icon(),
             ..iced::window::Settings::default()
         };
-        let mut app = iced::application("Fluxid Setup", Wizard::update, Wizard::view)
+        let mut app = iced::application("fluxid Setup", Wizard::update, Wizard::view)
             .theme(Wizard::theme)
             .window(window);
         // Segoe UI Symbol gives us the ✓ glyph (iced's default font lacks it),
@@ -216,8 +216,8 @@ mod gui {
     /// Font that carries the ✓ glyph used in the Done checklist.
     const SYMBOL_FONT: iced::Font = iced::Font::with_name("Segoe UI Symbol");
 
-    /// Decode the bundled Fluxid logo for the window / taskbar icon (same PNG
-    /// the widget uses), so setup is visually branded as Fluxid.
+    /// Decode the bundled fluxid logo for the window / taskbar icon (same PNG
+    /// the widget uses), so setup is visually branded as fluxid.
     fn load_icon() -> Option<iced::window::Icon> {
         const PNG: &[u8] = include_bytes!("../assets/icon.png");
         let img = image::load_from_memory(PNG).ok()?.to_rgba8();
@@ -276,14 +276,14 @@ mod gui {
                     Some(Outcome {
                         ok: true,
                         steps: vec![
-                            "Created C:\\Users\\you\\AppData\\Local\\Fluxid".into(),
+                            "Created C:\\Users\\you\\AppData\\Local\\fluxid".into(),
                             "Installed fluxid.exe".into(),
                             "Installed uninstaller".into(),
                             "Created Start Menu shortcut".into(),
                             "Created desktop shortcut".into(),
                             "Registered in Add/Remove Programs".into(),
                             "Enabled start with Windows".into(),
-                            "Launched Fluxid".into(),
+                            "Launched fluxid".into(),
                         ],
                         error: None,
                     }),
@@ -386,7 +386,7 @@ mod gui {
             let content = column![
                 style::badge(),
                 Space::with_height(12),
-                text("Fluxid").size(28).style(style::heading),
+                text("fluxid").size(28).style(style::heading),
                 text(format!(
                     "v{} — system monitor widget for Windows",
                     engine::VERSION
@@ -451,9 +451,9 @@ mod gui {
                 text("Options").size(14).style(style::muted),
                 checkbox("Create a desktop shortcut", self.desktop)
                     .on_toggle(Message::ToggleDesktop),
-                checkbox("Start Fluxid when Windows starts", self.startup)
+                checkbox("Start fluxid when Windows starts", self.startup)
                     .on_toggle(Message::ToggleStartup),
-                checkbox("Launch Fluxid when setup finishes", self.launch)
+                checkbox("Launch fluxid when setup finishes", self.launch)
                     .on_toggle(Message::ToggleLaunch),
             ]
             .spacing(9)
@@ -473,7 +473,7 @@ mod gui {
                 style::badge(),
                 Space::with_height(14),
                 text("Installing…").size(22).style(style::heading),
-                text("Setting up Fluxid. This only takes a moment.")
+                text("Setting up fluxid. This only takes a moment.")
                     .size(14)
                     .style(style::muted),
             ]
@@ -651,10 +651,10 @@ mod gui {
         match engine::relaunch_elevated_wait(&apply) {
             Ok(Some(0)) => {
                 let mut steps =
-                    vec!["Installed Fluxid (administrator)".to_string()];
+                    vec!["Installed fluxid (administrator)".to_string()];
                 if opts.launch_after {
                     match engine::launch(opts.scope) {
-                        Ok(()) => steps.push("Launched Fluxid".into()),
+                        Ok(()) => steps.push("Launched fluxid".into()),
                         Err(e) => {
                             return Outcome {
                                 ok: true,

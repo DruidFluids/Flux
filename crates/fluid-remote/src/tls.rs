@@ -42,9 +42,9 @@ pub fn client_config(expected_fingerprint: [u8; 32]) -> Arc<ClientConfig> {
     Arc::new(config)
 }
 
-/// The TLS SNI host the client presents — matches C# TargetHost "fluidMonitor".
+/// The TLS SNI host the client presents — matches C# TargetHost "fluxid".
 pub fn server_name() -> ServerName<'static> {
-    ServerName::try_from("fluidMonitor").expect("static name is valid")
+    ServerName::try_from("fluxid").expect("static name is valid")
 }
 
 #[derive(Debug)]

@@ -1,4 +1,4 @@
-//! Wire protocol for fluidMonitor remote monitoring.
+//! Wire protocol for fluxid remote monitoring.
 //!
 //! Mirrors the C# `Fluid.Shared.Protocol.TcpProtocol`:
 //!   * Handshake key format `FM1:<base64(certSHA256[32] || hmacSecret[32])>`.

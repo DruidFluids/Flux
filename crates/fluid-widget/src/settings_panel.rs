@@ -467,7 +467,7 @@ pub fn view<'a>(
         text("Temperature driver (optional)").size(11)
             .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
             .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-        text("Reads the CPU's die temperature directly. Fluxid downloads the official signed PawnIO driver, verifies its signature, and installs it on request \u{2014} the rest of the widget works without it.")
+        text("Reads the CPU's die temperature directly. fluxid downloads the official signed PawnIO driver, verifies its signature, and installs it on request \u{2014} the rest of the widget works without it.")
             .size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         Space::with_height(4),
         row![
@@ -1195,7 +1195,7 @@ pub fn view<'a>(
             tool_card("\u{1F4E1}", c_remote, "Remote", "Share & monitor", remote_status, Message::OpenRemote),
         ].spacing(8),
         Space::with_height(10),
-        sh("Updates", "Check for and install new versions of Fluxid."),
+        sh("Updates", "Check for and install new versions of fluxid."),
         updates,
     ].spacing(8).height(Length::Fill).into();
 
@@ -1424,7 +1424,7 @@ fn share_dialog_view<'a>(is_export: bool, code: String, copied_opacity: f32, car
     let bg_opaque = iced::Color { a: 1.0, ..p.bg };
     let title = if is_export { "Export appearance" } else { "Import appearance" };
     let hint = if is_export {
-        "Copy this code and share it. Paste it into another Fluxid to apply your look."
+        "Copy this code and share it. Paste it into another fluxid to apply your look."
     } else {
         "Paste an appearance share code, then Apply."
     };
