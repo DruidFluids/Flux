@@ -37,7 +37,11 @@ pub struct UpdateView {
     pub status_kind: u8, // 0 neutral, 1 good, 2 bad
     pub available: Option<(String, String)>, // version, changelog
     pub latest_changelog: Option<(String, String)>, // latest release notes (version, body)
+    pub show_info: bool, // Updates card sub-tab: false = changelog, true = verification info
 }
+
+// Explainer shown in the Updates card's "Verification" sub-tab.
+const VERIFICATION_MD: &str = "## How updates work\n\nfluxid checks GitHub for the latest release. It never installs anything silently \u{2014} you choose Auto, Manual, or Off above. \"Check now\" looks for a newer version on demand.\n\n## Verified downloads\n\nEvery release publishes a SHA-256 checksum. When fluxid downloads an installer it computes the file's hash and refuses to run it unless that hash exactly matches the published checksum \u{2014} so a tampered or corrupted download can't execute.\n\n## VirusTotal\n\nEach release is also scanned on VirusTotal; the detection result and a link are included in its release notes. You can re-check any download yourself in PowerShell:\n\nGet-FileHash .\\fluxid-setup.exe -Algorithm SHA256\n\nThe build is unsigned, so Windows SmartScreen shows a one-time prompt \u{2014} verifying the hash is how you confirm the file is the real one.";
 
 // Render a GitHub-flavoured-markdown release body as styled elements so the raw
 // `###` / `-` / `**` markers don't show. Line-based — handles headings, bullets
@@ -1085,34 +1089,29 @@ pub fn view<'a>(
             text(update.status.clone()).size(11).style(move |_| iced::widget::text::Style { color: Some(status_color) })
         );
     }
-    // Changelog: prefer an available update's notes, else the latest release's
-    // notes — shown in a scrollable that fills the rest of the card.
-    let notes: Option<(String, String, bool)> = if let Some((ver, log)) = &update.available {
-        Some((ver.clone(), log.clone(), true))
+    // Sub-tabs: "Changelog" (what's new) vs "Verification" (how updates are
+    // checked, the SHA-256 gate, and VirusTotal). Fills the rest of the card.
+    updates_col = updates_col.push(Space::with_height(6));
+    updates_col = updates_col.push(
+        row![
+            pill("Changelog".into(), !update.show_info, Message::SetUpdatesInfo(false)),
+            pill("Verification".into(), update.show_info, Message::SetUpdatesInfo(true)),
+        ].spacing(4)
+    );
+    let body_md: String = if update.show_info {
+        VERIFICATION_MD.to_string()
     } else {
-        update.latest_changelog.clone().map(|(v, b)| (v, b, false))
+        match (&update.available, &update.latest_changelog) {
+            (Some((_, log)), _) => log.clone(),
+            (None, Some((_, body))) => body.clone(),
+            _ => "No release notes available \u{2014} check your internet connection, or open the \"Verification\" tab to read how updates work.".to_string(),
+        }
     };
-    if let Some((ver, body, is_new)) = notes {
-        let ver = ver.trim_start_matches('v');
-        let head = if is_new { format!("New version \u{2014} v{ver}") } else { format!("Latest release \u{2014} v{ver}") };
-        let head_col = if is_new { p.accent } else { p.text };
-        updates_col = updates_col.push(Space::with_height(2));
-        updates_col = updates_col.push(
-            text(head).size(11)
-                .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
-                .style(move |_| iced::widget::text::Style { color: Some(head_col) })
-        );
-        updates_col = updates_col.push(
-            container(
-                scrollable(changelog_md(&body, p)).width(Length::Fill).height(Length::Fill)
-            )
+    updates_col = updates_col.push(
+        container(scrollable(changelog_md(&body_md, p)).width(Length::Fill).height(Length::Fill))
             .padding(8).width(Length::Fill).height(Length::Fill)
             .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(crate::style::field_bg(p))), border: Border { radius: 6.0.into(), ..Border::default() }, ..Default::default() })
-        );
-    } else {
-        // No notes yet (offline / still loading) — keep the card from collapsing.
-        updates_col = updates_col.push(Space::with_height(Length::Fill));
-    }
+    );
     updates_col = updates_col.push(
         row![
             Space::with_width(Length::Fill),

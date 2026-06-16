@@ -596,6 +596,8 @@ struct App {
     update_available: Option<updates::PendingUpdate>,
     // Latest GitHub release notes (version, body) shown in the Updates card.
     latest_changelog: Option<(String, String)>,
+    // Updates card sub-tab: false = changelog, true = verification/how-it-works.
+    updates_show_info: bool,
     appearance_status: String,
     theme_store_franchise: Option<usize>,
     // Theme Store: theme names ticked for "Install selected" inside a pack.
@@ -682,6 +684,7 @@ enum Message {
     CheckForUpdates,
     UpdateCheckDone(updates::CheckResult),
     LatestReleaseDone(Result<(String, String), String>),
+    SetUpdatesInfo(bool),
     DownloadUpdate,
     UpdateDownloadDone(Result<(), String>),
     UpdateLater,
@@ -771,6 +774,7 @@ impl App {
             blocklist_status: String::new(),
             update_checking: false, update_status: String::new(), update_status_kind: 0, update_available: None,
             latest_changelog: None,
+            updates_show_info: false,
             appearance_status: String::new(),
             theme_store_franchise: None,
             theme_store_sel: std::collections::HashSet::new(),
@@ -2129,6 +2133,7 @@ impl App {
                 }
                 Task::none()
             }
+            Message::SetUpdatesInfo(v) => { self.updates_show_info = v; Task::none() }
             Message::DownloadUpdate => {
                 let (url, sha) = match &self.update_available {
                     Some(u) => (u.url.clone(), u.sha256.clone()),
@@ -2339,6 +2344,7 @@ impl App {
                     status_kind: self.update_status_kind,
                     available: self.update_available.as_ref().map(|u| (u.version.clone(), u.changelog.clone())),
                     latest_changelog: self.latest_changelog.clone(),
+                    show_info: self.updates_show_info,
                 };
                 // Fading "Copied!" toast opacity: solid ~0.9s, then fade out.
                 let copied_opacity = self.share_copied_at.map(|t| {
