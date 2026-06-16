@@ -10,10 +10,29 @@ use crate::fmt;
 use crate::style::{named_font, Palette};
 use crate::Message;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct WarnView {
     pub flash: bool,
     pub accent_override: Option<Color>,
+    /// Soft-pop progress of this tile's primary value: 1.0 = settled (no
+    /// animation), <1.0 = freshly changed and fading/brightening in.
+    pub pop: f32,
+}
+impl Default for WarnView {
+    fn default() -> Self { WarnView { flash: false, accent_override: None, pop: 1.0 } }
+}
+
+// Soft "pop" applied to a freshly-changed primary value: it fades in from dim
+// and slightly over-bright, easing (ease-out cubic) to its base colour. No
+// scale/size change, so the tile never reflows.
+fn pop_color(base: Color, pop: f32) -> Color {
+    if pop >= 1.0 { return base; }
+    let p = pop.clamp(0.0, 1.0);
+    let e = 1.0 - (1.0 - p).powi(3); // ease-out cubic
+    let opacity = 0.45 + 0.55 * e;
+    let bright = (1.0 - e) * 0.40; // brightness lift that fades as it settles
+    let lift = |c: f32| c + (1.0 - c) * bright;
+    Color { r: lift(base.r), g: lift(base.g), b: lift(base.b), a: base.a * opacity }
 }
 
 // Font-size resolver matching C# ThemeApplier: base + offset, floored at 7,
@@ -135,10 +154,12 @@ fn stat_lines_body<'a>(
 }
 
 // Primary value: PrimaryFontSize (18+primaryOffset), Bold, text, primary font.
-fn big<'a>(t: String, p: Palette, s: &AppSettings) -> Element<'a, Message> {
+// `pop` (1.0 = settled) softly fades/brightens the value when it just changed.
+fn big<'a>(t: String, p: Palette, s: &AppSettings, pop: f32) -> Element<'a, Message> {
+    let col = pop_color(p.text, pop);
     text(t).size(sz(18, s.primary_font_offset, s))
         .font(named_font(&s.primary_font, Weight::Bold))
-        .style(move |_| iced::widget::text::Style { color: Some(p.text) })
+        .style(move |_| iced::widget::text::Style { color: Some(col) })
         .into()
 }
 
@@ -188,7 +209,7 @@ fn small_unit<'a>(t: String, accent: Color, s: &AppSettings) -> Element<'a, Mess
 #[allow(clippy::too_many_arguments)]
 fn centered_stat_line<'a>(
     left: Element<'a, Message>, v: String, u: String,
-    p: Palette, accent: Color, left_inset: f32, label_w: f32, s: &AppSettings,
+    p: Palette, accent: Color, left_inset: f32, label_w: f32, s: &AppSettings, pop: f32,
 ) -> Element<'a, Message> {
     // Small symmetric gap on each side of the number keeps it centred and the
     // unit close, scaled with the UI so it tracks the font size.
@@ -206,10 +227,11 @@ fn centered_stat_line<'a>(
     let fill = ((inner - 2.0 * gap - num_w) * 0.5).max(0.0);
     let max_inset = (fill - label_w).max(0.0);
     let inset = left_inset.clamp(0.0, max_inset);
+    let num_col = pop_color(p.text, pop);
     let number = text(v).size(sz(18, s.primary_font_offset, s))
         .font(named_font(&s.primary_font, Weight::Bold))
         .wrapping(iced::widget::text::Wrapping::None)
-        .style(move |_| iced::widget::text::Style { color: Some(p.text) });
+        .style(move |_| iced::widget::text::Style { color: Some(num_col) });
     let unit = text(u).size(sz(12, s.primary_font_offset, s))
         .font(named_font(&s.indicator_font, Weight::Semibold))
         .wrapping(iced::widget::text::Wrapping::None)
@@ -239,14 +261,15 @@ pub fn cpu_tile<'a>(cpu: &CpuData, s: &AppSettings, p: Palette, w: WarnView, dri
 
     // C# CPU primary: "{temp}°C  {load}%" on one line (temp present only when
     // a real reading exists), units inline-accent at primary size.
+    let pop = w.pop;
     let mut primary = row![].align_y(iced::Alignment::End);
     if s.cpu_show_temp {
         if let Some((tv, tu)) = fmt::fmt_temp(cpu.temperature_c, s) {
-            primary = primary.push(big(tv, p, s)).push(unit_inline(tu, accent, s)).push(Space::with_width(8));
+            primary = primary.push(big(tv, p, s, pop)).push(unit_inline(tu, accent, s)).push(Space::with_width(8));
         }
     }
     primary = primary
-        .push(big(pct(cpu.usage_percent), p, s))
+        .push(big(pct(cpu.usage_percent), p, s, pop))
         .push(unit_inline("%".into(), accent, s));
 
     // C# v1.25 "turn on temperature" affordance: when there's no real reading
@@ -344,14 +367,15 @@ pub fn gpu_tile<'a>(gpu: &GpuData, s: &AppSettings, p: Palette, w: WarnView) -> 
         if n.is_empty() { "GPU".to_string() } else { n }
     };
 
+    let pop = w.pop;
     let mut primary = row![].align_y(iced::Alignment::End);
     if s.gpu_show_temp {
         if let Some((tv, tu)) = fmt::fmt_temp(gpu.temperature_c, s) {
-            primary = primary.push(big(tv, p, s)).push(unit_inline(tu, accent, s)).push(Space::with_width(8));
+            primary = primary.push(big(tv, p, s, pop)).push(unit_inline(tu, accent, s)).push(Space::with_width(8));
         }
     }
     primary = primary
-        .push(big(pct(gpu.usage_percent), p, s))
+        .push(big(pct(gpu.usage_percent), p, s, pop))
         .push(unit_inline("%".into(), accent, s));
 
     let mut sec = column![].spacing(1).align_x(iced::Alignment::Center);
@@ -394,7 +418,7 @@ pub fn ram_tile<'a>(ram: &RamData, s: &AppSettings, p: Palette, w: WarnView) -> 
     // C# RAM: PrimaryValue "17.4", PrimaryUnit "GB" (12px slot),
     // Secondary "27% of 64.0 GB".
     let primary = row![
-        big(format!("{:.1}", used_gb), p, s),
+        big(format!("{:.1}", used_gb), p, s, w.pop),
         Space::with_width(4),
         unit("GB".into(), accent, s),
     ].align_y(iced::Alignment::End);
@@ -468,7 +492,7 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
             .into();
         // "R:" / "W:" are ~2 label-font glyphs wide.
         let label_w = label_size as f32 * 1.2;
-        centered_stat_line(label, v, u, p, accent, spacing, label_w, s)
+        centered_stat_line(label, v, u, p, accent, spacing, label_w, s, w.pop)
     };
     let mut lines: Vec<Element<'a, Message>> = Vec::new();
     if s.disk_show_read { lines.push(dline("R:", rv, ru)); }
@@ -564,7 +588,7 @@ pub fn network_tile<'a>(net: &NetworkData, s: &AppSettings, p: Palette, w: WarnV
         // Center the number on the tile centerline; the arrow sits on the left
         // (nudged by the position slider) and the unit on the right. The arrow's
         // glow box (glow_w) is its layout width — the value the inset must clear.
-        centered_stat_line(arrow, v, u, p, accent, spacing, glow_w, s)
+        centered_stat_line(arrow, v, u, p, accent, spacing, glow_w, s, w.pop)
     };
     let mut lines: Vec<Element<'a, Message>> = Vec::new();
     if s.net_show_down { lines.push(nline(true, down > 0, down_color, dv, du)); }
@@ -590,7 +614,7 @@ pub fn clock_tile<'a>(s: &AppSettings, p: Palette, w: WarnView) -> Element<'a, M
     let month = now.format("%B").to_string();
 
     let primary = row![
-        big(time, p, s),
+        big(time, p, s, w.pop),
         Space::with_width(4),
         unit(ampm.to_string(), accent, s),
     ].align_y(iced::Alignment::End);
