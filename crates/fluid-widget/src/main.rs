@@ -46,7 +46,16 @@ fn main() -> iced::Result {
 
     let mut app = iced::daemon(App::title, App::update, App::view)
         .subscription(App::subscription)
-        .theme(App::theme);
+        .theme(App::theme)
+        // Clear each window's surface to TRANSPARENT (not the opaque theme bg).
+        // Otherwise iced fills the whole window rectangle with an opaque colour
+        // that DWM then rounds, leaving a dark backing in the corners outside
+        // the rounded content. With a transparent clear, only the rounded cards
+        // show and the corners are clean.
+        .style(|_state, theme| iced::daemon::Appearance {
+            background_color: iced::Color::TRANSPARENT,
+            text_color: theme.palette().text,
+        });
     // Load Segoe UI Symbol so the monochrome icon glyphs (die, folder, moon,
     // sun, undo) render — the same font the C# app uses for these icons.
     #[cfg(target_os = "windows")]
@@ -321,9 +330,13 @@ fn dwm_round_hwnd(hwnd: windows::Win32::Foundation::HWND, round: bool) {
         );
     }
 }
-fn set_window_rounded(round: bool) {
+fn set_window_rounded(_round: bool) {
+    // DWM rounds at a fixed ~8px radius that fights iced's larger corner radius
+    // (dark wedge in the corner). With a transparent surface, iced renders the
+    // rounded corners itself, so we DISABLE DWM rounding (square OS window) and
+    // let iced's radius be the single source of truth.
     if let Some(hwnd) = widget_hwnd() {
-        dwm_round_hwnd(hwnd, round);
+        dwm_round_hwnd(hwnd, false);
     }
 }
 // Apply the corner preference to EVERY top-level window owned by this process —
@@ -338,14 +351,16 @@ fn set_all_windows_rounded(round: bool) {
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetWindowThreadProcessId, IsWindowVisible,
     };
-    struct Ctx { own_pid: u32, round: bool }
-    let mut ctx = Ctx { own_pid: unsafe { GetCurrentProcessId() }, round };
+    let _ = round; // iced now owns the rounding (see set_window_rounded).
+    struct Ctx { own_pid: u32 }
+    let mut ctx = Ctx { own_pid: unsafe { GetCurrentProcessId() } };
     unsafe extern "system" fn cb(h: HWND, lp: LPARAM) -> BOOL {
         let ctx = &mut *(lp.0 as *mut Ctx);
         let mut wpid = 0u32;
         GetWindowThreadProcessId(h, Some(&mut wpid));
         if wpid == ctx.own_pid && IsWindowVisible(h).as_bool() {
-            dwm_round_hwnd(h, ctx.round);
+            // DISABLE DWM rounding so it doesn't clip iced's larger radius.
+            dwm_round_hwnd(h, false);
         }
         BOOL(1)
     }

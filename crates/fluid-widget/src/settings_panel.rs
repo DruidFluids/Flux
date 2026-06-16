@@ -1067,48 +1067,77 @@ pub fn view<'a>(
         sh("Font", "Pick fonts for Primary numbers, Secondary labels, and Indicators (units). Toggle 'Sync' to lock all three together. Sizes nudge the chosen font up or down."), fonts,
     ].spacing(4).into();
 
-    // ── Tools tab: launchers that used to live behind the bottom-left gear ──
-    let tool_item = |icon: &str, icon_color: iced::Color, title: &str, subtitle: &str, msg: Message| -> Element<'a, Message> {
+    // ── Tools tab: a 2×2 grid of launcher cards (icon-tinted, with live status) ──
+    let n_alerts = settings.warnings.iter().filter(|w| w.enabled).count();
+    let n_block = settings.snap_blocklist.len();
+    let alerts_status = if n_alerts > 0 { (format!("{n_alerts} set"), true) } else { ("Off".to_string(), false) };
+    let gm_status = if settings.game_mode_hotkey.trim().is_empty() { ("Unset".to_string(), false) } else { (settings.game_mode_hotkey.clone(), true) };
+    let util_status = if n_block > 0 { (format!("{n_block} blocked"), true) } else { ("None".to_string(), false) };
+    let remote_status = if settings.remote_enabled { (format!("On \u{00B7} :{}", settings.remote_port), true) } else { ("Off".to_string(), false) };
+
+    let tool_card = |icon: &str, ic_col: iced::Color, title: &str, subtitle: &str, status: (String, bool), msg: Message| -> Element<'a, Message> {
+        // Live-status pill: tinted in the card's colour when active, muted when off.
+        let (stxt, active) = status;
+        let scol = if active { ic_col } else { p.muted };
+        let chip = container(
+            text(stxt).size(9).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                .wrapping(iced::widget::text::Wrapping::None)
+                .style(move |_| iced::widget::text::Style { color: Some(scol) })
+        ).padding(iced::Padding { top: 2.0, right: 7.0, bottom: 2.0, left: 7.0 })
+            .style(move |_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(iced::Color { a: 0.16, ..scol })),
+                border: Border { radius: 7.0.into(), ..Border::default() },
+                ..Default::default()
+            });
         let ic = container(
             text(icon.to_string()).size(18).font(iced::Font::with_name("Segoe UI Symbol"))
-                .style(move |_| iced::widget::text::Style { color: Some(icon_color) })
-        ).width(34).height(34).center_x(34).center_y(34)
+                .style(move |_| iced::widget::text::Style { color: Some(ic_col) })
+        ).width(36).height(36).center_x(36).center_y(36)
             .style(move |_| iced::widget::container::Style {
-                background: Some(iced::Background::Color(iced::Color { a: 0.14, ..icon_color })),
-                border: Border { radius: 8.0.into(), ..Border::default() },
+                background: Some(iced::Background::Color(iced::Color { a: 0.16, ..ic_col })),
+                border: Border { radius: 9.0.into(), ..Border::default() },
                 ..Default::default()
             });
         button(
-            row![
-                ic,
-                column![
-                    text(title.to_string()).size(12)
-                        .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
-                        .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-                    text(subtitle.to_string()).size(10)
-                        .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
-                ].spacing(1),
-            ].spacing(10).align_y(iced::Alignment::Center)
+            column![
+                row![ic, Space::with_width(Length::Fill), chip].align_y(iced::Alignment::Center).width(Length::Fill),
+                Space::with_height(Length::Fill),
+                text(title.to_string()).size(13)
+                    .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                    .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                text(subtitle.to_string()).size(10)
+                    .wrapping(iced::widget::text::Wrapping::None)
+                    .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+            ].spacing(2)
         )
-        .width(Length::Fill)
-        .padding(iced::Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 10.0 })
-        .style(move |_: &iced::Theme, status: button::Status| {
-            let hover = matches!(status, button::Status::Hovered);
+        .width(Length::FillPortion(1))
+        .height(Length::Fixed(104.0))
+        .padding(12)
+        .style(move |_: &iced::Theme, st: button::Status| {
+            let hover = matches!(st, button::Status::Hovered);
             button::Style {
-                background: Some(iced::Background::Color(if hover { p.tile } else { iced::Color { a: p.tile.a * 0.6, ..p.tile } })),
-                border: Border { radius: 8.0.into(), width: 1.0, color: if hover { p.accent } else { iced::Color { a: 0.2, ..p.muted } } },
+                background: Some(iced::Background::Color(iced::Color { a: if hover { 0.15 } else { 0.07 }, ..ic_col })),
+                border: Border { radius: 12.0.into(), width: 1.0, color: iced::Color { a: if hover { 0.6 } else { 0.3 }, ..ic_col } },
                 ..Default::default()
             }
         })
         .on_press(msg).into()
     };
+    let c_alerts = iced::Color::from_rgb8(0xE0, 0x60, 0x40);
+    let c_game = iced::Color::from_rgb8(0x6A, 0x9F, 0xD8);
+    let c_util = iced::Color::from_rgb8(0x88, 0xAA, 0x55);
+    let c_remote = iced::Color::from_rgb8(0x5A, 0xB0, 0xC8);
     let tools_tab: Element<'a, Message> = column![
         sh("Tools", "Configure Alerts, Game Mode, and Utilities."),
-        tool_item("\u{26A0}", iced::Color::from_rgb8(0xE0, 0x60, 0x40), "Alerts", "Per-tile temperature / load thresholds", Message::OpenAlerts),
-        tool_item("\u{1F3AE}", iced::Color::from_rgb8(0x6A, 0x9F, 0xD8), "Game Mode", "Hotkey-snap a compact overlay", Message::OpenGameMode),
-        tool_item("\u{1F527}", iced::Color::from_rgb8(0x88, 0xAA, 0x55), "Utilities", "System tools & snap blocklist", Message::OpenUtilities),
-        tool_item("\u{1F4E1}", iced::Color::from_rgb8(0x5A, 0xB0, 0xC8), "Remote", "Share sensors & monitor other machines", Message::OpenRemote),
-        Space::with_height(8),
+        row![
+            tool_card("\u{26A0}", c_alerts, "Alerts", "Temp / load thresholds", alerts_status, Message::OpenAlerts),
+            tool_card("\u{1F3AE}", c_game, "Game Mode", "Hotkey-snap overlay", gm_status, Message::OpenGameMode),
+        ].spacing(8),
+        row![
+            tool_card("\u{1F527}", c_util, "Utilities", "Tools & snap blocklist", util_status, Message::OpenUtilities),
+            tool_card("\u{1F4E1}", c_remote, "Remote", "Share & monitor", remote_status, Message::OpenRemote),
+        ].spacing(8),
+        Space::with_height(10),
         sh("Updates", "Check for and install new versions of Fluxid."),
         updates,
     ].spacing(8).into();
@@ -1193,16 +1222,19 @@ pub fn view<'a>(
     .height(Length::Fill);
 
     // 32px caption: "Settings" left, ✕ right, whole bar draggable
+    // On the muted-coloured title bar, draw the ✕ / title in the theme bg colour
+    // (muted is designed to read against bg, so bg reads against muted).
+    let on_bar = iced::Color { a: 1.0, ..p.bg };
     let close_btn = crate::style::with_tip(button(
         text("\u{2715}").size(13).font(iced::Font::with_name("Segoe UI Symbol"))
-            .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
+            .style(move |_| iced::widget::text::Style { color: Some(on_bar) })
     ).padding([2, 8]).style(|_,_| button::Style { background: None, ..Default::default() }).on_press(Message::SaveClose),
         "Save and close", p);
 
     // Tall, fully-draggable title bar: an accent brand mark + centered "Settings"
     // on a subtly accent-tinted band (rounded to match the window top), ✕ on the
     // right. The whole band drags the window; only the close button doesn't.
-    let brand = crate::style::brand_pulse(p.accent, 18.0);
+    let brand = crate::style::brand_pulse(on_bar, 18.0);
     let caption = mouse_area(
         container(
             stack![
@@ -1210,7 +1242,7 @@ pub fn view<'a>(
                     brand,
                     Space::with_width(8),
                     text("Settings").size(13).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
-                        .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+                        .style(move |_| iced::widget::text::Style { color: Some(on_bar) }),
                 ].align_y(iced::Alignment::Center))
                     .width(Length::Fill).height(Length::Fill)
                     .center_x(Length::Fill).center_y(Length::Fill),
@@ -1223,7 +1255,8 @@ pub fn view<'a>(
         .height(Length::Fixed(48.0))
         .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 8.0 })
         .style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(iced::Color { a: 0.07, ..p.accent })),
+            // Title bar uses the theme's muted swatch directly.
+            background: Some(iced::Background::Color(iced::Color { a: 1.0, ..p.muted })),
             // Match the window's INNER corner radius (outer 20 − 1.5px border)
             // so the caption fills the rounded corner exactly — no window-bg
             // wedge (too small) and no poking past the border (too large).
