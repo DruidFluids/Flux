@@ -354,6 +354,25 @@ mod imp {
             .status();
     }
 
+    /// Write the widget exe, retrying briefly if it's still locked. A just-killed
+    /// widget (live self-update) can hold the file handle for a moment after
+    /// taskkill returns, which would otherwise fail the write with a sharing
+    /// violation. Retries up to ~6s before giving up.
+    fn write_exe_with_retry(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+        let mut last = None;
+        for attempt in 0..30 {
+            match std::fs::write(path, bytes) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    last = Some(e);
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    let _ = attempt;
+                }
+            }
+        }
+        Err(last.unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "write failed")))
+    }
+
     fn dir_size_kb(dir: &std::path::Path) -> u32 {
         fn walk(dir: &std::path::Path, total: &mut u64) {
             if let Ok(rd) = std::fs::read_dir(dir) {
@@ -392,8 +411,10 @@ mod imp {
             .map_err(|e| err(format!("create {}: {e}", dir.display())))?;
         rep.step(format!("Created {}", dir.display()));
 
-        // 1. Write the widget exe.
-        std::fs::write(&exe, crate::payload::FLUXID_EXE)
+        // 1. Write the widget exe. During a live self-update the old widget was
+        //    just force-killed, and Windows can take a moment to release its lock
+        //    on the exe — so retry briefly instead of failing the whole update.
+        write_exe_with_retry(&exe, crate::payload::FLUXID_EXE)
             .map_err(|e| err(format!("write {}: {e}", exe.display())))?;
         rep.step(format!("Installed {EXE_NAME}"));
 
