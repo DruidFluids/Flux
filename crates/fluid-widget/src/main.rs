@@ -1085,6 +1085,14 @@ impl App {
                 format!("{}|{}", t, pct(snap.gpu.usage_percent))
             }
             "RAM" => format!("{:.1}", snap.ram.used_mb / 1024.0),
+            "Clock" => {
+                // The popped element is the "h:mm" time (matches clock_tile),
+                // so the clock pops once a minute as the minute rolls over.
+                use chrono::Timelike;
+                let now = chrono::Local::now();
+                let h12 = { let x = now.hour() % 12; if x == 0 { 12 } else { x } };
+                format!("{}:{:02}", h12, now.minute())
+            }
             "Network" => {
                 let sel = &s.network_adapter_name;
                 let (down, up): (u64, u64) = if sel.is_empty() {
@@ -1109,7 +1117,7 @@ impl App {
     // After a fresh snapshot: bump the pop timer for any tile whose displayed
     // value changed.
     fn refresh_tile_pops(&mut self) {
-        const KINDS: [&str; 5] = ["CPU", "GPU", "RAM", "Network", "Disk"];
+        const KINDS: [&str; 6] = ["CPU", "GPU", "RAM", "Network", "Disk", "Clock"];
         let sigs: Vec<(&str, String)> = KINDS.iter().map(|k| (*k, self.tile_value_sig(k))).collect();
         let now = Instant::now();
         for (k, sig) in sigs {
