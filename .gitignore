@@ -7,3 +7,6 @@ dist/
 /build_output.txt
 /.run*.txt
 /fluxid-overnight.md
+
+# stray overnight logs (any naming)
+*-overnight.md
