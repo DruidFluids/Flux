@@ -9,7 +9,8 @@
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
-const API_URL: &str = "https://api.github.com/repos/DruidFluids/fluidmonitor-rs/releases/latest";
+// The public releases live on the original repo; fluidmonitor-rs is private.
+const API_URL: &str = "https://api.github.com/repos/DruidFluids/fluidMonitor/releases/latest";
 
 /// A newer release that passed version comparison and is ready to download.
 #[derive(Debug, Clone)]

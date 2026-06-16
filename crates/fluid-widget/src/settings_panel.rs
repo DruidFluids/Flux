@@ -1041,7 +1041,7 @@ pub fn view<'a>(
     };
     if let Some((ver, body, is_new)) = notes {
         let ver = ver.trim_start_matches('v');
-        let head = if is_new { format!("New version \u{2014} v{ver}") } else { format!("What's new in v{ver}") };
+        let head = if is_new { format!("New version \u{2014} v{ver}") } else { format!("Latest release \u{2014} v{ver}") };
         let head_col = if is_new { p.accent } else { p.text };
         updates_col = updates_col.push(Space::with_height(2));
         updates_col = updates_col.push(
