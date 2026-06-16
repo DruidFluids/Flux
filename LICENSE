@@ -1,28 +1,30 @@
-fluxid — All Rights Reserved
+fluxid — Personal Use License
 
 Copyright (c) 2026 Matt Hakes (DruidFluids)
 
-This source code is made publicly available for viewing, reference, and
-evaluation only. It is NOT open-source software.
+This software and its source code are made publicly available for viewing and
+are licensed — not sold — to you under the terms below. This is NOT open-source
+software.
 
-No license or permission is granted, expressly or by implication, to any person
-or entity to use, copy, modify, merge, publish, distribute, sublicense, sell,
-or create derivative works of this software or any portion of it, in source or
-binary form, for any purpose (commercial or non-commercial), except with the
-prior written permission of the copyright holder.
+YOU MAY:
+  - View and read the source code.
+  - Download, build, run, and use the software for your own use.
+  - Modify the source code for your own use.
 
-Permitted without prior permission:
-  - Viewing and reading the source code.
-  - Cloning the repository solely to read or build it locally for personal
-    evaluation.
-  - Submitting contributions back to this project (by submitting a contribution
-    you assign to the copyright holder the rights necessary to use it here).
+YOU MAY NOT, without the prior written permission of the copyright holder:
+  - Redistribute, publish, share, mirror, sublicense, or sell the software or
+    its source code — in whole or in part, original or modified, in source or
+    binary form — by any means.
+  - Make the software, or any modified or derivative version of it, available
+    to any third party.
 
-All other rights are reserved.
+All rights not expressly granted above are reserved by the copyright holder.
+No rights are granted to any contribution, and the copyright holder is under no
+obligation to accept, review, or incorporate any submitted change.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+CONNECTION WITH THE SOFTWARE OR ITS USE OR OTHER DEALINGS IN THE SOFTWARE.

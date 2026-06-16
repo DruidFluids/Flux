@@ -14,7 +14,7 @@ members = [
 version = "2.0.0"
 edition = "2021"
 authors = ["Matt Hakes"]
-license = "LicenseRef-AllRightsReserved"
+license = "LicenseRef-PersonalUse"
 repository = "https://github.com/DruidFluids/fluxid"
 
 [workspace.dependencies]

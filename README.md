@@ -11,7 +11,7 @@ Real-time CPU, GPU, RAM, network, and disk stats — always on your desktop, nev
 [![Release](https://img.shields.io/badge/release-v2.0.0-5898a0)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](#requirements)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20iced-dea584)](https://iced.rs)
-[![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-c0392b)](LICENSE)
+[![License](https://img.shields.io/badge/license-Personal%20Use-c0392b)](LICENSE)
 
 <br>
 
@@ -195,9 +195,9 @@ powershell -ExecutionPolicy Bypass -File scripts\Build-Setup.ps1
 
 ## License
 
-**All rights reserved.** © 2026 Matt Hakes (DruidFluids).
+**Personal Use License** — © 2026 Matt Hakes (DruidFluids). Source-available, **not** open-source.
 
-This source is published for viewing and personal evaluation — it is **not** open-source. You may read it and build it locally, but you may **not** use, copy, modify, redistribute, or sell it (in whole or in part) without prior written permission. See [`LICENSE`](LICENSE) for the exact terms.
+You **may** download, build, run, and **modify** fluxid for your own use. You **may not** redistribute it — publishing, sharing, mirroring, sublicensing, or selling the software or its source (original or modified, source or binary) requires prior written permission. See [`LICENSE`](LICENSE) for the exact terms.
 
 ---
 
