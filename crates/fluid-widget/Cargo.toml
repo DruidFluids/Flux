@@ -16,7 +16,7 @@ tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-fluid-sensor = { version = "2.0.0", path = "../fluid-sensor" }
+fluid-sensor = { version = "1.0.0", path = "../fluid-sensor" }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
