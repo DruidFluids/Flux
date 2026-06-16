@@ -87,6 +87,17 @@ fn primary_btn<'a>(label_text: &str, msg: Message, p: Palette) -> Element<'a, Me
         .on_press(msg).into()
 }
 
+/// Shared "Save and Close" footer — a hairline divider above a right-aligned
+/// primary button. Used by every Tools-tab popup so they're identical.
+fn save_close_footer<'a>(win_id: window::Id, p: Palette) -> Element<'a, Message> {
+    column![
+        container(Space::new(Length::Fill, 1))
+            .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(Color { a: 0.25, ..p.muted })), ..Default::default() }),
+        container(row![Space::with_width(Length::Fill), primary_btn("Save and Close", Message::ClosePopup(win_id), p)].align_y(iced::Alignment::Center))
+            .width(Length::Fill).padding(iced::Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 }),
+    ].into()
+}
+
 fn shell<'a>(title: &str, win_id: window::Id, p: Palette, body: Element<'a, Message>) -> Element<'a, Message> {
     // Match the Settings window's "Soft Premium" frame: a slightly darkened
     // window backdrop, a soft accent-tinted hairline border, and a large radius.
@@ -294,8 +305,7 @@ pub fn alerts_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id) -
 
     let body = column![
         scrollable(list).height(Length::Fill),
-        row![Space::with_width(Length::Fill), primary_btn("Save & Close", Message::ClosePopup(win_id), p)]
-            .padding(iced::Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 }),
+        save_close_footer(win_id, p),
     ];
     shell("Tile Alerts", win_id, p, body.into())
 }
@@ -413,8 +423,7 @@ pub fn game_mode_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id
 
     let body = column![
         scrollable(content).height(Length::Fill),
-        row![Space::with_width(Length::Fill), primary_btn("Save & Close", Message::ClosePopup(win_id), p)]
-            .padding(iced::Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 }),
+        save_close_footer(win_id, p),
     ];
     shell("Game Mode", win_id, p, body.into())
 }
@@ -649,10 +658,11 @@ pub fn utilities_view<'a>(blocklist: &'a text_editor::Content, status: &str, p: 
         ..Default::default()
     });
 
-    let body = scrollable(
+    let list = scrollable(
         column![ct, blocklist_card, disclaimer].spacing(8)
             .padding(iced::Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 0.0 })
     ).height(Length::Fill);
+    let body = column![list, save_close_footer(win_id, p)].height(Length::Fill);
     shell("Utilities", win_id, p, body.into())
 }
 
@@ -796,8 +806,10 @@ pub fn remote_view<'a>(
             .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
     ].spacing(6).align_y(iced::Alignment::Center));
 
-    let body = scrollable(col.padding(iced::Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 0.0 }))
-        .height(Length::Fill);
+    let body = column![
+        scrollable(col.padding(iced::Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 0.0 })).height(Length::Fill),
+        save_close_footer(win_id, p),
+    ].height(Length::Fill);
     shell("Remote Monitoring", win_id, p, body.into())
 }
 
@@ -1422,13 +1434,7 @@ pub fn picker_view<'a>(skins: bool, settings: &AppSettings, installed_open: bool
     let list = scrollable(container(col).padding(iced::Padding { top: 4.0, right: 8.0, bottom: 8.0, left: 0.0 }))
         .id(sid).height(Length::Fill);
     // Bottom bar: a "Save and Close" action (selections apply live as you click).
-    let divider = container(Space::new(Length::Fill, 1))
-        .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(Color { a: 0.25, ..p.muted })), ..Default::default() });
-    let footer = container(
-        row![Space::with_width(Length::Fill), primary_btn("Save and Close", Message::ClosePopup(win_id), p)]
-            .align_y(iced::Alignment::Center)
-    ).width(Length::Fill).padding(iced::Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 });
-    let body = column![list, divider, footer].height(Length::Fill);
+    let body = column![list, save_close_footer(win_id, p)].height(Length::Fill);
     shell(title, win_id, p, body.into())
 }
 
