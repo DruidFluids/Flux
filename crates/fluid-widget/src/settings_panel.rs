@@ -539,26 +539,32 @@ pub fn view<'a>(
         // Soft, custom-drawn expand chevron (rounded strokes, not a font glyph).
         let chev_col = if open { p.accent } else { p.muted };
         let lblcol = if open { p.accent } else { p.text };
-        // Drag handle: the grip dots + the tile label, spanning from the left
-        // edge to ~the middle — press and drag anywhere in here to reorder this
-        // row (and the widget tile). Expand/collapse lives on the chevron.
-        let drag_handle = crate::style::with_tip(
-            mouse_area(
-                container(
-                    row![
-                        crate::style::drag_grip(if is_dragging { p.accent } else { p.muted }, 16.0),
-                        Space::with_width(10),
-                        text(name.to_string()).size(13).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
-                            .style(move |_| iced::widget::text::Style { color: Some(lblcol) }),
-                    ].align_y(iced::Alignment::Center)
-                )
-                .width(Length::FillPortion(2))
-                .padding(iced::Padding { top: 10.0, right: 4.0, bottom: 10.0, left: 6.0 })
-                .center_y(Length::Fill)
-            )
-            .interaction(iced::mouse::Interaction::Grab)
-            .on_press(Message::StartTileDrag(name.to_string())),
-            "Drag to reorder", p);
+        // Drag band: the grip dots + label + the Shown/Hidden chip, spanning the
+        // whole left region up to the "|" separator. The band is a drag layer;
+        // the chip is overlaid on top of it via a stack, so clicking the chip
+        // still toggles visibility while dragging works everywhere else.
+        // Expand/collapse lives on the chevron.
+        let band_content = container(
+            row![
+                crate::style::drag_grip(if is_dragging { p.accent } else { p.muted }, 16.0),
+                Space::with_width(10),
+                text(name.to_string()).size(13).font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                    .style(move |_| iced::widget::text::Style { color: Some(lblcol) }),
+                Space::with_width(Length::Fill),
+                crate::style::with_tip(vis_chip(vis, name.to_string()), if vis { "Hide this tile" } else { "Show this tile" }, p),
+                Space::with_width(10),
+            ].align_y(iced::Alignment::Center)
+        )
+        .width(Length::Fill)
+        .padding(iced::Padding { top: 10.0, right: 4.0, bottom: 10.0, left: 6.0 });
+        let drag_handle = stack![
+            // Base drag layer — captures presses anywhere the content above
+            // doesn't (i.e. everywhere except the chip button).
+            mouse_area(container(Space::new(Length::Fill, Length::Fill)))
+                .interaction(iced::mouse::Interaction::Grab)
+                .on_press(Message::StartTileDrag(name.to_string())),
+            band_content,
+        ];
         let chev_btn = crate::style::with_tip(
             button(crate::style::expand_chevron(open, chev_col, 18.0))
                 .padding(iced::Padding { top: 7.0, right: 9.0, bottom: 7.0, left: 9.0 })
@@ -574,10 +580,6 @@ pub fn view<'a>(
             });
         let header = container(row![
             drag_handle,
-            // Dead space between the drag handle (~middle) and the right controls.
-            Space::with_width(Length::FillPortion(1)),
-            crate::style::with_tip(vis_chip(vis, name.to_string()), if vis { "Hide this tile" } else { "Show this tile" }, p),
-            Space::with_width(10),
             sep,
             Space::with_width(4),
             chev_btn,
@@ -1222,7 +1224,9 @@ pub fn view<'a>(
         .padding(iced::Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 8.0 })
         .style(move |_| iced::widget::container::Style {
             background: Some(iced::Background::Color(iced::Color { a: 0.07, ..p.accent })),
-            border: Border { radius: iced::border::Radius { top_left: crate::style::win_radius(18.0), top_right: crate::style::win_radius(18.0), bottom_right: 0.0, bottom_left: 0.0 }, ..Border::default() },
+            // Match the window's outer corner radius (20) so the caption fills
+            // right into the rounded corner with no window-bg wedge showing.
+            border: Border { radius: iced::border::Radius { top_left: crate::style::win_radius(20.0), top_right: crate::style::win_radius(20.0), bottom_right: 0.0, bottom_left: 0.0 }, ..Border::default() },
             ..Default::default()
         })
     ).on_press(Message::DragWindow(win_id));
