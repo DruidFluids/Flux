@@ -364,11 +364,33 @@ mod imp {
     /// blocks an in-place self-update — the caller must stop it first (needs
     /// elevation), which is why `run_apply_cli` relaunches elevated in that case.
     pub fn sensor_service_running() -> bool {
+        sc_query_contains("RUNNING")
+    }
+
+    /// True when the sensor service is REGISTERED (any state — running or stopped).
+    /// An update must restart it whenever it exists, not only when it's currently
+    /// running; otherwise a service that stopped once (e.g. killed during a prior
+    /// update) never gets started again and CPU temp stays broken.
+    pub fn sensor_service_exists() -> bool {
+        // `sc query` errors with 1060 only when the service doesn't exist.
         Command::new("sc")
             .args(["query", "FluxSensorService"])
             .creation_flags(CREATE_NO_WINDOW)
             .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).contains("RUNNING"))
+            .map(|o| {
+                let out = String::from_utf8_lossy(&o.stdout);
+                let err = String::from_utf8_lossy(&o.stderr);
+                out.contains("SERVICE_NAME") && !err.contains("1060") && !out.contains("1060")
+            })
+            .unwrap_or(false)
+    }
+
+    fn sc_query_contains(needle: &str) -> bool {
+        Command::new("sc")
+            .args(["query", "FluxSensorService"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains(needle))
             .unwrap_or(false)
     }
 
@@ -480,14 +502,19 @@ mod imp {
         // first (we've been relaunched elevated for this when needed — see
         // run_apply_cli), then restart it after the new exe is in place so CPU
         // temperature keeps working. Stopping it also avoids a sharing violation.
-        let restart_service = sensor_service_running();
-        if restart_service {
+        // Restart the service whenever it's REGISTERED (not only when running), so
+        // a service that was previously left stopped gets brought back by the
+        // update. Stop it cleanly and wait until it's fully STOPPED before the
+        // overwrite, so kill_running_widget below doesn't force-kill a live service
+        // process (which left it dead with exit 1067 and confused the SCM).
+        let restart_service = sensor_service_exists();
+        if sensor_service_running() {
             let _ = Command::new("sc")
                 .args(["stop", "FluxSensorService"])
                 .creation_flags(CREATE_NO_WINDOW)
                 .status();
-            for _ in 0..30 {
-                if !sensor_service_running() {
+            for _ in 0..50 {
+                if sc_query_contains("STOPPED") {
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
@@ -511,14 +538,35 @@ mod imp {
             .map_err(|e| err(format!("write {}: {e}", exe.display())))?;
         rep.step(format!("Installed {EXE_NAME}"));
 
-        // Restart the sensor service we stopped above (now pointing at the new
-        // flux.exe), so CPU temperature resumes without waiting for a reboot.
+        // (Re)start the registered sensor service (now pointing at the new
+        // flux.exe) and CONFIRM it reaches RUNNING — retrying once, since a start
+        // immediately after overwriting the exe can race a virus scan. Without the
+        // confirm, the service could be left stopped and CPU temp would silently
+        // break until the next update.
         if restart_service {
-            let _ = Command::new("sc")
-                .args(["start", "FluxSensorService"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .status();
-            rep.step("Restarted sensor service".to_string());
+            let mut started = false;
+            for attempt in 0..2 {
+                let _ = Command::new("sc")
+                    .args(["start", "FluxSensorService"])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .status();
+                for _ in 0..50 {
+                    if sensor_service_running() {
+                        started = true;
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                if started {
+                    break;
+                }
+                let _ = attempt;
+            }
+            rep.step(if started {
+                "Restarted sensor service".to_string()
+            } else {
+                "Sensor service will start on next reboot".to_string()
+            });
         }
 
         // 2. Copy ourselves in as the uninstaller.
@@ -777,6 +825,9 @@ mod imp {
     pub fn sensor_service_running() -> bool {
         false
     }
+    pub fn sensor_service_exists() -> bool {
+        false
+    }
     pub fn relaunch_elevated_wait(_args: &[String]) -> Result<Option<i32>> {
         Err(err("The Flux installer is Windows-only."))
     }
@@ -795,6 +846,6 @@ mod imp {
 }
 
 pub use imp::{
-    install, install_dir, is_elevated, launch, relaunch_elevated_wait, sensor_service_running,
+    install, install_dir, is_elevated, launch, relaunch_elevated_wait, sensor_service_exists, sensor_service_running,
     uninstall,
 };

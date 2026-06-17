@@ -92,13 +92,13 @@ mod cli {
 /// explicit set of flags so there is no ambiguity for the elevated worker — and
 /// it passes `--no-launch` so the worker never starts the widget elevated.
 fn run_apply_cli(args: &[String]) -> i32 {
-    // If the CPU-sensor service is running it holds flux.exe open (it runs
-    // flux.exe --sensor-service as LocalSystem), and only an elevated process
-    // can stop it. A non-elevated self-update would fail with a sharing
-    // violation, so relaunch elevated (one UAC) and let that worker stop the
-    // service, overwrite the exe, and restart it. Already-elevated workers
-    // (and machines without the service) fall straight through.
-    if engine::sensor_service_running() && !engine::is_elevated() {
+    // If the CPU-sensor service is INSTALLED, the update must manage it under
+    // elevation: a running service holds flux.exe open (overwrite would fail), and
+    // even a stopped-but-registered service has to be (re)started afterward — and
+    // stopping/starting a LocalSystem service requires admin. So relaunch elevated
+    // (one UAC) whenever the service exists. Already-elevated workers (and machines
+    // without the service) fall straight through.
+    if engine::sensor_service_exists() && !engine::is_elevated() {
         return match engine::relaunch_elevated_wait(args) {
             Ok(Some(code)) => code,
             Ok(None) => 1, // user declined the UAC prompt
