@@ -3,10 +3,8 @@ resolver = "2"
 members = [
     "crates/flux-core",
     "crates/flux-sensor",
-    "crates/flux-ipc",
     "crates/flux-remote",
     "crates/flux-widget",
-    "crates/flux-service",
     "crates/flux-setup",
 ]
 

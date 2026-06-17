@@ -9,7 +9,6 @@ path = "src/main.rs"
 
 [dependencies]
 flux-core = { path = "../flux-core" }
-flux-ipc = { path = "../flux-ipc" }
 flux-remote = { path = "../flux-remote" }
 iced = { workspace = true }
 tokio = { workspace = true }

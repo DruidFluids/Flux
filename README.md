@@ -167,12 +167,11 @@ Flux is a single executable — no background service, no runtime to install.
 
 | Crate | What it is |
 |-------|------------|
-| `flux-widget` | The widget app (binary `Flux`). |
+| `flux-widget` | The widget app (binary `flux`). |
 | `flux-sensor` | Hardware polling — sysinfo, NVML for NVIDIA, optional PawnIO for CPU temp. |
 | `flux-core` | Shared settings and types. |
-| `flux-ipc` / `flux-remote` | Local IPC and remote-monitoring transport (TLS). |
+| `flux-remote` | Remote-monitoring transport (TLS). |
 | `flux-setup` | The self-contained installer (binary `flux-setup`). |
-| `flux-service` | Optional standalone sensor service. |
 
 ---
 
