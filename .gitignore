@@ -10,3 +10,12 @@ dist/
 
 # stray overnight logs (any naming)
 *-overnight.md
+
+# Claude / AI-assistant + internal dev docs — keep out of the public repo
+CLAUDE.md
+.claude/
+.cursor/
+/NOTES.md
+/POLISH_AUDIT.md
+/SESSION_LOG.md
+/docs/RELEASE_TEMPLATE.md
