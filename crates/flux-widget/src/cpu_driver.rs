@@ -69,6 +69,21 @@ pub fn is_installed() -> bool {
     version().is_some()
 }
 
+/// True when CPU temperature is actually available end-to-end: the PawnIO driver
+/// is installed AND the elevated sensor service that publishes it is running.
+/// This is what the UI's "Active" state should reflect — a driver with no
+/// running service can't feed the non-elevated widget.
+pub fn is_active() -> bool {
+    #[cfg(windows)]
+    {
+        is_installed() && crate::sensor_service::is_running()
+    }
+    #[cfg(not(windows))]
+    {
+        is_installed()
+    }
+}
+
 /// The installed driver's `DisplayVersion`, if present.
 #[cfg(target_os = "windows")]
 pub fn version() -> Option<String> {
@@ -110,8 +125,28 @@ async fn download_installer() -> Result<Vec<u8>, String> {
 /// Opt-in install: download → verify signature → silent elevated install. The
 /// one UAC prompt fires when the installer launches with the `runas` verb.
 pub async fn install() -> Outcome {
-    if is_installed() {
-        return Outcome::ok(InstallResult::AlreadyPresent);
+    // The sensor SERVICE is what lets the non-elevated widget read the temp, so
+    // "already installed" means BOTH the PawnIO driver and the service. A user
+    // who installed PawnIO under an older build needs only the service added.
+    #[cfg(windows)]
+    {
+        let pawnio = is_installed();
+        let service = crate::sensor_service::is_running();
+        if pawnio && service {
+            return Outcome::ok(InstallResult::AlreadyPresent);
+        }
+        if pawnio && !service {
+            return tokio::task::spawn_blocking(install_service_only)
+                .await
+                .unwrap_or_else(|_| Outcome::failed("Internal error during service setup."));
+        }
+        // PawnIO missing → fall through to the full download + install.
+    }
+    #[cfg(not(windows))]
+    {
+        if is_installed() {
+            return Outcome::ok(InstallResult::AlreadyPresent);
+        }
     }
     let bytes = match download_installer().await {
         Ok(b) => b,
@@ -148,8 +183,18 @@ fn install_blocking(path: PathBuf) -> Outcome {
         ));
     }
 
-    // 2. Silent elevated install. "-install -silent" are PawnIO's own switches.
-    match run_elevated_wait(&path, "-install -silent") {
+    // 2. One elevated step (one UAC): re-enter flux.exe elevated to run the
+    //    (now verified) PawnIO installer AND register the sensor service. The
+    //    service is what lets the non-elevated widget read the temperature.
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(e) => {
+            try_delete(&path);
+            return Outcome::failed(format!("Could not locate the Flux executable: {e}"));
+        }
+    };
+    let params = format!("--install-sensor-service --pawnio \"{}\"", path.display());
+    match run_elevated_wait(&exe, &params) {
         Ok(true) => {}
         Ok(false) => {
             try_delete(&path);
@@ -170,29 +215,63 @@ fn install_blocking(path: PathBuf) -> Outcome {
     }
 }
 
+/// PawnIO is already installed; just register + start the sensor service (one
+/// UAC), for users who installed the driver under a pre-service build.
+#[cfg(target_os = "windows")]
+fn install_service_only() -> Outcome {
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(e) => return Outcome::failed(format!("Could not locate the Flux executable: {e}")),
+    };
+    match run_elevated_wait(&exe, "--install-sensor-service") {
+        Ok(true) => Outcome::ok(InstallResult::Installed),
+        Ok(false) => Outcome::ok(InstallResult::Cancelled),
+        Err(e) => Outcome::failed(e),
+    }
+}
+
+/// Elevated re-entry (`flux.exe --install-sensor-service [--pawnio <path>]`):
+/// run the already-verified PawnIO installer (if given), then register + start
+/// the sensor service. Returns a process exit code. Windows only.
+#[cfg(target_os = "windows")]
+pub fn run_elevated_install(pawnio_installer: Option<PathBuf>) -> i32 {
+    if let Some(p) = pawnio_installer {
+        let _ = std::process::Command::new(&p)
+            .args(["-install", "-silent"])
+            .status();
+    }
+    match crate::sensor_service::install() {
+        Ok(()) => 0,
+        Err(_) => 1,
+    }
+}
+
+/// Elevated re-entry (`flux.exe --uninstall-sensor-service`): remove the sensor
+/// service, then run the PawnIO uninstaller. Returns a process exit code.
+#[cfg(target_os = "windows")]
+pub fn run_elevated_uninstall() -> i32 {
+    let _ = crate::sensor_service::uninstall();
+    if let Some(cmd) = uninstall_command() {
+        let (exe, args) = split_uninstall_command(&cmd);
+        // Already elevated here, so run it directly (no runas) and wait.
+        let mut c = std::process::Command::new(&exe);
+        for a in args {
+            c.arg(a);
+        }
+        let _ = c.status();
+    }
+    0
+}
+
 #[cfg(target_os = "windows")]
 fn uninstall_blocking() -> Outcome {
-    let cmd = match uninstall_command() {
-        Some(c) if !c.trim().is_empty() => c,
-        _ => return Outcome::failed("Could not locate the driver's uninstaller."),
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(e) => return Outcome::failed(format!("Could not locate the Flux executable: {e}")),
     };
-
-    // UninstallString may be `"C:\path\unins.exe" /flags`. Split exe from args.
-    let (exe, mut args) = if let Some(rest) = cmd.strip_prefix('"') {
-        match rest.find('"') {
-            Some(end) => (rest[..end].to_string(), rest[end + 1..].trim().to_string()),
-            None => (cmd.clone(), String::new()),
-        }
-    } else if let Some(sp) = cmd.find(' ') {
-        (cmd[..sp].to_string(), cmd[sp + 1..].trim().to_string())
-    } else {
-        (cmd.clone(), String::new())
-    };
-    if !args.to_lowercase().contains("silent") {
-        args = format!("-uninstall -silent {args}").trim().to_string();
-    }
-
-    match run_elevated_wait(Path::new(&exe), &args) {
+    // One elevated step (one UAC): re-enter flux.exe elevated to remove the
+    // sensor service AND run the PawnIO uninstaller.
+    match run_elevated_wait(&exe, "--uninstall-sensor-service") {
         Ok(true) => {}
         Ok(false) => return Outcome::ok(InstallResult::Cancelled),
         Err(e) => return Outcome::failed(e),
@@ -204,6 +283,29 @@ fn uninstall_blocking() -> Outcome {
         // State changed OK — reuse Installed to mean "the requested change took".
         Outcome::ok(InstallResult::Installed)
     }
+}
+
+/// Split an UninstallString (`"C:\path\unins.exe" /flags` or `exe args`) into
+/// the executable and an argument list, ensuring a silent uninstall.
+#[cfg(target_os = "windows")]
+fn split_uninstall_command(cmd: &str) -> (String, Vec<String>) {
+    let (exe, rest) = if let Some(r) = cmd.strip_prefix('"') {
+        match r.find('"') {
+            Some(end) => (r[..end].to_string(), r[end + 1..].trim().to_string()),
+            None => (cmd.to_string(), String::new()),
+        }
+    } else if let Some(sp) = cmd.find(' ') {
+        (cmd[..sp].to_string(), cmd[sp + 1..].trim().to_string())
+    } else {
+        (cmd.to_string(), String::new())
+    };
+    let mut args: Vec<String> = rest.split_whitespace().map(|s| s.to_string()).collect();
+    if !rest.to_lowercase().contains("silent") {
+        let mut a = vec!["-uninstall".to_string(), "-silent".to_string()];
+        a.append(&mut args);
+        args = a;
+    }
+    (exe, args)
 }
 
 #[cfg(target_os = "windows")]

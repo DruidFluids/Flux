@@ -19,6 +19,21 @@ pub fn refresh_cpu_temp_driver() {
     pawnio::reset();
 }
 
+/// Read CPU die temperature directly from PawnIO. This requires an **elevated**
+/// process, so it's used by the Flux sensor service (which publishes the value
+/// for the non-elevated widget via `flux_core::sensor_ipc`). Returns `None` off
+/// Windows or when PawnIO is unavailable/inaccessible.
+pub fn privileged_cpu_temp() -> Option<f32> {
+    #[cfg(windows)]
+    {
+        pawnio::cpu_temp()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum GpuBackend {
     Nvml,
@@ -616,8 +631,19 @@ impl SensorPoller {
 
         #[cfg(windows)]
         {
-            // Most accurate + self-contained: the user-installed PawnIO driver
-            // (reads the CPU's own thermal MSR/SMN registers directly).
+            // Preferred: the elevated Flux sensor service publishes the PawnIO
+            // reading here, so the (non-elevated) widget needn't run as admin.
+            if let Some(r) = flux_core::sensor_ipc::read() {
+                if flux_core::sensor_ipc::now_unix().saturating_sub(r.updated_unix)
+                    <= flux_core::sensor_ipc::FRESH_SECS
+                {
+                    if let Some(t) = r.cpu_temp {
+                        return Some(t);
+                    }
+                }
+            }
+            // Direct read — works when the widget itself is elevated (run as
+            // admin) or when no service is installed.
             if let Some(t) = pawnio::cpu_temp() {
                 return Some(t);
             }

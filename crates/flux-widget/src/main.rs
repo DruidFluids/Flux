@@ -16,6 +16,8 @@ mod hotkeys;
 mod updates;
 mod firewall;
 mod cpu_driver;
+#[cfg(windows)]
+mod sensor_service;
 
 use flux_core::sensor_data::SensorSnapshot;
 use flux_core::settings::{AppSettings, Orientation, SnapPosition, TempUnit, WarnMetric};
@@ -40,6 +42,30 @@ const WIDGET_TITLE: &str = "Flux Widget";
 const DEFAULT_TITLE: &str = "Flux";
 
 fn main() -> iced::Result {
+    // Service + elevated-setup entry points (Windows). These run before any GUI
+    // init and exit immediately — they never start the iced daemon.
+    #[cfg(windows)]
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if args.iter().any(|a| a == sensor_service::SERVICE_ARG) {
+            // Launched by the Service Control Manager as the sensor service.
+            let _ = sensor_service::run();
+            std::process::exit(0);
+        }
+        if args.iter().any(|a| a == "--install-sensor-service") {
+            // Re-entry, run elevated by cpu_driver: install PawnIO + the service.
+            let pawnio = args
+                .iter()
+                .position(|a| a == "--pawnio")
+                .and_then(|i| args.get(i + 1))
+                .map(std::path::PathBuf::from);
+            std::process::exit(cpu_driver::run_elevated_install(pawnio));
+        }
+        if args.iter().any(|a| a == "--uninstall-sensor-service") {
+            std::process::exit(cpu_driver::run_elevated_uninstall());
+        }
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
@@ -821,7 +847,7 @@ impl App {
             add_device_open: false,
             new_device_name: String::new(), new_device_ip: String::new(), new_device_key: String::new(),
             device_test_status: String::new(), device_test_ok: false,
-            cpu_driver_installed: cpu_driver::is_installed(),
+            cpu_driver_installed: cpu_driver::is_active(),
             cpu_dialog: CpuDriverStage::Primary,
             widget_device: None,
             tiles_section: None,
@@ -1517,7 +1543,7 @@ impl App {
             Message::OpenRemote => self.open_popup(WindowKind::Remote, popups::REMOTE_SIZE),
             // ── Optional CPU sensor driver (PawnIO) ──
             Message::OpenCpuDriver => {
-                self.cpu_driver_installed = cpu_driver::is_installed();
+                self.cpu_driver_installed = cpu_driver::is_active();
                 self.cpu_dialog = CpuDriverStage::Primary;
                 self.open_popup(WindowKind::CpuDriver, popups::CPU_DRIVER_SIZE)
             }
@@ -1653,7 +1679,7 @@ impl App {
                 Task::perform(cpu_driver::uninstall(), Message::CpuDriverUninstallDone)
             }
             Message::CpuDriverInstallDone(outcome) => {
-                self.cpu_driver_installed = cpu_driver::is_installed();
+                self.cpu_driver_installed = cpu_driver::is_active();
                 // Re-probe sensors so a just-installed driver lights up the CPU
                 // temperature without an app restart (C# RecheckSensors parity).
                 flux_sensor::refresh_cpu_temp_driver();
@@ -1677,7 +1703,7 @@ impl App {
                 Task::none()
             }
             Message::CpuDriverUninstallDone(outcome) => {
-                self.cpu_driver_installed = cpu_driver::is_installed();
+                self.cpu_driver_installed = cpu_driver::is_active();
                 flux_sensor::refresh_cpu_temp_driver();
                 self.cpu_dialog = match outcome.result {
                     cpu_driver::InstallResult::Installed | cpu_driver::InstallResult::AlreadyPresent =>
