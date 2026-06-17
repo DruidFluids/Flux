@@ -144,6 +144,7 @@ pub fn view<'a>(
     appearance_status: String,
     update: UpdateView,
     cpu_driver_installed: bool,
+    cpu_pawnio_installed: bool,
     tiles_open: Option<String>,
     preset_arming: Option<u8>,
     undo_accent: Option<iced::Color>,
@@ -273,8 +274,16 @@ pub fn view<'a>(
     // row and the Sensors-tab section).
     let driver_green = iced::Color::from_rgb(0.30, 0.78, 0.45);
     let driver_red = iced::Color::from_rgb(0.86, 0.30, 0.25);
-    let status_color = if cpu_driver_installed { driver_green } else { driver_red };
-    let status_label = if cpu_driver_installed { "Active" } else { "Inactive" };
+    let driver_amber = iced::Color::from_rgb(0.95, 0.66, 0.23);
+    // Three states: fully working (green), driver present but service not set up
+    // (amber — one click away), or not installed (red).
+    let (status_color, status_label) = if cpu_driver_installed {
+        (driver_green, "Active")
+    } else if cpu_pawnio_installed {
+        (driver_amber, "Setup needed")
+    } else {
+        (driver_red, "Inactive")
+    };
     let driver_status: Element<'a, Message> = button(
         text(status_label).size(11).style(move |_| iced::widget::text::Style { color: Some(status_color) })
     )
@@ -501,12 +510,23 @@ pub fn view<'a>(
         border: Border { radius: 5.0.into(), width: 1.0, color: iced::Color { a: 0.5, ..status_color } },
         ..Default::default()
     });
-    let driver_btn_label = if cpu_driver_installed { "Manage / Remove" } else { "Install driver" };
+    let driver_btn_label = if cpu_driver_installed {
+        "Manage / Remove"
+    } else if cpu_pawnio_installed {
+        "Enable CPU temp"
+    } else {
+        "Install driver"
+    };
+    let driver_desc = if cpu_pawnio_installed && !cpu_driver_installed {
+        "Driver installed \u{2014} enable the background service (one quick admin step) so Flux can read the temperature while running normally."
+    } else {
+        "Reads the CPU's die temperature directly. Flux downloads the official signed PawnIO driver, verifies its signature, and installs it on request \u{2014} the rest of the widget works without it."
+    };
     let cpu_driver = column![
         text("Temperature driver (optional)").size(11)
             .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
             .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-        text("Reads the CPU's die temperature directly. Flux downloads the official signed PawnIO driver, verifies its signature, and installs it on request \u{2014} the rest of the widget works without it.")
+        text(driver_desc.to_string())
             .size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         Space::with_height(4),
         row![

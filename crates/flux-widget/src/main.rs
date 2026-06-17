@@ -661,7 +661,11 @@ struct App {
     device_test_status: String,
     device_test_ok: bool,
     // ── Optional CPU sensor driver (PawnIO) ──
+    // `cpu_driver_installed` is the END-TO-END state (driver + service running);
+    // `cpu_pawnio_installed` is just whether the PawnIO driver is present, so the
+    // UI can distinguish "needs the one-click service setup" from "not installed".
     cpu_driver_installed: bool,
+    cpu_pawnio_installed: bool,
     cpu_dialog: CpuDriverStage,
     // Which device the widget is showing: None = this PC, Some(id) = a remote.
     widget_device: Option<String>,
@@ -848,6 +852,7 @@ impl App {
             new_device_name: String::new(), new_device_ip: String::new(), new_device_key: String::new(),
             device_test_status: String::new(), device_test_ok: false,
             cpu_driver_installed: cpu_driver::is_active(),
+            cpu_pawnio_installed: cpu_driver::is_installed(),
             cpu_dialog: CpuDriverStage::Primary,
             widget_device: None,
             tiles_section: None,
@@ -1544,6 +1549,7 @@ impl App {
             // ── Optional CPU sensor driver (PawnIO) ──
             Message::OpenCpuDriver => {
                 self.cpu_driver_installed = cpu_driver::is_active();
+                self.cpu_pawnio_installed = cpu_driver::is_installed();
                 self.cpu_dialog = CpuDriverStage::Primary;
                 self.open_popup(WindowKind::CpuDriver, popups::CPU_DRIVER_SIZE)
             }
@@ -1680,6 +1686,7 @@ impl App {
             }
             Message::CpuDriverInstallDone(outcome) => {
                 self.cpu_driver_installed = cpu_driver::is_active();
+                self.cpu_pawnio_installed = cpu_driver::is_installed();
                 // Re-probe sensors so a just-installed driver lights up the CPU
                 // temperature without an app restart (C# RecheckSensors parity).
                 flux_sensor::refresh_cpu_temp_driver();
@@ -1704,6 +1711,7 @@ impl App {
             }
             Message::CpuDriverUninstallDone(outcome) => {
                 self.cpu_driver_installed = cpu_driver::is_active();
+                self.cpu_pawnio_installed = cpu_driver::is_installed();
                 flux_sensor::refresh_cpu_temp_driver();
                 self.cpu_dialog = match outcome.result {
                     cpu_driver::InstallResult::Installed | cpu_driver::InstallResult::AlreadyPresent =>
@@ -2636,7 +2644,7 @@ impl App {
                     let e = t.elapsed().as_secs_f32();
                     if e < 0.9 { 1.0 } else { ((1.8 - e) / 0.9).clamp(0.0, 1.0) }
                 }).unwrap_or(0.0);
-                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), update, self.cpu_driver_installed, self.tiles_section.clone(), self.preset_arming, self.appearance_undo.last().map(|a| style::parse_hex(&a.accent, p.accent)), self.share_dialog.clone(), copied_opacity, self.settings.tile_order.clone(), self.tile_drag.as_ref().map(|d| (d.name.clone(), d.gap_anim, d.cursor_y)))
+                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), update, self.cpu_driver_installed, self.cpu_pawnio_installed, self.tiles_section.clone(), self.preset_arming, self.appearance_undo.last().map(|a| style::parse_hex(&a.accent, p.accent)), self.share_dialog.clone(), copied_opacity, self.settings.tile_order.clone(), self.tile_drag.as_ref().map(|d| (d.name.clone(), d.gap_anim, d.cursor_y)))
             }
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id, self.editing_warn_color.as_deref()),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id, self.capturing_hotkey == Some(hotkeys::HotkeyTarget::GameMode)),
@@ -2670,7 +2678,7 @@ impl App {
                     .and_then(|cid| self.settings.remote_devices.iter().find(|d| &d.id == cid));
                 popups::popout_config_view(dev, p, id, self.editing_warn_color.as_deref())
             }
-            WindowKind::CpuDriver => popups::cpu_driver_view(&self.cpu_dialog, self.cpu_driver_installed, p, id),
+            WindowKind::CpuDriver => popups::cpu_driver_view(&self.cpu_dialog, self.cpu_driver_installed, self.cpu_pawnio_installed, p, id),
             WindowKind::Picker => popups::picker_view(self.picker_skins, &self.settings, self.theme_picker_installed_open, &self.theme_picker_open_games, p, id),
             WindowKind::ConfirmDelete => popups::confirm_delete_view(self.confirm_delete_slot, p, id),
             WindowKind::WidgetMenu => popups::widget_menu_view(p),

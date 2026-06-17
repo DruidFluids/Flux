@@ -639,6 +639,7 @@ pub const CPU_DRIVER_SIZE: iced::Size = iced::Size::new(470.0, 420.0);
 pub fn cpu_driver_view<'a>(
     stage: &crate::CpuDriverStage,
     installed: bool,
+    pawnio_installed: bool,
     p: Palette,
     win_id: window::Id,
 ) -> Element<'a, Message> {
@@ -670,6 +671,22 @@ pub fn cpu_driver_view<'a>(
                 ibtn("Remove driver", Message::CpuDriverUninstall),
                 Space::with_width(Length::Fill),
                 primary_btn("Close", Message::ClosePopup(win_id), p),
+            ].align_y(iced::Alignment::Center),
+        ].spacing(6).height(Length::Fill).into(),
+
+        // PawnIO is already installed, but the background service that feeds the
+        // non-elevated widget isn't set up yet (e.g. after updating from a build
+        // that ran elevated). One quick admin step enables it — no re-download.
+        S::Primary if pawnio_installed => column![
+            heading("Enable CPU temperature", p.accent),
+            para("The PawnIO sensor driver is already installed. To read the temperature while Flux runs normally (no admin), Flux sets up a small background service that does the privileged read for it."),
+            Space::with_height(4),
+            muted("You'll see one Windows permission prompt to set up the service. After that it starts automatically on boot \u{2014} Flux itself never needs to run as administrator."),
+            Space::with_height(Length::Fill),
+            row![
+                ibtn("Cancel", Message::ClosePopup(win_id)),
+                Space::with_width(Length::Fill),
+                primary_btn("Enable", Message::CpuDriverInstall, p),
             ].align_y(iced::Alignment::Center),
         ].spacing(6).height(Length::Fill).into(),
 
