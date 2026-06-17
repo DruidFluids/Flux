@@ -237,22 +237,27 @@ pub fn field_bg(p: Palette) -> Color {
 /// Themed slider style (accent rail + accent handle), matching the settings
 /// sliders. For standalone `slider()` calls outside `marked_slider`.
 pub fn slider_style(p: Palette) -> impl Fn(&iced::Theme, iced::widget::slider::Status) -> iced::widget::slider::Style + Copy {
-    use iced::widget::slider::{Handle, HandleShape, Rail, Style};
-    move |_t, _s| Style {
-        rail: Rail {
-            backgrounds: (
-                iced::Background::Color(p.accent),
-                iced::Background::Color(Color { a: p.muted.a * 0.25, ..p.muted }),
-            ),
-            width: 2.0,
-            border: iced::Border { radius: 1.0.into(), width: 0.0, color: Color::TRANSPARENT },
-        },
-        handle: Handle {
-            shape: HandleShape::Circle { radius: 6.0 },
-            background: iced::Background::Color(p.accent),
-            border_width: 2.0,
-            border_color: p.bg,
-        },
+    use iced::widget::slider::{Handle, HandleShape, Rail, Status, Style};
+    move |_t, s| {
+        // Premium-glow: thick accent-filled rail, a bright bead thumb with a
+        // translucent accent halo ring that brightens + grows on hover/drag.
+        let hot = matches!(s, Status::Hovered | Status::Dragged);
+        Style {
+            rail: Rail {
+                backgrounds: (
+                    iced::Background::Color(if hot { lerp(p.accent, Color::WHITE, 0.18) } else { p.accent }),
+                    iced::Background::Color(Color { a: 0.22, ..p.muted }),
+                ),
+                width: 5.0,
+                border: iced::Border { radius: 2.5.into(), width: 0.0, color: Color::TRANSPARENT },
+            },
+            handle: Handle {
+                shape: HandleShape::Circle { radius: if hot { 8.5 } else { 7.0 } },
+                background: iced::Background::Color(lerp(p.accent, Color::WHITE, 0.6)),
+                border_width: if hot { 5.0 } else { 3.0 },
+                border_color: Color { a: if hot { 0.65 } else { 0.4 }, ..p.accent },
+            },
+        }
     }
 }
 
@@ -339,12 +344,13 @@ pub fn pick_list_style(p: Palette) -> impl Fn(&iced::Theme, iced::widget::pick_l
         iced::widget::pick_list::Style {
             text_color: p.text,
             placeholder_color: p.muted,
-            handle_color: p.muted,
+            handle_color: if hover { p.accent } else { p.muted },
             background: iced::Background::Color(bg),
+            // Premium-glow: brighter, thicker accent ring on hover/open.
             border: iced::Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: if hover { p.accent } else { Color { a: 0.4, ..p.muted } },
+                radius: 6.0.into(),
+                width: if hover { 2.0 } else { 1.0 },
+                color: if hover { lerp(p.accent, Color::WHITE, 0.1) } else { Color { a: 0.4, ..p.muted } },
             },
         }
     }
@@ -357,10 +363,11 @@ pub fn dark_input_style(p: Palette) -> impl Fn(&iced::Theme, iced::widget::text_
         let focused = matches!(status, iced::widget::text_input::Status::Focused);
         iced::widget::text_input::Style {
             background: iced::Background::Color(bg),
+            // Premium-glow: a brighter, thicker accent ring on focus.
             border: iced::Border {
-                radius: 4.0.into(),
-                width: 1.0,
-                color: if focused { p.accent } else { Color { a: 0.4, ..p.muted } },
+                radius: 6.0.into(),
+                width: if focused { 2.0 } else { 1.0 },
+                color: if focused { lerp(p.accent, Color::WHITE, 0.1) } else { Color { a: 0.4, ..p.muted } },
             },
             icon: p.muted,
             placeholder: Color { a: 0.6, ..p.muted },
@@ -476,13 +483,28 @@ pub fn toggler_style(p: Palette) -> impl Fn(&iced::Theme, iced::widget::toggler:
             status,
             Status::Active { is_toggled: true } | Status::Hovered { is_toggled: true }
         );
+        let hovered = matches!(status, Status::Hovered { .. });
+        // LED capsule: a recessed dark groove the bead slides in; the bead itself
+        // is the "LED" — dim grey when off, a white-hot core with an accent halo
+        // ring when on (the halo brightens on hover).
+        let track = if on { Color { a: 0.28, ..p.accent } } else { Color { a: 0.40, ..p.muted } };
+        let bead = if on {
+            lerp(p.accent, Color::WHITE, if hovered { 0.7 } else { 0.55 }) // white-hot LED core
+        } else {
+            Color { a: 0.85, ..p.muted } // dim grey bead
+        };
         Style {
-            background: if on { p.accent } else { Color { a: 0.45, ..p.muted } },
-            background_border_width: 0.0,
-            background_border_color: Color::TRANSPARENT,
-            foreground: Color::WHITE,
-            foreground_border_width: 0.0,
-            foreground_border_color: Color::TRANSPARENT,
+            background: track,
+            background_border_width: 1.0,
+            background_border_color: if on {
+                Color { a: 0.45, ..p.accent }
+            } else {
+                Color { a: 0.30, ..p.muted }
+            },
+            foreground: bead,
+            // Accent halo ring around the lit LED (off = plain grey bead).
+            foreground_border_width: if on { if hovered { 3.5 } else { 2.5 } } else { 0.0 },
+            foreground_border_color: Color { a: if hovered { 0.75 } else { 0.55 }, ..p.accent },
         }
     }
 }

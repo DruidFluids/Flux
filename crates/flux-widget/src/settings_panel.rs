@@ -1588,25 +1588,28 @@ fn signed(v: i32) -> String {
 //     glowing accent (2px, full opacity) when the value is within 5% of default.
 pub(crate) fn marked_slider<'a>(min: f32, max: f32, val: f32, step: f32, default: f32, p: Palette, on: fn(f32) -> Message) -> Element<'a, Message> {
     use iced::widget::slider::{Handle, HandleShape, Rail, Style};
-    let track_active = p.accent;
-    let track_inactive = iced::Color { a: p.muted.a * 0.25, ..p.muted };
-    let bg = p.bg;
+    let muted = p.muted;
     let accent = p.accent;
-    let sl = slider(min..=max, val, on).step(step).style(move |_t, _s| Style {
-        rail: Rail {
-            backgrounds: (
-                iced::Background::Color(track_active),
-                iced::Background::Color(track_inactive),
-            ),
-            width: 2.0,
-            border: Border { radius: 1.0.into(), width: 0.0, color: iced::Color::TRANSPARENT },
-        },
-        handle: Handle {
-            shape: HandleShape::Circle { radius: 6.0 },
-            background: iced::Background::Color(accent),
-            border_width: 2.0,
-            border_color: bg,
-        },
+    // Premium-glow: thick accent rail + bright bead thumb with a translucent
+    // accent halo. Handle radius stays 6 so the default-marker tick stays aligned.
+    let sl = slider(min..=max, val, on).step(step).style(move |_t, s| {
+        let hot = matches!(s, iced::widget::slider::Status::Hovered | iced::widget::slider::Status::Dragged);
+        Style {
+            rail: Rail {
+                backgrounds: (
+                    iced::Background::Color(if hot { crate::style::lerp(accent, iced::Color::WHITE, 0.18) } else { accent }),
+                    iced::Background::Color(iced::Color { a: 0.22, ..muted }),
+                ),
+                width: 5.0,
+                border: Border { radius: 2.5.into(), width: 0.0, color: iced::Color::TRANSPARENT },
+            },
+            handle: Handle {
+                shape: HandleShape::Circle { radius: 6.0 },
+                background: iced::Background::Color(crate::style::lerp(accent, iced::Color::WHITE, 0.6)),
+                border_width: if hot { 4.0 } else { 3.0 },
+                border_color: iced::Color { a: if hot { 0.65 } else { 0.4 }, ..accent },
+            },
+        }
     });
 
     let range = max - min;
