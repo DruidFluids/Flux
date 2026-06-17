@@ -81,6 +81,19 @@ Hit the dice for a random look, undo if you don't like it, and save your favorit
 <img src="docs/images/skin-terminal.png" alt="Terminal skin" width="150">
 </div>
 
+### Colors
+
+100+ color presets — light or dark, plus full control over your own 5-color palette. A few favorites:
+
+<div align="center">
+<img src="docs/images/color-default.png" alt="Default" width="150">
+<img src="docs/images/color-deep-current.png" alt="Deep Current" width="150">
+<img src="docs/images/color-everforest-dark.png" alt="Everforest Dark" width="150">
+<img src="docs/images/color-snazzy-light.png" alt="Snazzy Light" width="150">
+<img src="docs/images/color-solarized-dark.png" alt="Solarized Dark" width="150">
+<img src="docs/images/color-light.png" alt="Light (default)" width="150">
+</div>
+
 ### CPU temperature
 
 A one-time sensor driver setup ([PawnIO](https://pawnio.eu/)) unlocks CPU temperature directly on the widget. The driver is downloaded on demand from the official source — **Flux never bundles or redistributes it**. Switch between °C and °F with a rocker, and remove the driver any time from the same menu.
