@@ -193,7 +193,7 @@ impl Default for AppSettings {
             snap_blocklist: Vec::new(),
             remote_firewall_configured: false,
             popup_positions: std::collections::HashMap::new(),
-            update_check_mode: UpdateMode::Manual,
+            update_check_mode: UpdateMode::Auto,
             last_update_check: None,
             presets: Vec::new(),
             installed_themes: Vec::new(),
