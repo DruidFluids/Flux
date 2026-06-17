@@ -522,6 +522,35 @@ pub fn view<'a>(
     } else {
         "Reads the CPU's die temperature directly. Flux downloads the official signed PawnIO driver, verifies its signature, and installs it on request \u{2014} the rest of the widget works without it."
     };
+    // When the driver's installed but the service isn't set up, the status IS the
+    // action: one amber "Setup needed" button that starts the enable flow — no
+    // separate chip + button.
+    let needs_service = cpu_pawnio_installed && !cpu_driver_installed;
+    let driver_action: Element<'a, Message> = if needs_service {
+        crate::style::with_tip(
+            button(
+                text("Setup needed \u{2014} Enable CPU temperature").size(11)
+                    .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                    .style(move |_| iced::widget::text::Style { color: Some(driver_amber) }),
+            )
+            .padding(iced::Padding { top: 5.0, right: 12.0, bottom: 5.0, left: 12.0 })
+            .style(move |_: &iced::Theme, status: button::Status| {
+                let hover = matches!(status, button::Status::Hovered);
+                button::Style {
+                    background: Some(iced::Background::Color(iced::Color { a: if hover { 0.24 } else { 0.14 }, ..driver_amber })),
+                    border: Border { radius: 6.0.into(), width: 1.0, color: iced::Color { a: 0.6, ..driver_amber } },
+                    ..Default::default()
+                }
+            })
+            .on_press(Message::OpenCpuDriver),
+            "Set up the CPU-temperature service (one quick admin step).", p)
+    } else {
+        row![
+            driver_status_chip,
+            Space::with_width(Length::Fill),
+            crate::style::inline_btn_tip(driver_btn_label, Message::OpenCpuDriver, "Open the CPU sensor driver dialog (install, verify, or remove)", p),
+        ].align_y(iced::Alignment::Center).into()
+    };
     let cpu_driver = column![
         text("Temperature driver (optional)").size(11)
             .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
@@ -529,11 +558,7 @@ pub fn view<'a>(
         text(driver_desc.to_string())
             .size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         Space::with_height(4),
-        row![
-            driver_status_chip,
-            Space::with_width(Length::Fill),
-            crate::style::inline_btn_tip(driver_btn_label, Message::OpenCpuDriver, "Open the CPU sensor driver dialog (install, verify, or remove)", p),
-        ].align_y(iced::Alignment::Center),
+        driver_action,
     ].spacing(2);
 
     // Bodies (built unconditionally so temp_row/network/disk are consumed once).

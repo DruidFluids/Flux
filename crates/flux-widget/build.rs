@@ -23,8 +23,30 @@ fn embed_windows_icon() {
 
     let mut res = winresource::WindowsResource::new();
     res.set_icon(&ico_path.to_string_lossy());
+    // Version-info so Windows (Explorer details, and especially the UAC elevation
+    // dialog when the widget self-elevates to set up the CPU-temp service) shows
+    // a proper "Flux" name + icon instead of a bare "flux.exe / Unknown publisher",
+    // which reads as sketchy. (Still unsigned, but clearly identified as Flux.)
+    let ver = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".into());
+    res.set("ProductName", "Flux")
+        .set("FileDescription", "Flux")
+        .set("CompanyName", "DruidFluids")
+        .set("LegalCopyright", "Copyright (c) 2026 Matt Hakes")
+        .set("OriginalFilename", "flux.exe")
+        .set("InternalName", "flux")
+        .set("FileVersion", &ver)
+        .set("ProductVersion", &ver);
+    let mut parts = ver.split('.').map(|s| s.parse::<u64>().unwrap_or(0));
+    let (maj, min, pat) = (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    );
+    let packed = (maj << 48) | (min << 32) | (pat << 16);
+    res.set_version_info(winresource::VersionInfo::FILEVERSION, packed);
+    res.set_version_info(winresource::VersionInfo::PRODUCTVERSION, packed);
     if let Err(e) = res.compile() {
-        println!("cargo:warning=icon resource compile failed ({e}); exe will have no icon");
+        println!("cargo:warning=icon/version resource compile failed ({e}); exe will lack metadata");
     }
 }
 
