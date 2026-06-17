@@ -742,6 +742,7 @@ enum Message {
     PopoutWarnEnabled(String, String, bool), PopoutWarnMetric(String, String, WarnMetric),
     PopoutWarnThreshold(String, String, String), PopoutWarnFlash(String, String, bool),
     PopoutWarnFlashColor(String, String, String), PopoutWarnGradient(String, String, bool), PopoutWarnGradientColor(String, String, String),
+    PopoutWarnGradientCoolColor(String, String, String),
     SetGameModeEnabled(bool),
     SetGameModePosition(SnapPosition), SetGameModeOpacity(f32),
     SetGameModeOrientation(String), SetGameModeClickThrough(bool),
@@ -2143,6 +2144,11 @@ impl App {
                 let _ = self.settings.save();
                 Task::none()
             }
+            Message::PopoutWarnGradientCoolColor(id, kind, s) => {
+                if let Some(d) = self.device_mut(&id) { d.popout.warn_mut(&kind).gradient_cool_color = s; }
+                let _ = self.settings.save();
+                Task::none()
+            }
             Message::SkinPrev => {
                 self.push_appearance_undo();
                 let skins = style::skin_names();
@@ -2636,7 +2642,7 @@ impl App {
             WindowKind::PopoutConfig => {
                 let dev = self.config_device.as_ref()
                     .and_then(|cid| self.settings.remote_devices.iter().find(|d| &d.id == cid));
-                popups::popout_config_view(dev, p, id)
+                popups::popout_config_view(dev, p, id, self.editing_warn_color.as_deref())
             }
             WindowKind::CpuDriver => popups::cpu_driver_view(&self.cpu_dialog, self.cpu_driver_installed, p, id),
             WindowKind::Picker => popups::picker_view(self.picker_skins, &self.settings, self.theme_picker_installed_open, &self.theme_picker_open_games, p, id),

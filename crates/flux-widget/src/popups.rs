@@ -171,25 +171,6 @@ pub fn widget_menu_view<'a>(p: Palette) -> Element<'a, Message> {
 
 // A colour swatch preview + hex input, shared by the regular and popout alert
 // editors so users can pick flash and gradient colours.
-fn color_field<'a, F>(hex: &str, p: Palette, on_input: F) -> Element<'a, Message>
-where
-    F: Fn(String) -> Message + 'a,
-{
-    let c = crate::style::parse_hex(hex, p.muted);
-    row![
-        container(Space::new(16, 16)).style(move |_| iced::widget::container::Style {
-            background: Some(iced::Background::Color(c)),
-            border: Border { radius: 3.0.into(), width: 1.0, color: Color { a: 0.4, ..p.muted } },
-            ..Default::default()
-        }),
-        Space::with_width(6),
-        text_input("#AARRGGBB", hex).size(10).width(112)
-            .font(iced::Font::with_name("Consolas"))
-            .on_input(on_input)
-            .style(crate::style::dark_input_style(p)),
-    ].align_y(iced::Alignment::Center).into()
-}
-
 // A clickable colour swatch matching the Appearance tab: the filled chip is a
 // button that toggles an inline hex editor (shown to its left while `editing`).
 fn color_swatch_field<'a, F>(hex: &str, editing: bool, toggle: Message, p: Palette, on_input: F) -> Element<'a, Message>
@@ -1026,7 +1007,7 @@ pub fn window_picker_view<'a>(titles: Vec<String>, p: Palette, win_id: window::I
 
 pub const POPOUT_CONFIG_SIZE: iced::Size = iced::Size::new(360.0, 540.0);
 
-pub fn popout_config_view<'a>(dev: Option<&'a RemoteDevice>, p: Palette, win_id: window::Id) -> Element<'a, Message> {
+pub fn popout_config_view<'a>(dev: Option<&'a RemoteDevice>, p: Palette, win_id: window::Id, editing: Option<&'a str>) -> Element<'a, Message> {
     let dev = match dev {
         Some(d) => d,
         None => return shell("Popout", win_id, p,
@@ -1122,13 +1103,28 @@ pub fn popout_config_view<'a>(dev: Option<&'a RemoteDevice>, p: Palette, win_id:
         let w = po.warn(kind).cloned().unwrap_or_default();
         let metric_label = if matches!(w.metric, WarnMetric::Load) { "Load" } else { "Temperature" };
         let unit = if matches!(w.metric, WarnMetric::Load) { " %" } else { " \u{00B0}C" };
-        let (ke, km, kt, kf, kfc, kg, kgc) = (id.clone(), id.clone(), id.clone(), id.clone(), id.clone(), id.clone(), id.clone());
+        let (ke, km, kt, kf, kfc, kg, kgc, kgcc) = (id.clone(), id.clone(), id.clone(), id.clone(), id.clone(), id.clone(), id.clone(), id.clone());
+        let cool_key = format!("popout:{}:{}/cool", id, kind);
+        let hot_key = format!("popout:{}:{}/hot", id, kind);
+        let flash_key = format!("popout:{}:{}/flash", id, kind);
+        let edit_cool = editing == Some(cool_key.as_str());
+        let edit_hot = editing == Some(hot_key.as_str());
+        let edit_flash = editing == Some(flash_key.as_str());
         let metrics = vec!["Temperature".to_string(), "Load".to_string()];
+        let gradient_cool_row: Element<'a, Message> = if w.gradient_mode {
+            row![
+                text("Start color".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+                Space::with_width(Length::Fill),
+                color_swatch_field(&w.gradient_cool_color, edit_cool, Message::EditWarnColor(cool_key.clone()), p, move |s| Message::PopoutWarnGradientCoolColor(kgcc.clone(), kind.to_string(), s)),
+            ].spacing(6).align_y(iced::Alignment::Center).into()
+        } else {
+            Space::with_height(0).into()
+        };
         let gradient_row: Element<'a, Message> = if w.gradient_mode {
             row![
-                text("Gradient color".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+                text("Hot color".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
                 Space::with_width(Length::Fill),
-                color_field(&w.gradient_color, p, move |s| Message::PopoutWarnGradientColor(kgc.clone(), kind.to_string(), s)),
+                color_swatch_field(&w.gradient_color, edit_hot, Message::EditWarnColor(hot_key.clone()), p, move |s| Message::PopoutWarnGradientColor(kgc.clone(), kind.to_string(), s)),
             ].spacing(6).align_y(iced::Alignment::Center).into()
         } else {
             Space::with_height(0).into()
@@ -1153,12 +1149,13 @@ pub fn popout_config_view<'a>(dev: Option<&'a RemoteDevice>, p: Palette, win_id:
                 crate::style::with_tip(toggler(w.flash_enabled).size(14).on_toggle(move |b| Message::PopoutWarnFlash(kf.clone(), kind.to_string(), b)).style(crate::style::toggler_style(p)), "Flash the tile when its threshold is crossed.", p),
                 text("Flash".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
                 Space::with_width(Length::Fill),
-                color_field(&w.flash_color, p, move |s| Message::PopoutWarnFlashColor(kfc.clone(), kind.to_string(), s)),
+                color_swatch_field(&w.flash_color, edit_flash, Message::EditWarnColor(flash_key.clone()), p, move |s| Message::PopoutWarnFlashColor(kfc.clone(), kind.to_string(), s)),
             ].spacing(6).align_y(iced::Alignment::Center),
             row![
-                crate::style::with_tip(toggler(w.gradient_mode).size(14).on_toggle(move |b| Message::PopoutWarnGradient(kg.clone(), kind.to_string(), b)).style(crate::style::toggler_style(p)), "Shift the unit colour as the value climbs.", p),
+                crate::style::with_tip(toggler(w.gradient_mode).size(14).on_toggle(move |b| Message::PopoutWarnGradient(kg.clone(), kind.to_string(), b)).style(crate::style::toggler_style(p)), "Shift the unit colour from your start colour to your hot colour as the value climbs.", p),
                 text("Gradient mode".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
             ].spacing(6).align_y(iced::Alignment::Center),
+            gradient_cool_row,
             gradient_row,
         ].spacing(4).into()
     };
