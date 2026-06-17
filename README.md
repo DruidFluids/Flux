@@ -195,7 +195,7 @@ cargo build -p flux-widget -p flux-setup --release
 
 ## License
 
-**Personal Use License** — © 2026 Matt Hakes (DruidFluids). Source-available, **not** open-source.
+**Personal Use License** — © 2026 Matthew Hakes. Source-available, **not** open-source.
 
 You **may** download, build, run, and **modify** Flux for your own use. You **may not** redistribute it — publishing, sharing, mirroring, sublicensing, or selling the software or its source (original or modified, source or binary) requires prior written permission. See [`LICENSE`](LICENSE) for the exact terms.
 
