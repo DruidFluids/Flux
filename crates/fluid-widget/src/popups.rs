@@ -477,7 +477,7 @@ pub const UPDATED_SIZE: iced::Size = iced::Size::new(480.0, 540.0);
 
 /// First-launch-after-update notice: a celebratory header plus the new release's
 /// notes, rendered exactly like the Updates tab's changelog, and a Close button.
-pub fn updated_view<'a>(version: &str, changelog: &str, p: Palette, win_id: window::Id) -> Element<'a, Message> {
+pub fn updated_view<'a>(version: &str, changelog: &str, reset_checked: bool, p: Palette, win_id: window::Id) -> Element<'a, Message> {
     let header = column![
         text(format!("Updated to v{version}")).size(17)
             .font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
@@ -502,10 +502,19 @@ pub fn updated_view<'a>(version: &str, changelog: &str, p: Palette, win_id: wind
             ..Default::default()
         });
 
+    // Optional clean-slate reset, off by default. When ticked, closing the notice
+    // wipes all saved settings (incl. window position) back to defaults.
+    let reset_row = row![
+        cbox(reset_checked, p, Message::ToggleUpdateReset),
+        Space::with_width(8),
+        text("Reset all saved settings (including window position) to defaults").size(11)
+            .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+    ].align_y(iced::Alignment::Center);
+
     let footer = column![
         container(Space::new(Length::Fill, 1))
             .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(Color { a: 0.25, ..p.muted })), ..Default::default() }),
-        container(row![Space::with_width(Length::Fill), primary_btn("Close", Message::ClosePopup(win_id), p)].align_y(iced::Alignment::Center))
+        container(row![Space::with_width(Length::Fill), primary_btn("Close", Message::FinishUpdateNotice(win_id), p)].align_y(iced::Alignment::Center))
             .width(Length::Fill).padding(iced::Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 }),
     ];
 
@@ -514,6 +523,8 @@ pub fn updated_view<'a>(version: &str, changelog: &str, p: Palette, win_id: wind
         Space::with_height(10),
         notes_box,
         Space::with_height(10),
+        reset_row,
+        Space::with_height(8),
         footer,
     ].height(Length::Fill);
     shell("Updated", win_id, p, body.into())
@@ -636,7 +647,7 @@ pub fn cpu_driver_view<'a>(
 
 // ── Utilities (Tweaks) ───────────────────────────────────────────────────────
 
-pub const UTILITIES_SIZE: iced::Size = iced::Size::new(460.0, 430.0);
+pub const UTILITIES_SIZE: iced::Size = iced::Size::new(460.0, 560.0);
 pub const WINDOW_PICKER_SIZE: iced::Size = iced::Size::new(420.0, 460.0);
 
 pub fn utilities_view<'a>(blocklist: &'a text_editor::Content, status: &str, p: Palette, win_id: window::Id) -> Element<'a, Message> {

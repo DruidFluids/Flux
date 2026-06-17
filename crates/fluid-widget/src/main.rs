@@ -600,6 +600,8 @@ struct App {
     // Set on a post-update launch so the "Updated to vX" notice opens once the
     // release notes have been fetched.
     pending_update_popup: Option<String>,
+    // "Reset all settings" checkbox state in the post-update notice (default off).
+    update_reset_checked: bool,
     // Latest GitHub release notes (version, body) shown in the Updates card.
     latest_changelog: Option<(String, String)>,
     // Updates card sub-tab: false = changelog, true = verification/how-it-works.
@@ -701,6 +703,8 @@ enum Message {
     DownloadUpdate,
     UpdateProgress(updates::UpdateProgress),
     PerformUpdateInstall(std::path::PathBuf),
+    ToggleUpdateReset(bool),
+    FinishUpdateNotice(window::Id),
     UpdateLater,
     PresetSlotClick(u8),
     OpenThemePicker, OpenSkinPicker, ApplyThemePreset(usize), ApplyInstalledTheme(usize), ApplySkin(String),
@@ -787,7 +791,7 @@ impl App {
             blocklist_editor: iced::widget::text_editor::Content::with_text(&blocklist_text),
             blocklist_status: String::new(),
             update_checking: false, update_status: String::new(), update_status_kind: 0, update_available: None,
-            update_progress: None, pending_update_popup: None,
+            update_progress: None, pending_update_popup: None, update_reset_checked: false,
             latest_changelog: None,
             updates_show_info: false,
             last_window_open: None,
@@ -2269,6 +2273,38 @@ impl App {
                 }
                 iced::exit()
             }
+            Message::ToggleUpdateReset(b) => { self.update_reset_checked = b; Task::none() }
+            Message::FinishUpdateNotice(id) => {
+                let mut tasks = vec![window::close(id)];
+                if self.update_reset_checked {
+                    // Full clean-slate reset (incl. window position), unlike the
+                    // Settings "Reset to Defaults" which preserves placement.
+                    let keep_key = self.settings.remote_key.clone();
+                    self.settings = AppSettings::default();
+                    self.settings.remote_key = keep_key;
+                    if let Some(r) = &self.remote {
+                        r.set_devices(self.settings.remote_devices.clone());
+                        r.set_server_enabled(self.settings.remote_enabled);
+                    }
+                    self.remote_snapshots.clear();
+                    self.remote_conn.clear();
+                    self.widget_device = None;
+                    // Re-center the live widget on its monitor's work area.
+                    let sz = self.widget_size();
+                    if let (Some(wid), Some((l, t, r, b))) = (self.widget_window(), work_area()) {
+                        let cx = l + ((r - l) - sz.width) / 2.0;
+                        let cy = t + ((b - t) - sz.height) / 2.0;
+                        self.settings.window_x = cx as f64;
+                        self.settings.window_y = cy as f64;
+                        self.settings.first_run_complete = true;
+                        tasks.push(window::move_to(wid, Point::new(cx, cy)));
+                    }
+                    let _ = self.settings.save();
+                    tasks.push(self.resize_widget());
+                }
+                self.update_reset_checked = false;
+                Task::batch(tasks)
+            }
             Message::UpdateLater => { self.update_available = None; self.update_status = String::new(); self.update_progress = None; Task::none() }
             Message::ExportAppearance => {
                 // Open the dialog pre-filled with the current code (visible + copyable).
@@ -2483,7 +2519,7 @@ impl App {
                 let ver = self.pending_update_popup.clone()
                     .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
                 let log = self.latest_changelog.as_ref().map(|(_, b)| updates::whats_new(b)).unwrap_or_default();
-                popups::updated_view(&ver, &log, p, id)
+                popups::updated_view(&ver, &log, self.update_reset_checked, p, id)
             }
             WindowKind::Utilities => popups::utilities_view(&self.blocklist_editor, &self.blocklist_status, p, id),
             WindowKind::Remote => {
@@ -2659,12 +2695,22 @@ impl App {
             // Animated: place each tile absolutely at its eased slot so they slide
             // to the new order (same 0.45 ease as the Settings drag).
             let sc = self.settings.ui_scale;
-            let pitch = if vertical {
-                self.settings.tile_height * sc + skin.tile_spacing
+            let tw = self.settings.tile_width * sc;
+            let th = self.settings.tile_height * sc;
+            let sp = skin.tile_spacing;
+            let n = tiles.len() as f32;
+            let pitch = if vertical { th + sp } else { tw + sp };
+            // iced sizes a Stack to its FIRST child, so without a full-size base
+            // layer the Stack would collapse to one tile and clip the rest. This
+            // invisible spacer spans the whole tile area so every tile stays visible.
+            let (base_w, base_h) = if vertical {
+                (tw, n * th + (n - 1.0).max(0.0) * sp)
             } else {
-                self.settings.tile_width * sc + skin.tile_spacing
+                (n * tw + (n - 1.0).max(0.0) * sp, th)
             };
-            let layers: Vec<Element<'_, Message>> = tiles.into_iter().enumerate().map(|(i, (name, el))| {
+            let mut layers: Vec<Element<'_, Message>> = Vec::with_capacity(tiles.len() + 1);
+            layers.push(Space::new(Length::Fixed(base_w), Length::Fixed(base_h)).into());
+            for (i, (name, el)) in tiles.into_iter().enumerate() {
                 let slot = self.tile_slots.get(&name).copied().unwrap_or(i as f32);
                 let off = slot * pitch;
                 let pad = if vertical {
@@ -2672,8 +2718,8 @@ impl App {
                 } else {
                     iced::Padding { top: 0.0, right: 0.0, bottom: 0.0, left: off }
                 };
-                container(el).padding(pad).into()
-            }).collect();
+                layers.push(container(el).padding(pad).into());
+            }
             iced::widget::Stack::with_children(layers).into()
         } else if vertical {
             column(tiles.into_iter().map(|(_, el)| el).collect::<Vec<_>>()).spacing(skin.tile_spacing).into()
