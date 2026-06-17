@@ -1386,8 +1386,23 @@ pub fn view<'a>(
     // stretches to fill the rest); the other tabs keep their content vertically
     // centred in the fixed-height window.
     let is_tools = active == 2;
-    let mut active_pane = container(tab_panes.remove(active))
+    // Non-tools tabs scroll when their content overflows the window — otherwise
+    // expanding a tile's options (Tiles tab) pushes everything below it off the
+    // bottom with no way to reach it. The drag-reorder collapses all sections
+    // first, so the list always fits (scroll offset 0) while dragging — keeping
+    // the floating drag row aligned. Tools keeps its own fill layout.
+    let pane_inner: Element<'a, Message> = if is_tools {
+        tab_panes.remove(active)
+    } else {
+        scrollable(tab_panes.remove(active))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(crate::style::scrollable_style(p))
+            .into()
+    };
+    let active_pane = container(pane_inner)
         .width(Length::Fill)
+        .height(Length::Fill)
         .padding(16)
         .style(move |_| iced::widget::container::Style {
             background: Some(iced::Background::Color(iced::Color { a: 1.0, ..p.bg })),
@@ -1395,12 +1410,7 @@ pub fn view<'a>(
             border: Border { radius: 18.0.into(), width: 1.0, color: hairline },
             ..Default::default()
         });
-    if is_tools { active_pane = active_pane.height(Length::Fill); }
-    let pane_slot = if is_tools {
-        container(active_pane).width(Length::Fill).height(Length::Fill)
-    } else {
-        container(active_pane).width(Length::Fill).height(Length::Fill).center_y(Length::Fill)
-    };
+    let pane_slot = container(active_pane).width(Length::Fill).height(Length::Fill);
     let columns = column![
         strip_bar,
         Space::with_height(12),
