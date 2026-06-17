@@ -963,9 +963,18 @@ impl App {
     }
     // Keep settings/popups above the always-on-top widget: drop the widget to
     // Normal level while any other window is open, restore when none remain.
+    //
+    // Exception: while a tile is being dragged in Settings, keep the widget
+    // AlwaysOnTop. As a Normal background window it is unfocused, and Windows'
+    // DWM throttles redraws of unfocused background windows — which made the
+    // live tile glide stutter-then-snap even though the easing runs at 16ms.
+    // Topmost windows are presented at full rate, so the glide stays smooth;
+    // we drop back to Normal the moment the drag ends.
     fn update_widget_level(&self) -> Task<Message> {
         let others_open = self.windows.values().any(|k| *k != WindowKind::Widget && *k != WindowKind::WidgetMenu);
-        let level = if self.settings.always_on_top && !others_open {
+        // Treat the post-drop settle (tiles still gliding) as part of the drag.
+        let dragging = self.tile_drag.is_some() || !self.tile_slots.is_empty();
+        let level = if self.settings.always_on_top && (!others_open || dragging) {
             window::Level::AlwaysOnTop
         } else {
             window::Level::Normal
@@ -1543,7 +1552,9 @@ impl App {
                 // widget can glide them to the new order as the drag progresses.
                 self.tile_slots = self.current_tiles_base().into_iter().enumerate()
                     .map(|(i, n)| (n, i as f32)).collect();
-                Task::none()
+                // Lift the widget back to AlwaysOnTop so it presents at full rate
+                // while we drag (otherwise the background widget's glide stutters).
+                self.update_widget_level()
             }
             Message::TileDragMove(y) => {
                 if let Some(drag) = self.tile_drag.as_mut() {
@@ -1570,7 +1581,13 @@ impl App {
                     if (target - drag.gap_anim).abs() < 0.01 { drag.gap_anim = target; }
                 }
                 // Glide the widget's tiles toward the (preview) order.
+                let was_animating = !self.tile_slots.is_empty();
                 self.ease_tile_slots();
+                // When the post-drop settle finishes, drop the widget back to its
+                // normal level (it was held AlwaysOnTop for a smooth glide).
+                if was_animating && self.tile_slots.is_empty() && self.tile_drag.is_none() {
+                    return self.update_widget_level();
+                }
                 Task::none()
             }
             Message::TileDragEnd => {
