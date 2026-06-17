@@ -1394,7 +1394,12 @@ pub fn view<'a>(
     let pane_inner: Element<'a, Message> = if is_tools {
         tab_panes.remove(active)
     } else {
-        scrollable(tab_panes.remove(active))
+        // Inset the scrolled content on the right so the scrollbar sits in its
+        // own gutter instead of overlapping the row toggles/chevrons.
+        scrollable(
+            container(tab_panes.remove(active))
+                .padding(iced::Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 0.0 }),
+        )
             .width(Length::Fill)
             .height(Length::Fill)
             .style(crate::style::scrollable_style(p))

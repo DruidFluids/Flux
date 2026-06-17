@@ -359,6 +359,19 @@ mod imp {
         }
     }
 
+    /// True when the optional CPU-sensor service is currently running. When it
+    /// is, it holds `flux.exe` open (it runs `flux.exe --sensor-service`), which
+    /// blocks an in-place self-update — the caller must stop it first (needs
+    /// elevation), which is why `run_apply_cli` relaunches elevated in that case.
+    pub fn sensor_service_running() -> bool {
+        Command::new("sc")
+            .args(["query", "FluxSensorService"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains("RUNNING"))
+            .unwrap_or(false)
+    }
+
     /// Stop + delete the optional CPU-sensor service so it isn't left orphaned
     /// pointing at a removed flux.exe. No-op if it was never installed.
     fn remove_sensor_service() {
@@ -462,6 +475,25 @@ mod imp {
         let dir = install_dir(opts.scope)?;
         let exe = dir.join(EXE_NAME);
 
+        // The CPU-sensor service runs `flux.exe --sensor-service` as LocalSystem,
+        // which holds the exe open and would block the overwrite below. Stop it
+        // first (we've been relaunched elevated for this when needed — see
+        // run_apply_cli), then restart it after the new exe is in place so CPU
+        // temperature keeps working. Stopping it also avoids a sharing violation.
+        let restart_service = sensor_service_running();
+        if restart_service {
+            let _ = Command::new("sc")
+                .args(["stop", "FluxSensorService"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+            for _ in 0..30 {
+                if !sensor_service_running() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+
         // A running instance (e.g. an upgrade over a live widget) locks the exe.
         kill_running_widget();
         // Upgrading from the old "fluxid" brand: clear out its install so the
@@ -478,6 +510,16 @@ mod imp {
         write_exe_with_retry(&exe, &crate::payload::flux_exe())
             .map_err(|e| err(format!("write {}: {e}", exe.display())))?;
         rep.step(format!("Installed {EXE_NAME}"));
+
+        // Restart the sensor service we stopped above (now pointing at the new
+        // flux.exe), so CPU temperature resumes without waiting for a reboot.
+        if restart_service {
+            let _ = Command::new("sc")
+                .args(["start", "FluxSensorService"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+            rep.step("Restarted sensor service".to_string());
+        }
 
         // 2. Copy ourselves in as the uninstaller.
         let me = std::env::current_exe().map_err(|e| err(format!("current_exe: {e}")))?;
@@ -729,6 +771,9 @@ mod imp {
     pub fn is_elevated() -> bool {
         false
     }
+    pub fn sensor_service_running() -> bool {
+        false
+    }
     pub fn relaunch_elevated_wait(_args: &[String]) -> Result<Option<i32>> {
         Err(err("The Flux installer is Windows-only."))
     }
@@ -747,5 +792,6 @@ mod imp {
 }
 
 pub use imp::{
-    install, install_dir, is_elevated, launch, relaunch_elevated_wait, uninstall,
+    install, install_dir, is_elevated, launch, relaunch_elevated_wait, sensor_service_running,
+    uninstall,
 };

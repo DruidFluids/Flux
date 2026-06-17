@@ -92,6 +92,19 @@ mod cli {
 /// explicit set of flags so there is no ambiguity for the elevated worker — and
 /// it passes `--no-launch` so the worker never starts the widget elevated.
 fn run_apply_cli(args: &[String]) -> i32 {
+    // If the CPU-sensor service is running it holds flux.exe open (it runs
+    // flux.exe --sensor-service as LocalSystem), and only an elevated process
+    // can stop it. A non-elevated self-update would fail with a sharing
+    // violation, so relaunch elevated (one UAC) and let that worker stop the
+    // service, overwrite the exe, and restart it. Already-elevated workers
+    // (and machines without the service) fall straight through.
+    if engine::sensor_service_running() && !engine::is_elevated() {
+        return match engine::relaunch_elevated_wait(args) {
+            Ok(Some(code)) => code,
+            Ok(None) => 1, // user declined the UAC prompt
+            Err(_) => 1,
+        };
+    }
     let opts = InstallOptions {
         scope: cli::scope(args),
         desktop_shortcut: !cli::has(args, &["no-desktop", "nodesktop"]),
@@ -393,7 +406,7 @@ mod gui {
                 ))
                 .size(14)
                 .style(style::body),
-                text("MIT license — free and open source")
+                text("Personal Use License — source-available")
                     .size(13)
                     .style(style::muted),
                 Space::with_height(6),
