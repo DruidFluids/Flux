@@ -19,3 +19,7 @@ CLAUDE.md
 /POLISH_AUDIT.md
 /SESSION_LOG.md
 /docs/RELEASE_TEMPLATE.md
+
+# Maintainer-only tooling + security policy — kept locally, never published.
+/SECURITY.md
+/scripts/
