@@ -503,13 +503,23 @@ pub fn updated_view<'a>(version: &str, changelog: &str, reset_checked: bool, p: 
         });
 
     // Optional clean-slate reset, off by default. When ticked, closing the notice
-    // wipes all saved settings (incl. window position) back to defaults.
-    let reset_row = row![
-        cbox(reset_checked, p, Message::ToggleUpdateReset),
-        Space::with_width(8),
-        text("Reset all saved settings (including window position) to defaults").size(11)
-            .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
-    ].align_y(iced::Alignment::Center);
+    // wipes all saved settings (incl. window position) back to defaults. A single
+    // built-in labelled checkbox so the box + text always render together.
+    let reset_row = checkbox("Reset all saved settings (including window position) to defaults", reset_checked)
+        .size(16).text_size(11).spacing(8)
+        .on_toggle(Message::ToggleUpdateReset)
+        .style(move |_t: &iced::Theme, status: checkbox::Status| {
+            let on = matches!(status,
+                checkbox::Status::Active { is_checked: true }
+                | checkbox::Status::Hovered { is_checked: true }
+                | checkbox::Status::Disabled { is_checked: true });
+            checkbox::Style {
+                background: iced::Background::Color(if on { p.accent } else { p.tile }),
+                icon_color: Color::WHITE,
+                border: Border { radius: 4.0.into(), width: 1.0, color: if on { p.accent } else { Color { a: 0.5, ..p.muted } } },
+                text_color: Some(Color { a: 0.9, ..p.text }),
+            }
+        });
 
     let footer = column![
         container(Space::new(Length::Fill, 1))
