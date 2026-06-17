@@ -658,6 +658,10 @@ pub fn view<'a>(
             Space::with_width(4),
             chev_btn,
         ].align_y(iced::Alignment::Center))
+        // Pin the header to a fixed height. Without it the rows are Fill-height
+        // (the drag layer's Space is Fill/Fill), so expanding one tile's body
+        // squeezes the column and the other rows shrink — clipping their names.
+        .height(Length::Fixed(FLOAT_H))
         .style(move |_| iced::widget::container::Style {
             // Lift the row being dragged.
             background: if is_dragging { Some(iced::Background::Color(iced::Color { a: 0.16, ..p.accent })) } else { None },
