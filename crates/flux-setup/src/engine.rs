@@ -359,6 +359,18 @@ mod imp {
         }
     }
 
+    /// Stop + delete the optional CPU-sensor service so it isn't left orphaned
+    /// pointing at a removed flux.exe. No-op if it was never installed.
+    fn remove_sensor_service() {
+        const SVC: &str = "FluxSensorService";
+        for args in [["stop", SVC], ["delete", SVC]] {
+            let _ = Command::new("sc")
+                .args(args)
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        }
+    }
+
     /// Remove a previous "fluxid"-branded install (dir, shortcuts, ARP entry) when
     /// upgrading to Flux, so the user isn't left with a duplicate app behind.
     fn remove_legacy_install(scope: Scope) {
@@ -517,6 +529,7 @@ mod imp {
         let exe = dir.join(EXE_NAME);
 
         kill_running_widget();
+        remove_sensor_service();
         rep.step("Stopped Flux".to_string());
 
         // Shortcuts.
