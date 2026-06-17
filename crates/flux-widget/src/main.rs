@@ -825,7 +825,7 @@ impl App {
         if let Some(ver) = updates::take_update_marker() {
             // Only celebrate if the running build actually is the installed version.
             if ver == env!("CARGO_PKG_VERSION") {
-                app.update_status = format!("Updated to v{ver} \u{2713}");
+                app.update_status = format!("Updated to v{ver}");
                 app.update_status_kind = 1;
                 app.pending_update_popup = Some(ver.clone());
                 app.just_updated_version = Some(ver);
@@ -1099,8 +1099,8 @@ impl App {
                 }
                 flux_remote::RemoteEvent::TestResult { ok, message } => {
                     self.device_test_ok = ok;
-                    self.device_test_status = if ok { "\u{2713} Connected".into() }
-                        else { format!("\u{2717} {message}") };
+                    self.device_test_status = if ok { "Connected".into() }
+                        else { message.to_string() };
                 }
             }
         }
@@ -2210,7 +2210,7 @@ impl App {
                         // this session, a "Check now" should still confirm the new
                         // version rather than fall back to a bland "Up to date".
                         self.update_status = match &self.just_updated_version {
-                            Some(v) => format!("Updated to v{v} \u{2713}"),
+                            Some(v) => format!("Updated to v{v}"),
                             None => "Up to date".into(),
                         };
                         self.update_status_kind = 1;
