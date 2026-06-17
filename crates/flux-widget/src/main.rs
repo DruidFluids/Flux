@@ -1474,7 +1474,26 @@ impl App {
                 }
                 Task::none()
             }
-            Message::WindowClosed(id) => { self.windows.remove(&id); self.popout_device.remove(&id); let _ = self.settings.save(); if self.widget_window().is_none() { return iced::exit(); } self.update_widget_level() }
+            Message::WindowClosed(id) => {
+                let was = self.windows.remove(&id);
+                self.popout_device.remove(&id);
+                let _ = self.settings.save();
+                if self.widget_window().is_none() { return iced::exit(); }
+                let level = self.update_widget_level();
+                // Closing the Settings window dismisses every auxiliary window it
+                // spawned (menus, pickers, selectors, help, alerts, etc.). The main
+                // widget and any standalone remote popouts are left untouched.
+                if was == Some(WindowKind::Settings) {
+                    let aux: Vec<_> = self.windows.iter()
+                        .filter(|(_, k)| !matches!(k, WindowKind::Widget | WindowKind::Popout))
+                        .map(|(wid, _)| *wid)
+                        .collect();
+                    if !aux.is_empty() {
+                        return Task::batch(std::iter::once(level).chain(aux.into_iter().map(window::close)));
+                    }
+                }
+                level
+            }
             Message::OpenSettings => self.open_settings(),
             Message::HideWidget => self.widget_window().map(|id| window::change_mode(id, window::Mode::Hidden)).unwrap_or(Task::none()),
             Message::OpenAlerts => self.open_popup(WindowKind::Alerts, popups::ALERTS_SIZE),
