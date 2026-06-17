@@ -564,6 +564,8 @@ struct App {
     font_list: Vec<String>,
     appearance_undo: Vec<Appearance>,
     editing_color: Option<u8>,
+    // Which alert colour swatch has its inline hex editor open (e.g. "CPU/hot").
+    editing_warn_color: Option<String>,
     settings_tab: usize,
     game_mode: bool,
     click_through_applied: bool,
@@ -721,6 +723,7 @@ enum Message {
     OpenThemePicker, OpenSkinPicker, ApplyThemePreset(usize), ApplyInstalledTheme(usize), ApplySkin(String),
     ConfirmDeletePreset(u8), DeletePresetConfirmed,
     EditColor(u8),
+    EditWarnColor(String),
     SetSettingsTab(usize),
     ArmHotkey(hotkeys::HotkeyTarget),
     HotkeyKeyPressed(iced::keyboard::Key, iced::keyboard::Modifiers),
@@ -791,7 +794,7 @@ impl App {
         let mut app = Self {
             settings, snapshot: SensorSnapshot::default(), poller: None,
             windows: BTreeMap::new(), warn_state: HashMap::new(),
-            flash_on: false, anim_t: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, settings_tab: 0, game_mode: false,
+            flash_on: false, anim_t: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, editing_warn_color: None, settings_tab: 0, game_mode: false,
             click_through_applied: false,
             pending_snap: None, ignore_next_move: false, snap_right: false, snap_bottom: false,
             _tray: tray, settings_id: sid, show_id: wid, game_id: gid, exit_id: eid,
@@ -1900,6 +1903,10 @@ impl App {
                 self.editing_color = if self.editing_color == Some(slot) { None } else { Some(slot) };
                 Task::none()
             }
+            Message::EditWarnColor(key) => {
+                self.editing_warn_color = if self.editing_warn_color.as_deref() == Some(key.as_str()) { None } else { Some(key) };
+                Task::none()
+            }
             Message::SetHexColor(slot, v) => {
                 match slot { 0 => self.settings.theme_bg = v, 1 => self.settings.theme_tile = v, 2 => self.settings.theme_accent = v, 3 => self.settings.theme_text = v, _ => self.settings.theme_muted = v }
                 let _ = self.settings.save();
@@ -2599,7 +2606,7 @@ impl App {
                 }).unwrap_or(0.0);
                 settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), update, self.cpu_driver_installed, self.tiles_section.clone(), self.preset_arming, self.appearance_undo.last().map(|a| style::parse_hex(&a.accent, p.accent)), self.share_dialog.clone(), copied_opacity, self.settings.tile_order.clone(), self.tile_drag.as_ref().map(|d| (d.name.clone(), d.gap_anim, d.cursor_y)))
             }
-            WindowKind::Alerts => popups::alerts_view(&self.settings, p, id),
+            WindowKind::Alerts => popups::alerts_view(&self.settings, p, id, self.editing_warn_color.as_deref()),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id, self.capturing_hotkey == Some(hotkeys::HotkeyTarget::GameMode)),
             WindowKind::Help => popups::help_view(&self.help_expanded, p, id),
             WindowKind::Updated => {

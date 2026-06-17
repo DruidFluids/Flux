@@ -190,13 +190,55 @@ where
     ].align_y(iced::Alignment::Center).into()
 }
 
+// A clickable colour swatch matching the Appearance tab: the filled chip is a
+// button that toggles an inline hex editor (shown to its left while `editing`).
+fn color_swatch_field<'a, F>(hex: &str, editing: bool, toggle: Message, p: Palette, on_input: F) -> Element<'a, Message>
+where
+    F: Fn(String) -> Message + 'a,
+{
+    let c = crate::style::parse_hex(hex, p.muted);
+    let swatch = button(Space::new(24, 16))
+        .padding(0)
+        .style(move |_, status: button::Status| {
+            let hover = matches!(status, button::Status::Hovered);
+            button::Style {
+                background: Some(iced::Background::Color(c)),
+                border: Border {
+                    radius: 4.0.into(),
+                    width: if editing || hover { 2.0 } else { 1.0 },
+                    color: if editing || hover { p.text } else { Color { a: 0.45, ..p.muted } },
+                },
+                ..Default::default()
+            }
+        })
+        .on_press(toggle);
+    if editing {
+        row![
+            text_input("#AARRGGBB", hex).size(10).width(112)
+                .font(iced::Font::with_name("Consolas"))
+                .on_input(on_input)
+                .style(crate::style::dark_input_style(p)),
+            Space::with_width(6),
+            swatch,
+        ].align_y(iced::Alignment::Center).into()
+    } else {
+        swatch.into()
+    }
+}
+
 // ── Tile Alerts (Warnings) ───────────────────────────────────────────────────
 
 pub const ALERTS_SIZE: iced::Size = iced::Size::new(460.0, 560.0);
 
-fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, Message> {
+fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette, editing: Option<&str>) -> Element<'a, Message> {
     let w = settings.warn(kind).cloned().unwrap_or_default();
     let enabled = w.enabled;
+    let cool_key = format!("{kind}/cool");
+    let hot_key = format!("{kind}/hot");
+    let flash_key = format!("{kind}/flash");
+    let edit_cool = editing == Some(cool_key.as_str());
+    let edit_hot = editing == Some(hot_key.as_str());
+    let edit_flash = editing == Some(flash_key.as_str());
     let k1 = kind.to_string();
     let k2 = kind.to_string();
     let k3 = kind.to_string();
@@ -231,7 +273,7 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
         row![
             text("Start color".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(bp.muted) }),
             Space::with_width(Length::Fill),
-            crate::style::with_tip(color_field(&w.gradient_cool_color, bp, move |s| Message::SetWarnGradientCoolColor(k7.clone(), s)),
+            crate::style::with_tip(color_swatch_field(&w.gradient_cool_color, edit_cool, Message::EditWarnColor(cool_key.clone()), bp, move |s| Message::SetWarnGradientCoolColor(k7.clone(), s)),
                 "The starting color the unit shows when the value is comfortably below the threshold.", bp),
         ].spacing(6).align_y(iced::Alignment::Center).into()
     } else {
@@ -241,7 +283,7 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
         row![
             text("Hot color".to_string()).size(10).style(move |_| iced::widget::text::Style { color: Some(bp.muted) }),
             Space::with_width(Length::Fill),
-            crate::style::with_tip(color_field(&w.gradient_color, bp, move |s| Message::SetWarnGradientColor(k6.clone(), s)),
+            crate::style::with_tip(color_swatch_field(&w.gradient_color, edit_hot, Message::EditWarnColor(hot_key.clone()), bp, move |s| Message::SetWarnGradientColor(k6.clone(), s)),
                 "The 'hot' color the unit text shifts toward as the metric approaches the threshold.", bp),
         ].spacing(6).align_y(iced::Alignment::Center).into()
     } else {
@@ -271,7 +313,7 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
             crate::style::with_tip(toggler(w.flash_enabled).size(14).on_toggle(move |on| Message::SetWarnFlash(k3.clone(), on)).style(crate::style::toggler_style(bp)), "Flash the tile background when the threshold is crossed.", bp),
             text("Flash".to_string()).size(11).style(move |_| iced::widget::text::Style { color: Some(bp.text) }),
             Space::with_width(Length::Fill),
-            crate::style::with_tip(color_field(&w.flash_color, bp, move |s| Message::SetWarnFlashColor(k4.clone(), s)), "The colour the tile flashes when alerting.", bp),
+            crate::style::with_tip(color_swatch_field(&w.flash_color, edit_flash, Message::EditWarnColor(flash_key.clone()), bp, move |s| Message::SetWarnFlashColor(k4.clone(), s)), "The colour the tile flashes when alerting.", bp),
         ].spacing(6).align_y(iced::Alignment::Center),
         // Gradient + (when on) the gradient hot-colour swatch
         row![
@@ -305,19 +347,20 @@ fn warn_card<'a>(settings: &AppSettings, kind: &str, p: Palette) -> Element<'a, 
         .into()
 }
 
-pub fn alerts_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id) -> Element<'a, Message> {
+pub fn alerts_view<'a>(settings: &AppSettings, p: Palette, win_id: window::Id, editing: Option<&str>) -> Element<'a, Message> {
     let intro = text(
         "When the threshold is crossed, the tile background flashes. Gradient mode shifts the \
-         unit color from dark-blue (cool) to bright-red (hot). Temperature thresholds are in \u{00B0}C."
+         unit color from your start color to your hot color as the value climbs. Click any \
+         swatch to edit it. Temperature thresholds are in \u{00B0}C."
             .to_string()
     ).size(11).style(move |_| iced::widget::text::Style { color: Some(p.muted) });
 
     let list = column![
         intro,
         Space::with_height(12),
-        warn_card(settings, "CPU", p),
+        warn_card(settings, "CPU", p, editing),
         Space::with_height(8),
-        warn_card(settings, "GPU", p),
+        warn_card(settings, "GPU", p, editing),
     ];
 
     let body = column![
