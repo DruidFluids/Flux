@@ -155,7 +155,11 @@ pub async fn latest_release() -> Result<(String, String), String> {
 pub fn whats_new(body: &str) -> String {
     let mut out: Vec<&str> = Vec::new();
     for line in body.lines() {
-        if line.trim_start().starts_with("## Install") { break; }
+        // Stop at the operational install section — match the heading EXACTLY so a
+        // content heading like "## Installer & uninstaller" (which also starts with
+        // "## Install") isn't mistaken for it and doesn't blank the whole changelog.
+        let t = line.trim();
+        if t == "## Install" || t == "## Installation" { break; }
         out.push(line);
     }
     out.join("\n").trim().to_string()
