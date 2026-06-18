@@ -346,26 +346,24 @@ pub fn gpu_tile<'a>(gpu: &GpuData, s: &AppSettings, p: Palette, w: WarnView) -> 
 
     let mut primary = row![].align_y(iced::Alignment::End);
     if s.gpu_show_temp {
-        let temp = fmt::fmt_temp(gpu.temperature_c, s);
-        // Integrated GPUs share the CPU die: prefix a chain glyph so their reading
-        // is understood as the CPU-linked sensor, not an independent diode. When
-        // the GPU exposes a real temp we now show it (with the chain marker); when
-        // it doesn't, the chain glyph stands alone.
-        if gpu.is_integrated {
-            let chain = text("\u{1F517}").size(sz(15, s.primary_font_offset, s))
-                .font(iced::Font::with_name("Segoe UI Symbol"))
-                .style(move |_| iced::widget::text::Style { color: Some(p.muted) });
-            let tip = if temp.is_some() {
-                "Integrated GPU \u{2014} temperature shared with the CPU die"
-            } else {
-                "Integrated GPU \u{2014} temperature is shared with the CPU"
-            };
-            primary = primary
-                .push(crate::style::with_tip(chain, tip, p))
-                .push(Space::with_width(if temp.is_some() { 5 } else { 8 }));
-        }
-        if let Some((tv, tu)) = temp {
-            primary = primary.push(big(tv, p, s)).push(unit_inline(tu, accent, s)).push(Space::with_width(8));
+        match fmt::fmt_temp(gpu.temperature_c, s) {
+            // A real temperature is available — a discrete GPU, or an integrated
+            // GPU whose driver exposes one via D3DKMT. Show it plainly, no marker.
+            Some((tv, tu)) => {
+                primary = primary.push(big(tv, p, s)).push(unit_inline(tu, accent, s)).push(Space::with_width(8));
+            }
+            // Integrated GPU with NO separate sensor: a chain glyph marks that the
+            // temperature is shared with (linked to) the CPU die. Discrete GPUs with
+            // no temp show nothing (unchanged).
+            None if gpu.is_integrated => {
+                let chain = text("\u{1F517}").size(sz(15, s.primary_font_offset, s))
+                    .font(iced::Font::with_name("Segoe UI Symbol"))
+                    .style(move |_| iced::widget::text::Style { color: Some(p.muted) });
+                primary = primary
+                    .push(crate::style::with_tip(chain, "Integrated GPU \u{2014} temperature is shared with the CPU", p))
+                    .push(Space::with_width(8));
+            }
+            None => {}
         }
     }
     primary = primary
