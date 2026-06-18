@@ -125,6 +125,10 @@ impl GpuSource for DxgiGpu {
             LowPart: self.luid as u32,
             HighPart: (self.luid >> 32) as i32,
         };
+        // read_clock_temp gives Some(0.0) when the clock query succeeds but the
+        // engine is idle/clock-gated, and None only when the query is unsupported —
+        // so the tile can keep the row reserved (showing "—" at idle) yet stay
+        // hidden on GPUs that genuinely report no clock.
         let (clock_mhz, temperature_c) = d3dkmt::read_clock_temp(luid);
         GpuMetrics {
             usage_percent: self.usage.read(luid).unwrap_or(0.0),
