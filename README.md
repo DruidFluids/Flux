@@ -146,10 +146,17 @@ The Tools tab gathers Alerts, Game Mode, Utilities, and the Remote launcher in o
 <img src="docs/images/settings-tools.png" alt="Tools settings" width="420">
 </div>
 
-When an update is available, the widget's settings gear glows to flag it:
+Updates are never installed silently — you choose **Off**, **Manual**, or **Auto**:
+
+- **Off** — never checks.
+- **Manual** — checks in the background and flags the gear with a quiet dot; you install when you like.
+- **Auto** — checks in the background and pops up a notice when a new version is ready, with the release notes and a button straight to the Updates panel. It still never installs on its own (no surprise admin prompt), and the notice tells you how to switch it off.
 
 <div align="center">
-<img src="docs/images/widget-update.png" alt="Update available indicator" width="200">
+<img src="docs/images/widget-update.png" alt="Update available indicator on the gear" width="200">
+<img src="docs/images/update-notice.png" alt="Auto-mode update notification" width="300">
+<br>
+<sub>Manual flags the gear with a dot; Auto adds a one-click notice.</sub>
 </div>
 
 ### Quality of life
