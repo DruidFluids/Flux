@@ -119,10 +119,12 @@ fn embed_windows_resources() {
     if have_icon {
         res.set_icon(&ico.to_string_lossy());
     }
-    res.set("ProductName", "Flux")
-        .set("FileDescription", "Flux Installer")
+    res.set("ProductName", "Flux - System Monitor")
+        .set("FileDescription", "Flux Setup - system monitor widget for Windows")
         .set("CompanyName", "DruidFluids")
         .set("LegalCopyright", "Copyright (c) 2026 Matt Hakes")
+        .set("LegalTrademarks", "Flux")
+        .set("Comments", "Installs the Flux system-monitor widget. Source-available: https://github.com/DruidFluids/Flux")
         .set("OriginalFilename", "flux-setup.exe")
         .set("InternalName", "flux-setup")
         .set("FileVersion", ver.as_str())
