@@ -372,14 +372,23 @@ pub fn gpu_tile<'a>(gpu: &GpuData, s: &AppSettings, p: Palette, w: WarnView) -> 
 
     let mut sec = column![].spacing(1).align_x(iced::Alignment::Center);
     if s.gpu_show_clock {
-        if let Some(m) = gpu.clock_mhz {
-            sec = sec.push(
-                row![
-                    small(format!("{:.0}", m), p, s),
-                    Space::with_width(3),
-                    small_unit("MHz".into(), accent, s),
-                ].align_y(iced::Alignment::End)
-            );
+        match gpu.clock_mhz {
+            // Live clock.
+            Some(m) if m > 0.0 => {
+                sec = sec.push(
+                    row![
+                        small(format!("{:.0}", m), p, s),
+                        Space::with_width(3),
+                        small_unit("MHz".into(), accent, s),
+                    ].align_y(iced::Alignment::End)
+                );
+            }
+            // No live reading (an integrated 3D engine gated at idle, or a momentary
+            // gap): keep the row reserved with a dash so the tile height stays stable
+            // and a live MHz appears the instant the GPU does work.
+            _ => {
+                sec = sec.push(small("\u{2014}".to_string(), p, s));
+            }
         }
     }
     if s.gpu_show_vram && gpu.vram_used_mb > 0.0 && gpu.vram_total_mb > 0.0 {

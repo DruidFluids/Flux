@@ -39,7 +39,11 @@ pub fn read_clock_temp(luid: LUID) -> (Option<f32>, Option<f32>) {
             pPrivateDriverData: &mut perf as *mut _ as *mut core::ffi::c_void,
             PrivateDriverDataSize: core::mem::size_of::<D3DKMT_NODE_PERFDATA>() as u32,
         };
-        if D3DKMTQueryAdapterInfo(&mut qai).0 == 0 && perf.Frequency > 0 {
+        // Some(0.0) when the query succeeds but the engine is clock-gated (idle);
+        // None only when the query itself fails (clock genuinely unsupported). This
+        // lets the tile show "—" for an idle clock yet hide the row entirely on a
+        // GPU that reports no clock at all.
+        if D3DKMTQueryAdapterInfo(&mut qai).0 == 0 {
             clock_mhz = Some(perf.Frequency as f32 / 1_000_000.0);
         }
 
