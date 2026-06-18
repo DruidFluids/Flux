@@ -36,11 +36,167 @@ pub fn privileged_cpu_temp() -> Option<f32> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum GpuBackend {
-    Nvml,
-    Dxgi,
-    Components,
+// ── GPU sources ──────────────────────────────────────────────────────────────
+//
+// The GPU tile is fed by one per-OS/vendor backend behind the `GpuSource` trait,
+// so a new platform (Linux DRM, macOS IOReport, …) slots in by adding a struct +
+// one arm in `select_gpu_source` — `read_gpu` never changes. Each backend owns
+// its own handle/state (NVML device, D3DKMT adapter LUID + usage sampler) so it
+// doesn't re-discover the adapter on the hot path.
+
+/// Static GPU identity, resolved once at startup (it doesn't change mid-run).
+#[derive(Debug, Clone, Default)]
+struct GpuIdentity {
+    name: String,
+    is_integrated: bool,
+}
+
+/// Live, per-poll GPU metrics. Fields a backend can't supply stay `None`/0.0 so
+/// the tile degrades to an em-dash, exactly as before.
+#[derive(Debug, Clone, Default)]
+struct GpuMetrics {
+    usage_percent: f32,
+    temperature_c: Option<f32>,
+    clock_mhz: Option<f32>,
+    vram_used_mb: f32,
+    vram_total_mb: f32,
+    fan_rpm: Option<f32>,
+}
+
+trait GpuSource: Send {
+    /// Current live metrics. Called every poll; cheap, non-blocking, never panics.
+    fn read(&mut self) -> GpuMetrics;
+    /// Static identity (name + integrated flag). Read once at startup.
+    fn identity(&self) -> GpuIdentity;
+    /// Short label for the startup log.
+    fn kind(&self) -> &'static str;
+}
+
+/// NVIDIA via NVML — full data; cross-platform (Windows + Linux). Never integrated.
+#[cfg(any(windows, target_os = "linux"))]
+struct NvmlGpu {
+    nvml: Nvml,
+}
+#[cfg(any(windows, target_os = "linux"))]
+impl GpuSource for NvmlGpu {
+    fn read(&mut self) -> GpuMetrics {
+        let Ok(d) = self.nvml.device_by_index(0) else { return GpuMetrics::default() };
+        let (vram_used, vram_total) = d
+            .memory_info()
+            .map(|m| (m.used as f32 / 1_048_576.0, m.total as f32 / 1_048_576.0))
+            .unwrap_or((0.0, 0.0));
+        GpuMetrics {
+            usage_percent: d.utilization_rates().map(|u| u.gpu as f32).unwrap_or(0.0),
+            temperature_c: d.temperature(TemperatureSensor::Gpu).ok().map(|t| t as f32),
+            clock_mhz: d
+                .clock_info(nvml_wrapper::enum_wrappers::device::Clock::Graphics)
+                .ok()
+                .map(|c| c as f32),
+            vram_used_mb: vram_used,
+            vram_total_mb: vram_total,
+            fan_rpm: None,
+        }
+    }
+    fn identity(&self) -> GpuIdentity {
+        let name = self
+            .nvml
+            .device_by_index(0)
+            .ok()
+            .and_then(|d| d.name().ok())
+            .map(|n| n.replace("NVIDIA ", ""))
+            .unwrap_or_else(|| "GPU".into());
+        GpuIdentity { name, is_integrated: false }
+    }
+    fn kind(&self) -> &'static str { "NVML (NVIDIA)" }
+}
+
+/// AMD / Intel / unrecognized on Windows: DXGI for name + VRAM, D3DKMT for the
+/// live clock / usage / temperature DXGI itself doesn't expose.
+#[cfg(windows)]
+struct DxgiGpu {
+    luid: u64,
+    usage: d3dkmt::UsageSampler,
+}
+#[cfg(windows)]
+impl GpuSource for DxgiGpu {
+    fn read(&mut self) -> GpuMetrics {
+        let (used, total) = dxgi_query().map(|(_, u, t, _)| (u, t)).unwrap_or((0.0, 0.0));
+        let luid = windows::Win32::Foundation::LUID {
+            LowPart: self.luid as u32,
+            HighPart: (self.luid >> 32) as i32,
+        };
+        let (clock_mhz, temperature_c) = d3dkmt::read_clock_temp(luid);
+        GpuMetrics {
+            usage_percent: self.usage.read(luid).unwrap_or(0.0),
+            temperature_c,
+            clock_mhz,
+            vram_used_mb: used,
+            vram_total_mb: total,
+            fan_rpm: None,
+        }
+    }
+    fn identity(&self) -> GpuIdentity {
+        let name = dxgi_query().map(|(n, ..)| n).unwrap_or_else(|| "GPU".into());
+        let is_integrated = gpu_name_is_integrated(&name);
+        GpuIdentity { name, is_integrated }
+    }
+    fn kind(&self) -> &'static str { "DXGI + D3DKMT (AMD/Intel)" }
+}
+
+/// Apple Silicon (macOS). Always integrated (unified memory).
+#[cfg(target_os = "macos")]
+struct AppleGpu;
+#[cfg(target_os = "macos")]
+impl GpuSource for AppleGpu {
+    fn read(&mut self) -> GpuMetrics {
+        match apple_gpu_query() {
+            Some((_, used, total, temp)) => GpuMetrics {
+                temperature_c: temp,
+                vram_used_mb: used,
+                vram_total_mb: total,
+                ..Default::default()
+            },
+            None => GpuMetrics::default(),
+        }
+    }
+    fn identity(&self) -> GpuIdentity {
+        let name = apple_gpu_query().map(|(n, ..)| n).unwrap_or_else(|| "GPU".into());
+        GpuIdentity { name, is_integrated: true }
+    }
+    fn kind(&self) -> &'static str { "Apple (Metal/IOKit)" }
+}
+
+/// Last resort: no live metrics. `read_gpu` still adds a components temperature.
+struct NoneGpu;
+impl GpuSource for NoneGpu {
+    fn read(&mut self) -> GpuMetrics { GpuMetrics::default() }
+    fn identity(&self) -> GpuIdentity { GpuIdentity { name: "GPU".into(), is_integrated: false } }
+    fn kind(&self) -> &'static str { "sysinfo components (temp only)" }
+}
+
+/// Pick the best available backend for this machine, once at startup.
+fn select_gpu_source() -> Box<dyn GpuSource> {
+    #[cfg(any(windows, target_os = "linux"))]
+    {
+        if let Ok(nvml) = Nvml::init() {
+            if nvml.device_by_index(0).is_ok() {
+                return Box::new(NvmlGpu { nvml });
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if apple_gpu_query().is_some() {
+            return Box::new(AppleGpu);
+        }
+    }
+    #[cfg(windows)]
+    {
+        if let Some((.., luid)) = dxgi_query() {
+            return Box::new(DxgiGpu { luid, usage: d3dkmt::UsageSampler::default() });
+        }
+    }
+    Box::new(NoneGpu)
 }
 
 pub struct SensorPoller {
@@ -48,13 +204,12 @@ pub struct SensorPoller {
     disks: Disks,
     networks: Networks,
     components: Components,
-    nvml: Option<Nvml>,
-    gpu_backend: GpuBackend,
+    // Static GPU identity (name + integrated), resolved once at startup.
+    gpu_identity: GpuIdentity,
+    // Per-OS live-metrics backend (NVML / DXGI+D3DKMT / Apple / none).
+    gpu_source: Box<dyn GpuSource>,
     // Persistent PDH query for the live CPU clock (Windows boost-aware).
     cpu_freq: Option<CpuFreq>,
-    // Previous-sample state for D3DKMT GPU utilization (AMD/Intel, delta-based).
-    #[cfg(windows)]
-    gpu_usage: d3dkmt::UsageSampler,
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -586,63 +741,25 @@ impl SensorPoller {
                 .with_cpu(CpuRefreshKind::everything())
                 .with_memory(MemoryRefreshKind::everything()),
         );
-        let nvml = Nvml::init().ok();
-
-        // Decide and log the GPU backend that will drive the GPU tile.
-        let gpu_backend = if let Some(n) = &nvml {
-            if n.device_by_index(0).is_ok() {
-                GpuBackend::Nvml
-            } else {
-                Self::detect_non_nvml_backend()
-            }
-        } else {
-            Self::detect_non_nvml_backend()
-        };
-
-        match gpu_backend {
-            GpuBackend::Nvml => {
-                tracing::info!("GPU backend: NVML (NVIDIA) — name, load, temp, VRAM, clock");
-            }
-            GpuBackend::Dxgi => {
-                if let Some((name, _, total, _)) = dxgi_query() {
-                    tracing::info!(
-                        "GPU backend: DXGI '{}' ({:.0} MB VRAM) + D3DKMT clock/usage/temp",
-                        name,
-                        total
-                    );
-                } else {
-                    tracing::info!("GPU backend: DXGI");
-                }
-            }
-            GpuBackend::Components => {
-                tracing::info!("GPU backend: sysinfo components (temp only)");
-            }
-        }
+        // Pick the GPU backend once and cache its static identity; log which one.
+        let gpu_source = select_gpu_source();
+        let gpu_identity = gpu_source.identity();
+        tracing::info!(
+            "GPU source: {} — '{}'{}",
+            gpu_source.kind(),
+            gpu_identity.name,
+            if gpu_identity.is_integrated { " (integrated)" } else { "" }
+        );
 
         Self {
             system,
             disks: Disks::new_with_refreshed_list(),
             networks: Networks::new_with_refreshed_list(),
             components: Components::new_with_refreshed_list(),
-            nvml,
-            gpu_backend,
+            gpu_identity,
+            gpu_source,
             cpu_freq: CpuFreq::new(),
-            #[cfg(windows)]
-            gpu_usage: d3dkmt::UsageSampler::default(),
         }
-    }
-
-    fn detect_non_nvml_backend() -> GpuBackend {
-        #[cfg(target_os = "macos")]
-        {
-            if apple_gpu_query().is_some() {
-                return GpuBackend::Dxgi; // reuse "vendor SDK" path label
-            }
-        }
-        if dxgi_query().is_some() {
-            return GpuBackend::Dxgi;
-        }
-        GpuBackend::Components
     }
 
     pub fn poll(&mut self) -> SensorSnapshot {
@@ -752,96 +869,20 @@ impl SensorPoller {
     }
 
     fn read_gpu(&mut self) -> GpuData {
-        // NVIDIA via NVML — full data.
-        if self.gpu_backend == GpuBackend::Nvml {
-            if let Some(nvml) = &self.nvml {
-                if let Ok(device) = nvml.device_by_index(0) {
-                    let name = device.name().unwrap_or_else(|_| "GPU".into())
-                        .replace("NVIDIA ", "");
-                    let usage = device.utilization_rates()
-                        .map(|u| u.gpu as f32)
-                        .unwrap_or(0.0);
-                    let temp = device.temperature(TemperatureSensor::Gpu)
-                        .ok()
-                        .map(|t| t as f32);
-                    let (vram_used, vram_total) = device.memory_info()
-                        .map(|m| (
-                            m.used as f32 / (1024.0 * 1024.0),
-                            m.total as f32 / (1024.0 * 1024.0),
-                        ))
-                        .unwrap_or((0.0, 0.0));
-                    let clock = device.clock_info(nvml_wrapper::enum_wrappers::device::Clock::Graphics)
-                        .ok()
-                        .map(|c| c as f32);
-
-                    return GpuData {
-                        name,
-                        usage_percent: usage,
-                        temperature_c: temp,
-                        vram_used_mb: vram_used,
-                        vram_total_mb: vram_total,
-                        clock_mhz: clock,
-                        ..Default::default()
-                    };
-                }
-            }
-        }
-
-        // Apple Silicon (macOS).
-        #[cfg(target_os = "macos")]
-        {
-            if let Some((name, used, total, temp)) = apple_gpu_query() {
-                return GpuData {
-                    name,
-                    vram_used_mb: used,
-                    vram_total_mb: total,
-                    temperature_c: temp,
-                    ..Default::default()
-                };
-            }
-        }
-
-        // DXGI (AMD / Intel / unrecognized) — name + VRAM. Live clock & temp come
-        // from D3DKMT (Windows), which DXGI itself does not expose.
-        if self.gpu_backend == GpuBackend::Dxgi {
-            if let Some((name, used, total, _luid_packed)) = dxgi_query() {
-                let integrated = gpu_name_is_integrated(&name);
-                let (clock_mhz, temp, usage) = {
-                    #[cfg(windows)]
-                    {
-                        let luid = windows::Win32::Foundation::LUID {
-                            LowPart: _luid_packed as u32,
-                            HighPart: (_luid_packed >> 32) as i32,
-                        };
-                        let (c, t) = crate::d3dkmt::read_clock_temp(luid);
-                        // Sequence the borrows: components (temp) then the sampler.
-                        let temp = t.or_else(|| self.gpu_temp_from_components());
-                        let usage = self.gpu_usage.read(luid).unwrap_or(0.0);
-                        (c, temp, usage)
-                    }
-                    #[cfg(not(windows))]
-                    {
-                        (None, self.gpu_temp_from_components(), 0.0)
-                    }
-                };
-                return GpuData {
-                    name,
-                    usage_percent: usage,
-                    temperature_c: temp,
-                    clock_mhz,
-                    vram_used_mb: used,
-                    vram_total_mb: total,
-                    is_integrated: integrated,
-                    ..Default::default()
-                };
-            }
-        }
-
-        // Last resort: temperature from sysinfo components only.
+        // Live numbers from the active backend, merged with the cached identity.
+        // The components-temperature fallback lives here (not in the backend) so
+        // every source benefits from it when it can't read a GPU temp itself.
+        let m = self.gpu_source.read();
+        let temperature_c = m.temperature_c.or_else(|| self.gpu_temp_from_components());
         GpuData {
-            name: "GPU".into(),
-            temperature_c: self.gpu_temp_from_components(),
-            ..Default::default()
+            name: self.gpu_identity.name.clone(),
+            is_integrated: self.gpu_identity.is_integrated,
+            usage_percent: m.usage_percent,
+            temperature_c,
+            clock_mhz: m.clock_mhz,
+            vram_used_mb: m.vram_used_mb,
+            vram_total_mb: m.vram_total_mb,
+            fan_rpm: m.fan_rpm,
         }
     }
 
