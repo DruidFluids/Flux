@@ -1191,22 +1191,21 @@ pub fn view<'a>(
         Space::with_height(4),
     ].spacing(3);
 
-    // Mode pills (Off → Manual → Auto → Auto-install, increasing automation).
+    // Mode pills (Off → Manual → Auto, increasing automation). Flux never installs
+    // anything on its own: Auto only pops up a notice; you choose when to install.
     use flux_core::settings::UpdateMode;
     let mode_row = row![
         crate::style::with_tip(pill("Off".into(), update.mode == UpdateMode::Off, Message::SetUpdateMode("Off".into())), "Never check for updates.", p),
-        crate::style::with_tip(pill("Manual".into(), update.mode == UpdateMode::Manual, Message::SetUpdateMode("Manual".into())), "Only check when you press Check now.", p),
-        crate::style::with_tip(pill("Auto".into(), update.mode == UpdateMode::Auto, Message::SetUpdateMode("Auto".into())), "Check on launch and periodically, and flag the gear when an update is waiting.", p),
-        crate::style::with_tip(pill("Auto-install".into(), update.mode == UpdateMode::AutoInstall, Message::SetUpdateMode("AutoInstall".into())), "Automatically download and install new versions (still SHA-256 verified).", p),
+        crate::style::with_tip(pill("Manual".into(), update.mode == UpdateMode::Manual, Message::SetUpdateMode("Manual".into())), "Check in the background and flag the gear with a dot \u{2014} never pops up.", p),
+        crate::style::with_tip(pill("Auto".into(), update.mode == UpdateMode::Auto, Message::SetUpdateMode("Auto".into())), "Check in the background and pop up a notice when an update is ready (never installs on its own).", p),
         Space::with_width(Length::Fill),
     ].spacing(4).align_y(iced::Alignment::Center);
     updates_col = updates_col.push(mode_row);
     // One-line description of what the selected mode does.
     let mode_hint = match update.mode {
         UpdateMode::Off => "Never checks for updates.",
-        UpdateMode::Manual => "Checks only when you press Check now.",
-        UpdateMode::Auto => "Checks on launch and every 6h, and flags the gear \u{2014} you choose when to install.",
-        UpdateMode::AutoInstall => "Checks and installs new versions automatically (still SHA-256 verified).",
+        UpdateMode::Manual => "Checks in the background and flags the gear with a dot \u{2014} never pops up.",
+        UpdateMode::Auto => "Checks in the background and pops up a notice when an update is ready \u{2014} you choose when to install.",
     };
     updates_col = updates_col.push(
         text(mode_hint).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) })

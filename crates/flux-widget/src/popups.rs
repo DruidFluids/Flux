@@ -634,6 +634,64 @@ pub fn updated_view<'a>(version: &str, changelog: &str, reset_checked: bool, p: 
     shell("Updated", win_id, p, body.into())
 }
 
+pub const UPDATE_AVAILABLE_SIZE: iced::Size = iced::Size::new(440.0, 470.0);
+
+/// Auto-mode "a new version is out" notice. Same styling as the post-update
+/// notice (header + a what's-new box), but its job is to point the user at
+/// Settings to install on their own terms — never a surprise install/UAC — and
+/// to explain how to quiet the pop-ups.
+pub fn update_available_view<'a>(version: &str, changelog: &str, p: Palette, win_id: window::Id) -> Element<'a, Message> {
+    let header = column![
+        text(format!("Flux v{version} is available")).size(17)
+            .font(iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT })
+            .style(move |_| iced::widget::text::Style { color: Some(p.accent) }),
+        text("A new version is ready — install it from Settings whenever you like.").size(11)
+            .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
+    ].spacing(2);
+
+    let notes: Element<'a, Message> = if changelog.trim().is_empty() {
+        text("Open the Updates panel in Settings to see what's new and install.")
+            .size(11).style(move |_| iced::widget::text::Style { color: Some(Color { a: 0.9, ..p.text }) }).into()
+    } else {
+        crate::settings_panel::changelog_md(changelog, p)
+    };
+    let notes_box = container(scrollable(container(notes).padding(iced::Padding { top: 2.0, right: 10.0, bottom: 2.0, left: 2.0 })).height(Length::Fill).style(crate::style::scrollable_style(p)))
+        .width(Length::Fill).height(Length::Fill)
+        .padding(10)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(Color { a: 0.5, ..p.tile })),
+            border: Border { radius: 8.0.into(), width: 1.0, color: Color { a: 0.25, ..p.muted } },
+            ..Default::default()
+        });
+
+    // How to quiet these pop-ups, in the box's own muted style.
+    let hint = text("Prefer no pop-ups? Set Updates to Manual (a quiet dot on the gear) or Off in Settings \u{2192} Tools.")
+        .size(10).style(move |_| iced::widget::text::Style { color: Some(Color { a: 0.8, ..p.muted }) });
+
+    let footer = column![
+        container(Space::new(Length::Fill, 1))
+            .style(move |_| iced::widget::container::Style { background: Some(iced::Background::Color(Color { a: 0.25, ..p.muted })), ..Default::default() }),
+        container(row![
+            Space::with_width(Length::Fill),
+            crate::style::inline_btn("Later", Message::ClosePopup(win_id), p),
+            Space::with_width(8),
+            primary_btn("Open in Settings", Message::OpenUpdateInSettings(win_id), p),
+        ].align_y(iced::Alignment::Center))
+            .width(Length::Fill).padding(iced::Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 }),
+    ];
+
+    let body = column![
+        header,
+        Space::with_height(10),
+        notes_box,
+        Space::with_height(8),
+        hint,
+        Space::with_height(8),
+        footer,
+    ].height(Length::Fill);
+    shell("Update available", win_id, p, body.into())
+}
+
 // ── Optional CPU sensor driver (PawnIO) ─────────────────────────────────────
 //
 // Mirrors the C# CpuTempDialog: a pitch + "More info" + Install, a progress

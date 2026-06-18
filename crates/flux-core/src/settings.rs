@@ -236,7 +236,17 @@ impl SnapPosition {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum UpdateMode { Auto, Manual, Off, AutoInstall }
+pub enum UpdateMode {
+    /// Background-check and pop up a notice when an update is found.
+    /// (`AutoInstall` alias: the old silent auto-installer is gone — those users
+    /// now get the prompt instead of a surprise UAC.)
+    #[serde(alias = "AutoInstall")]
+    Auto,
+    /// Background-check and flag the gear with a dot, but never pop up.
+    Manual,
+    /// Never check for updates.
+    Off,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TempUnit { Celsius, Fahrenheit }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]

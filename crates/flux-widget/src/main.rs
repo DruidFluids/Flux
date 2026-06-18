@@ -494,7 +494,7 @@ fn cursor_logical_pos() -> Option<(f32, f32)> {
 fn cursor_logical_pos() -> Option<(f32, f32)> { None }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum WindowKind { Widget, Settings, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, Remote, WindowPicker, ThemeStore, PopoutConfig, CpuDriver, Picker, ConfirmDelete, Updated }
+enum WindowKind { Widget, Settings, Alerts, GameMode, Help, WidgetMenu, Popout, Utilities, Remote, WindowPicker, ThemeStore, PopoutConfig, CpuDriver, Picker, ConfirmDelete, Updated, UpdateAvailable }
 
 // Settings window is a single FIXED size for every tab — it never grows or
 // shrinks when switching tabs. The height is sized to the tallest tab
@@ -525,6 +525,7 @@ fn kind_key(kind: WindowKind) -> Option<&'static str> {
         WindowKind::Picker => Some("picker"),
         WindowKind::ConfirmDelete => Some("confirmdelete"),
         WindowKind::Updated => Some("updated"),
+        WindowKind::UpdateAvailable => Some("updateavailable"),
         WindowKind::Popout => Some("popout"),
         WindowKind::Widget | WindowKind::Settings | WindowKind::WidgetMenu => None,
     }
@@ -689,6 +690,9 @@ struct App {
     update_status: String,
     update_status_kind: u8, // 0 neutral, 1 good (green), 2 bad (red)
     update_available: Option<updates::PendingUpdate>,
+    // Version we've already popped the Auto-mode notice for, so the periodic
+    // re-check doesn't re-open the popup every few hours for the same release.
+    update_notified_version: Option<String>,
     // Some(fraction) while an update is downloading/verifying — drives the bar.
     update_progress: Option<f32>,
     // Set on a post-update launch so the "Updated to vX" notice opens once the
@@ -813,6 +817,9 @@ enum Message {
     ToggleUpdateReset(bool),
     FinishUpdateNotice(window::Id),
     UpdateLater,
+    // From the Auto-mode "update available" popup: jump to Settings → Tools
+    // (Updates) so the user installs on their terms, and close the popup.
+    OpenUpdateInSettings(window::Id),
     PresetSlotClick(u8),
     OpenThemePicker, OpenSkinPicker, ApplyThemePreset(usize), ApplyInstalledTheme(usize), ApplySkin(String),
     ConfirmDeletePreset(u8), DeletePresetConfirmed,
@@ -904,6 +911,7 @@ impl App {
             blocklist_editor: iced::widget::text_editor::Content::with_text(&blocklist_text),
             blocklist_status: String::new(),
             update_checking: false, update_status: String::new(), update_status_kind: 0, update_available: None,
+            update_notified_version: None,
             update_progress: None, pending_update_popup: None, just_updated_version: None, update_reset_checked: false,
             latest_changelog: None,
             updates_show_info: false,
@@ -957,19 +965,22 @@ impl App {
         use flux_core::settings::UpdateMode;
         let mode = app.settings.update_check_mode.clone();
         let mut batch = vec![open_task];
-        // The `--shot widget-update` demo forces an "update available" state; skip the
-        // real update check so it doesn't immediately clear it before the capture.
+        // The `--shot widget-update` / `update-available` demos force an
+        // "update available" state; skip the real check so it doesn't clear the
+        // injected update before the capture.
         let is_update_shot = {
             let a: Vec<String> = std::env::args().collect();
-            a.iter().position(|x| x == "--shot").and_then(|i| a.get(i + 1)).map(|s| s == "widget-update").unwrap_or(false)
+            a.iter().position(|x| x == "--shot").and_then(|i| a.get(i + 1))
+                .map(|s| s == "widget-update" || s == "update-available").unwrap_or(false)
         };
         // Off makes no update network calls at all. Every other mode fetches the
         // latest release notes so the Updates changelog is ready to read.
         if mode != UpdateMode::Off && !is_update_shot {
             batch.push(Task::perform(updates::latest_release(), Message::LatestReleaseDone));
         }
-        // Auto / Auto-install additionally run a version check on launch.
-        if matches!(mode, UpdateMode::Auto | UpdateMode::AutoInstall) && !is_update_shot {
+        // Auto and Manual both run a background version check on launch (Auto pops
+        // up a notice when one's found; Manual only flags the gear with a dot).
+        if matches!(mode, UpdateMode::Auto | UpdateMode::Manual) && !is_update_shot {
             batch.push(Task::done(Message::CheckForUpdates));
         }
         // Hidden `--shot <name>` (screenshot / visual QA): open Settings on a given
@@ -999,6 +1010,15 @@ impl App {
                         changelog: "## Highlights\n- Example pending update".into(),
                         url: String::new(), sha256: None,
                     });
+                }
+                "update-available" => {
+                    // The Auto-mode "update available" notification popup.
+                    app.update_available = Some(updates::PendingUpdate {
+                        version: "1.0.25".into(),
+                        changelog: "## Highlights\n- A new release is available\n- Click \"Open in Settings\" to install on your terms".into(),
+                        url: String::new(), sha256: None,
+                    });
+                    batch.push(app.open_popup(WindowKind::UpdateAvailable, popups::UPDATE_AVAILABLE_SIZE));
                 }
                 // Settings tab / dialog shots (capture the "Flux" window):
                 other => {
@@ -2407,14 +2427,16 @@ impl App {
                 use flux_core::settings::UpdateMode;
                 self.settings.update_check_mode = match mode.as_str() {
                     "Auto" => UpdateMode::Auto,
-                    "AutoInstall" => UpdateMode::AutoInstall,
                     "Off" => UpdateMode::Off,
                     _ => UpdateMode::Manual,
                 };
+                // Re-arm the notice for the current release when the mode changes,
+                // so switching to Auto can prompt again for a pending update.
+                self.update_notified_version = None;
                 let _ = self.settings.save();
-                // Entering an auto mode runs a check straight away so the new
-                // setting takes effect without waiting for a restart.
-                if matches!(self.settings.update_check_mode, UpdateMode::Auto | UpdateMode::AutoInstall) {
+                // Auto and Manual both check; check immediately so the new setting
+                // takes effect without waiting for a restart.
+                if matches!(self.settings.update_check_mode, UpdateMode::Auto | UpdateMode::Manual) {
                     return Task::done(Message::CheckForUpdates);
                 }
                 Task::none()
@@ -2447,10 +2469,21 @@ impl App {
                         self.update_status = "Update available!".into();
                         self.update_status_kind = 1;
                         update.changelog = updates::whats_new(&update.changelog);
+                        let version = update.version.clone();
                         self.update_available = Some(update);
-                        // Auto-install: download + verify + install hands-free.
-                        if self.settings.update_check_mode == flux_core::settings::UpdateMode::AutoInstall {
-                            return Task::done(Message::DownloadUpdate);
+                        // Auto mode actively notifies with a popup; Manual just flags
+                        // the gear (the dot is driven by `update_available`). Only pop
+                        // up for a real background find: not while the user is in
+                        // Settings (they see it inline), and only once per version so
+                        // the 6-hourly re-check doesn't nag.
+                        let settings_open = self.windows.values().any(|k| *k == WindowKind::Settings);
+                        let already_notified = self.update_notified_version.as_deref() == Some(version.as_str());
+                        if self.settings.update_check_mode == flux_core::settings::UpdateMode::Auto
+                            && !settings_open
+                            && !already_notified
+                        {
+                            self.update_notified_version = Some(version);
+                            return self.open_popup(WindowKind::UpdateAvailable, popups::UPDATE_AVAILABLE_SIZE);
                         }
                     }
                     updates::CheckResult::Failed(e) => {
@@ -2563,6 +2596,12 @@ impl App {
                 Task::batch(tasks)
             }
             Message::UpdateLater => { self.update_available = None; self.update_status = String::new(); self.update_progress = None; Task::none() }
+            Message::OpenUpdateInSettings(id) => {
+                // Land on the Tools tab (where the Updates panel lives), then close
+                // the notice. The gear dot stays until the update is actually applied.
+                self.settings_tab = 2;
+                Task::batch([window::close(id), self.open_settings()])
+            }
             Message::ExportAppearance => {
                 // Open the dialog pre-filled with the current code (visible + copyable).
                 self.share_dialog = Some((true, self.appearance_share_code()));
@@ -2777,6 +2816,12 @@ impl App {
                     .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
                 let log = self.latest_changelog.as_ref().map(|(_, b)| updates::whats_new(b)).unwrap_or_default();
                 popups::updated_view(&ver, &log, self.update_reset_checked, p, id)
+            }
+            WindowKind::UpdateAvailable => {
+                let (ver, log) = self.update_available.as_ref()
+                    .map(|u| (u.version.clone(), u.changelog.clone()))
+                    .unwrap_or_else(|| (String::new(), String::new()));
+                popups::update_available_view(&ver, &log, p, id)
             }
             WindowKind::Utilities => popups::utilities_view(&self.blocklist_editor, &self.blocklist_status, p, id),
             WindowKind::Remote => {
@@ -3097,9 +3142,9 @@ impl App {
         if matches!(self.settings.network_traffic_indicator.as_str(), "Blink" | "Fade") {
             subs.push(iced::time::every(Duration::from_millis(60)).map(|_| Message::AnimTick));
         }
-        // Auto / Auto-install re-check for updates periodically (every 6h) so a
+        // Auto and Manual re-check for updates periodically (every 6h) so a
         // long-running widget notices new releases without needing a restart.
-        if matches!(self.settings.update_check_mode, flux_core::settings::UpdateMode::Auto | flux_core::settings::UpdateMode::AutoInstall) {
+        if matches!(self.settings.update_check_mode, flux_core::settings::UpdateMode::Auto | flux_core::settings::UpdateMode::Manual) {
             subs.push(iced::time::every(Duration::from_secs(6 * 3600)).map(|_| Message::CheckForUpdates));
         }
         // Drive the title-bar brand blip while it animates after a window opens.
