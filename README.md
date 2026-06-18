@@ -8,7 +8,7 @@
 
 Real-time CPU, GPU, RAM, network, and disk stats — always on your desktop, never in your way.
 
-[![Release](https://img.shields.io/badge/release-v1.0.26-5898a0)](../../releases)
+[![Release](https://img.shields.io/badge/release-v1.1.0-5898a0)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](#requirements)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20iced-dea584)](https://iced.rs)
 [![License](https://img.shields.io/badge/license-Personal%20Use-c0392b)](LICENSE)
@@ -85,12 +85,38 @@ Hit the <img src="docs/images/die.svg" height="15" alt="randomize"> for a random
 
 100+ color presets — light or dark, vibrant or muted — plus full control over your own 5-color palette. A sampler of the range, name under each so you can grab the one you like:
 
-|  |  |  |  |  |
-|:--:|:--:|:--:|:--:|:--:|
-| <img src="docs/images/color-default.png" alt="Dark (default)" width="120"> | <img src="docs/images/color-synthwave.png" alt="Synthwave '84" width="120"> | <img src="docs/images/color-dracula.png" alt="Dracula" width="120"> | <img src="docs/images/color-rose-pine.png" alt="Rosé Pine" width="120"> | <img src="docs/images/color-gruvbox.png" alt="Gruvbox" width="120"> |
-| **Dark (default)** | **Synthwave '84** | **Dracula** | **Rosé Pine** | **Gruvbox** |
-| <img src="docs/images/color-material-darker.png" alt="Material Darker" width="120"> | <img src="docs/images/color-monokai-pro.png" alt="Monokai Pro" width="120"> | <img src="docs/images/color-nord.png" alt="Nord" width="120"> | <img src="docs/images/color-solarized-light.png" alt="Solarized Light" width="120"> | <img src="docs/images/color-snazzy-light.png" alt="Snazzy Light" width="120"> |
-| **Material Darker** | **Monokai Pro** | **Nord** | **Solarized Light** | **Snazzy Light** |
+<div align="center">
+<table>
+<tr>
+<td align="center"><img src="docs/images/color-default.png" alt="Dark (default)" width="120"></td>
+<td align="center"><img src="docs/images/color-synthwave.png" alt="Synthwave '84" width="120"></td>
+<td align="center"><img src="docs/images/color-dracula.png" alt="Dracula" width="120"></td>
+<td align="center"><img src="docs/images/color-rose-pine.png" alt="Rosé Pine" width="120"></td>
+<td align="center"><img src="docs/images/color-gruvbox.png" alt="Gruvbox" width="120"></td>
+</tr>
+<tr>
+<td align="center"><b>Dark (default)</b></td>
+<td align="center"><b>Synthwave '84</b></td>
+<td align="center"><b>Dracula</b></td>
+<td align="center"><b>Rosé Pine</b></td>
+<td align="center"><b>Gruvbox</b></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/images/color-material-darker.png" alt="Material Darker" width="120"></td>
+<td align="center"><img src="docs/images/color-monokai-pro.png" alt="Monokai Pro" width="120"></td>
+<td align="center"><img src="docs/images/color-nord.png" alt="Nord" width="120"></td>
+<td align="center"><img src="docs/images/color-solarized-light.png" alt="Solarized Light" width="120"></td>
+<td align="center"><img src="docs/images/color-snazzy-light.png" alt="Snazzy Light" width="120"></td>
+</tr>
+<tr>
+<td align="center"><b>Material Darker</b></td>
+<td align="center"><b>Monokai Pro</b></td>
+<td align="center"><b>Nord</b></td>
+<td align="center"><b>Solarized Light</b></td>
+<td align="center"><b>Snazzy Light</b></td>
+</tr>
+</table>
+</div>
 
 ### CPU temperature
 
