@@ -1402,7 +1402,11 @@ pub fn view<'a>(
         strip = strip.push(
             button(container(text(lbl.to_string()).size(13)
                 .wrapping(iced::widget::text::Wrapping::None)
-                .font(iced::Font { weight: if on { iced::font::Weight::Semibold } else { iced::font::Weight::Medium }, ..iced::Font::DEFAULT }))
+                // Inactive tabs use Normal, not Medium: Segoe UI ships no Medium
+                // (500) face, so iced fell back to a symbol font and the labels
+                // rendered as tofu. Normal (400) is always present; active stays
+                // Semibold for the weight contrast.
+                .font(iced::Font { weight: if on { iced::font::Weight::Semibold } else { iced::font::Weight::Normal }, ..iced::Font::DEFAULT }))
                 .center_x(Length::Fill))
                 .width(Length::Fill)
                 .padding(iced::Padding { top: 7.0, right: 4.0, bottom: 7.0, left: 4.0 })
