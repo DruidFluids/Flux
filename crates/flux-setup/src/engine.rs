@@ -99,7 +99,6 @@ mod imp {
     use std::process::Command;
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
 
     pub fn is_elevated() -> bool {
         use windows::Win32::Foundation::{CloseHandle, HANDLE};
@@ -450,16 +449,23 @@ mod imp {
     /// Write the widget exe, retrying briefly if it's still locked. A just-killed
     /// widget (live self-update) can hold the file handle for a moment after
     /// taskkill returns, which would otherwise fail the write with a sharing
-    /// violation. Retries up to ~6s before giving up.
+    /// violation (os error 32). Retries up to ~8s before giving up.
+    ///
+    /// Each attempt re-creates the parent directory first: a reinstall that lands
+    /// right after an uninstall can race that uninstall's detached cleanup-delete,
+    /// so the folder may briefly vanish or be locked mid-delete between tries —
+    /// recreating + retrying lets the install win the race instead of erroring out.
     fn write_exe_with_retry(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
         let mut last = None;
-        for attempt in 0..30 {
+        for _ in 0..40 {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
             match std::fs::write(path, bytes) {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     last = Some(e);
                     std::thread::sleep(std::time::Duration::from_millis(200));
-                    let _ = attempt;
                 }
             }
         }
@@ -690,10 +696,11 @@ mod imp {
             rep.step("Removed sensor service, shared data, and PawnIO driver".to_string());
         }
 
-        // Remove the installed exe now; defer the directory (which still holds
-        // the running uninstaller) to a detached cmd that waits for us to exit.
-        let _ = std::fs::remove_file(&exe);
-        schedule_dir_removal(&dir);
+        // We were relaunched from %TEMP% (see relaunch_uninstaller_from_temp), so
+        // nothing in the install folder is locked by us — delete it outright,
+        // retrying briefly while the just-killed widget releases its handle. No
+        // deferred shell, no ping, nothing left to race a fresh reinstall.
+        remove_dir_with_retry(&dir);
         rep.step("Removed program files".to_string());
 
         Ok(rep)
@@ -796,20 +803,64 @@ mod imp {
         }
     }
 
-    /// Spawn a detached shell that waits a moment (for this process to exit and
-    /// release `uninstall.exe`) then deletes the whole install directory.
+    /// Recursively remove the install directory, retrying briefly while a
+    /// just-killed widget releases its handle. Safe to call directly because the
+    /// uninstaller relaunches itself from %TEMP% first (see
+    /// `relaunch_uninstaller_from_temp`), so nothing here is the running exe.
+    fn remove_dir_with_retry(dir: &std::path::Path) {
+        for _ in 0..25 {
+            if !dir.exists() {
+                return;
+            }
+            if std::fs::remove_dir_all(dir).is_ok() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        }
+    }
+
+    /// A program can't delete the folder it's running from, and the uninstaller is
+    /// registered to run from *inside* the install directory. So, unless we've
+    /// already been relaunched, copy ourselves to `%TEMP%` and relaunch from there
+    /// (adding `--from-temp`); that copy deletes the install folder directly. This
+    /// is the standard custom-installer approach (Inno/NSIS do the same) and
+    /// replaces the old deferred `ping & rmdir`, removing the reinstall race.
     ///
-    /// The command line is passed with `raw_arg` so `cmd.exe` sees the quoting
-    /// verbatim — `Command::arg` would backslash-escape the path's quotes,
-    /// which `cmd` doesn't understand, and the `rmdir` would silently no-op.
-    fn schedule_dir_removal(dir: &std::path::Path) {
-        let _ = Command::new("cmd.exe")
-            .raw_arg(format!(
-                "/C ping 127.0.0.1 -n 3 >nul & rmdir /S /Q \"{}\"",
-                dir.display()
-            ))
-            .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-            .spawn();
+    /// Returns `true` when it relaunched and the caller should exit; `false` when
+    /// we're not running from the install dir (safe to uninstall in place) or the
+    /// copy/spawn failed (degrade gracefully rather than block the uninstall).
+    pub fn relaunch_uninstaller_from_temp(args: &[String], scope: Scope) -> bool {
+        let me = match std::env::current_exe() {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
+        let in_install_dir = install_dir(scope).map(|d| me.starts_with(&d)).unwrap_or(false);
+        if !in_install_dir {
+            return false;
+        }
+        let tmp = std::env::temp_dir().join(format!("flux-uninstall-{}.exe", std::process::id()));
+        if std::fs::copy(&me, &tmp).is_err() {
+            return false;
+        }
+        Command::new(&tmp).args(args).arg("--from-temp").spawn().is_ok()
+    }
+
+    /// Ask Windows to delete this exe on the next reboot — the temp copy from
+    /// `relaunch_uninstaller_from_temp` can't delete itself while running. This is
+    /// the documented mechanism for removing an in-use file (`MoveFileEx` with
+    /// `DELAY_UNTIL_REBOOT`): no spawned helper, no `ping`, nothing left running.
+    /// Best-effort — it records a `PendingFileRenameOperations` entry under HKLM,
+    /// which needs admin, so a per-user uninstall simply no-ops and the small copy
+    /// lingers harmlessly in `%TEMP%` until Windows clears it.
+    pub fn mark_self_delete_on_reboot() {
+        use windows::core::{HSTRING, PCWSTR};
+        use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_DELAY_UNTIL_REBOOT};
+        if let Ok(me) = std::env::current_exe() {
+            let wide = HSTRING::from(me.as_os_str());
+            unsafe {
+                let _ = MoveFileExW(&wide, PCWSTR::null(), MOVEFILE_DELAY_UNTIL_REBOOT);
+            }
+        }
     }
 }
 
@@ -843,9 +894,13 @@ mod imp {
     pub fn launch(_scope: Scope) -> Result<()> {
         Err(err("The Flux installer is Windows-only."))
     }
+    pub fn relaunch_uninstaller_from_temp(_args: &[String], _scope: Scope) -> bool {
+        false
+    }
+    pub fn mark_self_delete_on_reboot() {}
 }
 
 pub use imp::{
-    install, install_dir, is_elevated, launch, relaunch_elevated_wait, sensor_service_exists, sensor_service_running,
-    uninstall,
+    install, install_dir, is_elevated, launch, mark_self_delete_on_reboot, relaunch_elevated_wait,
+    relaunch_uninstaller_from_temp, sensor_service_exists, uninstall,
 };

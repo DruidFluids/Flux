@@ -28,6 +28,16 @@ fn main() -> iced::Result {
         std::process::exit(0);
     }
     if cli::has(&args, &["uninstall"]) {
+        // The uninstaller is registered to run from inside the install directory,
+        // where it can't delete its own folder. Unless we've already been
+        // relaunched from %TEMP%, copy ourselves there and relaunch — that copy
+        // deletes the install dir directly (no deferred delete, no ping, no
+        // reinstall race). The temp copy then asks Windows to remove it on reboot.
+        if cli::has(&args, &["from-temp", "fromtemp"]) {
+            engine::mark_self_delete_on_reboot();
+        } else if engine::relaunch_uninstaller_from_temp(&args, cli::scope(&args)) {
+            return Ok(());
+        }
         // Silent/quiet uninstall (QuietUninstallString) stays headless; an
         // interactive uninstall opens the same wizard GUI in uninstall mode.
         if cli::is_silent(&args) {
