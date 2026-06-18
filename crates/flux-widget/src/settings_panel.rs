@@ -305,9 +305,8 @@ pub fn view<'a>(
             TipPos::FollowCursor),
         Space::with_width(2),
         driver_status,
-        Space::with_width(Length::Fill),
-        crate::style::with_tip(seg("\u{00B0}C".into(), !fahrenheit, Message::SetFahrenheit(false)), "Show temperatures in Celsius.", p),
-        crate::style::with_tip(seg("\u{00B0}F".into(), fahrenheit, Message::SetFahrenheit(true)), "Show temperatures in Fahrenheit.", p),
+        // °C/°F moved out to the master Temperature-unit bar atop the Tiles tab —
+        // the unit is global, so it no longer lives in the CPU tile's options.
     ].align_y(iced::Alignment::Center).spacing(0).into();
 
     // ── Tile Labels: CPU/GPU with Auto/Custom pills ──
@@ -803,7 +802,27 @@ pub fn view<'a>(
             .style(move |_| iced::widget::text::Style { color: Some(iced::Color { a: 0.65, ..p.muted }) })
     ).width(Length::Fill).center_x(Length::Fill)
         .padding(iced::Padding { top: 0.0, right: 0.0, bottom: 8.0, left: 0.0 });
-    let tiles_tab: Element<'a, Message> = column![drag_hint, tcol].into();
+    // Master temperature-unit switch — a full-width bar at the very top of the
+    // Tiles tab. The unit is global (every tile's temperature uses it), so it lives
+    // here as one master control rather than buried in the CPU tile's options.
+    let temp_unit_bar = container(
+        row![
+            text("Temperature unit").size(12)
+                .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+            Space::with_width(Length::Fill),
+            crate::style::with_tip(seg("\u{00B0}C".into(), !fahrenheit, Message::SetFahrenheit(false)), "Show all temperatures in Celsius.", p),
+            crate::style::with_tip(seg("\u{00B0}F".into(), fahrenheit, Message::SetFahrenheit(true)), "Show all temperatures in Fahrenheit.", p),
+        ].align_y(iced::Alignment::Center)
+    )
+    .width(Length::Fill)
+    .padding(iced::Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
+    .style(move |_| iced::widget::container::Style {
+        background: Some(iced::Background::Color(iced::Color { a: 0.5, ..p.tile })),
+        border: Border { radius: 8.0.into(), width: 1.0, color: iced::Color { a: 0.25, ..p.muted } },
+        ..Default::default()
+    });
+    let tiles_tab: Element<'a, Message> = column![temp_unit_bar, Space::with_height(10), drag_hint, tcol].into();
 
     // ════════════════════════════════════════════════════════════
     //  RIGHT COLUMN  (Appearance / Font / Remote / Updates)
