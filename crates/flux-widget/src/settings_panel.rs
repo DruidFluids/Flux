@@ -987,6 +987,9 @@ pub fn view<'a>(
     let skins_row = row![
         undo_btn,
         dice,
+        // Fill the slot the old Download button left behind (it moved out to the
+        // prominent Theme Store button) so the ‹ › cycler lines up with Colors below.
+        Space::with_width(34),
         Space::with_width(4),
         crate::style::with_tip(pill("\u{2039}".into(), false, Message::SkinPrev), "Previous skin", p),
         name_field(skin_prev, settings.active_skin.clone(), Message::OpenSkinPicker, "Browse all skins"),
