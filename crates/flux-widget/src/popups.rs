@@ -1409,10 +1409,15 @@ fn franchise_detail<'a>(pi: usize, settings: &AppSettings, sel: &std::collection
             .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
     ].align_y(iced::Alignment::Center);
 
-    // Pack-wide install/remove.
+    // Pack-wide install/remove. All three share one fixed width + centered
+    // labels so they line up as an even button row regardless of text length.
+    let act_w = Length::Fixed(150.0);
+    let ctr = iced::alignment::Horizontal::Center;
     let install_all = button(text("Install all".to_string()).size(11)
         .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+        .width(Length::Fill).align_x(ctr)
         .style(move |_| iced::widget::text::Style { color: Some(if all { Color { a: 0.45, ..p.muted } } else { Color::WHITE }) }))
+        .width(act_w)
         .padding(iced::Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 })
         .style(move |_: &iced::Theme, _| button::Style {
             background: Some(iced::Background::Color(if all { Color { a: 0.2, ..p.accent } } else { p.accent })),
@@ -1421,7 +1426,9 @@ fn franchise_detail<'a>(pi: usize, settings: &AppSettings, sel: &std::collection
         .on_press_maybe((!all).then_some(Message::ThemeStoreTogglePack(pi, true)));
     let remove_all = button(text("Remove all".to_string()).size(11)
         .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+        .width(Length::Fill).align_x(ctr)
         .style(move |_| iced::widget::text::Style { color: Some(if any { red } else { Color { a: 0.4, ..p.muted } }) }))
+        .width(act_w)
         .padding(iced::Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 })
         .style(move |_: &iced::Theme, _| button::Style {
             background: None,
@@ -1431,7 +1438,9 @@ fn franchise_detail<'a>(pi: usize, settings: &AppSettings, sel: &std::collection
     let install_sel_label = if sel_n > 0 { format!("Install selected ({sel_n})") } else { "Install selected".to_string() };
     let install_sel = button(text(install_sel_label).size(11)
         .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+        .width(Length::Fill).align_x(ctr)
         .style(move |_| iced::widget::text::Style { color: Some(if sel_n > 0 { Color::WHITE } else { Color { a: 0.45, ..p.muted } }) }))
+        .width(act_w)
         .padding(iced::Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 })
         .style(move |_: &iced::Theme, st: button::Status| {
             let hover = matches!(st, button::Status::Hovered);
