@@ -8,7 +8,7 @@
 
 Real-time CPU, GPU, RAM, network, and disk stats — always on your desktop, never in your way.
 
-[![Release](https://img.shields.io/badge/release-v1.0.23-5898a0)](../../releases)
+[![Release](https://img.shields.io/badge/release-v1.0.24-5898a0)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](#requirements)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20iced-dea584)](https://iced.rs)
 [![License](https://img.shields.io/badge/license-Personal%20Use-c0392b)](LICENSE)
@@ -55,7 +55,7 @@ The appearance engine has three independent layers:
 
 | Layer | What it controls | Count |
 |-------|-----------------|-------|
-| **Skins** | Shape, borders, tile style, corner radius | 16 built-in |
+| **Skins** | Shape, borders, tile style, corner radius | 21 built-in |
 | **Colors** | 5-color palette (background, tile, accent, text, muted) | 100+ presets |
 | **Preset Themes** | One-click skin + color combos | Curated library + downloadable packs |
 
@@ -71,7 +71,7 @@ Hit the <img src="docs/images/die.svg" height="15" alt="randomize"> for a random
 
 ### Skins
 
-16 built-in skins, from minimal to neon-lit — same data, completely different feel.
+21 built-in skins, from minimal to neon-lit — same data, completely different feel.
 
 <div align="center">
 <img src="docs/images/skin-default.png" alt="Default skin" width="150">
@@ -177,7 +177,7 @@ Flux is built with security-conscious defaults:
 - **No telemetry** — the app makes zero analytics calls. The only outbound connections are the optional update check, the optional PawnIO driver download (user-initiated), and LAN-only remote monitoring.
 - **PawnIO is never bundled** — the CPU temperature driver is downloaded on demand from its [official GitHub release](https://github.com/namazso/PawnIO.Setup/releases), and is never redistributed here.
 - **Verified updates** — the in-app updater refuses to run a downloaded installer unless its SHA-256 matches a checksum published alongside the release.
-- **Scanned on VirusTotal** — every release is scanned and the result is linked in its notes. v1.0.23: **[0 / 69](https://www.virustotal.com/gui/file/450228baac185a57f68579daad8bbdb9e2945668177f677c7f85f4ae4d97ff84)** (clean).
+- **Scanned on VirusTotal** — every release is scanned and the result is linked in its notes. v1.0.24: **[0 / 68](https://www.virustotal.com/gui/file/8a604044bf93d6ffb9ba7712dd8db29eef726dbbb1783548880326f7f2a64aae)** (clean).
 - **Unsigned build** — the installer is not code-signed, so Windows SmartScreen shows a one-time prompt. Verify any download against the `.sha256` published with each release before running it.
 - **Settings stay local** — all configuration lives in `%APPDATA%\Flux`. Nothing is sent anywhere.
 - **Source-available** — every line is in this repo for inspection (see [License](#license)).
