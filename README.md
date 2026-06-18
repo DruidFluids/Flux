@@ -74,10 +74,10 @@ Hit the <img src="docs/images/die.svg" height="15" alt="randomize"> for a random
 21 built-in skins, from minimal to neon-lit — same data, completely different feel.
 
 <div align="center">
-<img src="docs/images/skin-default.png" alt="Default skin" width="150">
 <img src="docs/images/skin-glassmorphism.png" alt="Glassmorphism skin" width="150">
 <img src="docs/images/skin-aurora.png" alt="Aurora skin" width="150">
 <img src="docs/images/skin-neon.png" alt="Neon skin" width="150">
+<img src="docs/images/skin-default.png" alt="Default skin" width="150">
 <img src="docs/images/skin-terminal.png" alt="Terminal skin" width="150">
 </div>
 
