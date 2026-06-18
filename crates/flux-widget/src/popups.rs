@@ -1365,10 +1365,20 @@ fn store_grid<'a>(settings: &AppSettings, p: Palette, win_id: window::Id) -> Ele
         };
         // Primary download CTA — bolder + a soft accent glow so it clearly reads as
         // the main action; "Browse" stays a quiet secondary button.
-        let install_btn = button(
-            text(if all_in { "Installed \u{2713}" } else { "Install all" }).size(11)
-                .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
-        )
+        // The ✓ has no glyph in the UI font (it rendered as tofu), so when the pack
+        // is fully installed draw the label as "Installed" + a Segoe UI Symbol ✓.
+        let install_label: Element<'a, Message> = if all_in {
+            row![
+                text("Installed").size(11)
+                    .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT }),
+                Space::with_width(4),
+                text("\u{2713}").size(11).font(iced::Font::with_name("Segoe UI Symbol")),
+            ].align_y(iced::Alignment::Center).into()
+        } else {
+            text("Install all").size(11)
+                .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT }).into()
+        };
+        let install_btn = button(install_label)
             .width(Length::Fixed(98.0))
             .padding(iced::Padding { top: 5.0, right: 12.0, bottom: 5.0, left: 12.0 })
             .style(move |_: &iced::Theme, st: button::Status| {
