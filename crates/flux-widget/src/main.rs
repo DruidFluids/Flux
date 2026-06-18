@@ -124,6 +124,7 @@ fn demo_server_snapshot() -> flux_core::sensor_data::SensorSnapshot {
             name: "NVIDIA RTX A4000".into(),
             usage_percent: 14.0, temperature_c: Some(43.0), clock_mhz: Some(1560.0),
             vram_used_mb: 4200.0, vram_total_mb: 16384.0, fan_rpm: None,
+            is_integrated: false,
         },
         ram: RamData {
             used_mb: 96256.0, total_mb: 262144.0, usage_percent: 36.7,

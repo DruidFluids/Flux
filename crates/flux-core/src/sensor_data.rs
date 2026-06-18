@@ -32,6 +32,11 @@ pub struct GpuData {
     pub vram_used_mb: f32,
     pub vram_total_mb: f32,
     pub fan_rpm: Option<f32>,
+    /// Integrated/on-die GPU (APU iGPU, Intel UHD/Iris, etc.). Such GPUs share the
+    /// CPU's thermal sensor, so they have no separate temperature — the tile shows
+    /// a "linked to CPU" indicator instead of a value that would duplicate the CPU.
+    #[serde(default)]
+    pub is_integrated: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

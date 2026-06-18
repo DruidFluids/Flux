@@ -346,7 +346,17 @@ pub fn gpu_tile<'a>(gpu: &GpuData, s: &AppSettings, p: Palette, w: WarnView) -> 
 
     let mut primary = row![].align_y(iced::Alignment::End);
     if s.gpu_show_temp {
-        if let Some((tv, tu)) = fmt::fmt_temp(gpu.temperature_c, s) {
+        if gpu.is_integrated {
+            // Integrated GPUs share the CPU die — no separate sensor. Show a chain
+            // glyph (temperature is "linked" to the CPU) rather than a value that
+            // would just duplicate the CPU temp.
+            let chain = text("\u{1F517}").size(sz(15, s.primary_font_offset, s))
+                .font(iced::Font::with_name("Segoe UI Symbol"))
+                .style(move |_| iced::widget::text::Style { color: Some(p.muted) });
+            primary = primary
+                .push(crate::style::with_tip(chain, "Integrated GPU \u{2014} temperature is shared with the CPU", p))
+                .push(Space::with_width(8));
+        } else if let Some((tv, tu)) = fmt::fmt_temp(gpu.temperature_c, s) {
             primary = primary.push(big(tv, p, s)).push(unit_inline(tu, accent, s)).push(Space::with_width(8));
         }
     }

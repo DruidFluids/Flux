@@ -210,6 +210,74 @@ fn dxgi_query() -> Option<(String, f32, f32)> {
     None
 }
 
+// Heuristic: is this GPU an integrated/on-die part that shares the CPU's thermal
+// sensor (so it has no separate temperature)?
+//
+// Every vendor ships BOTH integrated and discrete parts, so correctness here is
+// "never call a discrete card integrated" (that would hide its real temp) over
+// "catch every iGPU". We therefore VETO on discrete markers first, then match the
+// known integrated families. NVIDIA has no PC iGPU, so any NVIDIA name is discrete
+// (and NVIDIA normally goes through NVML, never reaching this).
+fn gpu_name_is_integrated(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    // 1) Discrete markers veto integration outright.
+    const DISCRETE: [&str; 12] = [
+        "geforce", "nvidia", "rtx", "gtx", "quadro", "tesla", "titan",
+        "radeon rx", "radeon pro", "firepro", "instinct", "arc",
+    ];
+    if DISCRETE.iter().any(|d| n.contains(d)) {
+        return false;
+    }
+    // 2) Intel integrated: UHD / HD / Iris, or a generic "Intel … Graphics".
+    if n.contains("uhd graphics") || n.contains("hd graphics") || n.contains("iris") {
+        return true;
+    }
+    if n.contains("intel") && n.contains("graphics") {
+        return true;
+    }
+    // 3) AMD APU iGPUs: "Radeon(TM) Graphics", "Radeon Vega N Graphics", and the
+    //    mobile parts "Radeon 6xxM/7xxM/8xxM" (discrete "Radeon RX/Pro" vetoed above).
+    if n.contains("radeon") && n.contains("graphics") {
+        return true;
+    }
+    if n.contains("radeon")
+        && ["610m", "660m", "680m", "740m", "760m", "780m", "860m", "880m", "890m"]
+            .iter()
+            .any(|m| n.contains(m))
+    {
+        return true;
+    }
+    // 4) ARM / Qualcomm / Apple integrated.
+    n.contains("adreno") || n.contains("mali") || n.contains("apple m")
+}
+
+#[cfg(test)]
+mod integrated_gpu_tests {
+    use super::gpu_name_is_integrated;
+
+    #[test]
+    fn discrete_cards_are_never_integrated() {
+        for name in [
+            "NVIDIA GeForce RTX 4090", "NVIDIA RTX A4000", "NVIDIA GeForce GTX 1660",
+            "AMD Radeon RX 7900 XTX", "AMD Radeon RX 7600M XT", "AMD Radeon Pro W7900",
+            "AMD Radeon RX Vega 64", "Intel(R) Arc(TM) A770 Graphics", "Intel Arc Graphics",
+        ] {
+            assert!(!gpu_name_is_integrated(name), "{name} wrongly integrated");
+        }
+    }
+
+    #[test]
+    fn integrated_parts_are_detected() {
+        for name in [
+            "AMD Radeon(TM) Graphics", "AMD Radeon(TM) 780M Graphics", "AMD Radeon 680M",
+            "AMD Radeon(TM) Vega 8 Graphics", "Intel(R) UHD Graphics 770",
+            "Intel(R) Iris(R) Xe Graphics", "Intel(R) HD Graphics 630",
+        ] {
+            assert!(gpu_name_is_integrated(name), "{name} not detected as integrated");
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  GPU: Apple Silicon (macOS). IOKit/Metal not yet wired; degrades to None
 //  so the GPU tile renders em-dashes rather than failing.
@@ -725,11 +793,13 @@ impl SensorPoller {
         if self.gpu_backend == GpuBackend::Dxgi {
             if let Some((name, used, total)) = dxgi_query() {
                 let temp = self.gpu_temp_from_components();
+                let integrated = gpu_name_is_integrated(&name);
                 return GpuData {
                     name,
                     temperature_c: temp,
                     vram_used_mb: used,
                     vram_total_mb: total,
+                    is_integrated: integrated,
                     ..Default::default()
                 };
             }
