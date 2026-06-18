@@ -10,6 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 // Optional accurate CPU temperature via the user-installed PawnIO driver.
 #[cfg(windows)]
 mod pawnio;
+#[cfg(windows)]
+mod d3dkmt;
 
 /// Drop the cached CPU-temp driver probe so the next poll re-detects PawnIO.
 /// Call right after the user installs or removes the driver. Must be called on
@@ -158,8 +160,11 @@ fn shorten_cpu_name(name: &str) -> String {
 //  IDXGIAdapter3::QueryVideoMemoryInfo. Temp/clock/load are not available
 //  through DXGI and degrade to None (em-dash in tiles).
 // ─────────────────────────────────────────────────────────────────────────
+// Returns (name, vram_used_mb, vram_total_mb, adapter_luid). The LUID is packed
+// (HighPart<<32 | LowPart) so the signature stays platform-neutral; on Windows we
+// unpack it to feed D3DKMT for live clock/usage/temp.
 #[cfg(windows)]
-fn dxgi_query() -> Option<(String, f32, f32)> {
+fn dxgi_query() -> Option<(String, f32, f32, u64)> {
     use windows::core::Interface;
     use windows::Win32::Graphics::Dxgi::{
         CreateDXGIFactory1, IDXGIAdapter3, IDXGIFactory1, DXGI_ADAPTER_DESC1,
@@ -167,7 +172,7 @@ fn dxgi_query() -> Option<(String, f32, f32)> {
     };
     unsafe {
         let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
-        let mut best: Option<(String, f32, f32)> = None;
+        let mut best: Option<(String, f32, f32, u64)> = None;
         let mut i = 0u32;
         loop {
             let adapter = match factory.EnumAdapters1(i) {
@@ -186,6 +191,8 @@ fn dxgi_query() -> Option<(String, f32, f32)> {
             let raw = String::from_utf16_lossy(&desc.Description);
             let name = raw.trim_end_matches('\0').trim().to_string();
             let total_mb = desc.DedicatedVideoMemory as f32 / (1024.0 * 1024.0);
+            let luid = ((desc.AdapterLuid.HighPart as u64) << 32)
+                | (desc.AdapterLuid.LowPart as u64);
             let mut used_mb = 0.0f32;
             if let Ok(adapter3) = adapter.cast::<IDXGIAdapter3>() {
                 let mut info = DXGI_QUERY_VIDEO_MEMORY_INFO::default();
@@ -198,7 +205,7 @@ fn dxgi_query() -> Option<(String, f32, f32)> {
             }
             // Prefer the adapter with the most dedicated VRAM (the discrete GPU)
             if best.as_ref().is_none_or(|b| total_mb > b.2) {
-                best = Some((name, used_mb, total_mb));
+                best = Some((name, used_mb, total_mb, luid));
             }
         }
         best
@@ -206,7 +213,7 @@ fn dxgi_query() -> Option<(String, f32, f32)> {
 }
 
 #[cfg(not(windows))]
-fn dxgi_query() -> Option<(String, f32, f32)> {
+fn dxgi_query() -> Option<(String, f32, f32, u64)> {
     None
 }
 
@@ -594,7 +601,7 @@ impl SensorPoller {
                 tracing::info!("GPU backend: NVML (NVIDIA) — name, load, temp, VRAM, clock");
             }
             GpuBackend::Dxgi => {
-                if let Some((name, _, total)) = dxgi_query() {
+                if let Some((name, _, total, _)) = dxgi_query() {
                     tracing::info!(
                         "GPU backend: DXGI — '{}' ({:.0} MB VRAM); temp/clock unavailable",
                         name,
@@ -789,14 +796,30 @@ impl SensorPoller {
             }
         }
 
-        // DXGI (AMD / Intel / unrecognized) — name + VRAM only.
+        // DXGI (AMD / Intel / unrecognized) — name + VRAM. Live clock & temp come
+        // from D3DKMT (Windows), which DXGI itself does not expose.
         if self.gpu_backend == GpuBackend::Dxgi {
-            if let Some((name, used, total)) = dxgi_query() {
-                let temp = self.gpu_temp_from_components();
+            if let Some((name, used, total, _luid_packed)) = dxgi_query() {
                 let integrated = gpu_name_is_integrated(&name);
+                let (clock_mhz, temp) = {
+                    #[cfg(windows)]
+                    {
+                        let luid = windows::Win32::Foundation::LUID {
+                            LowPart: _luid_packed as u32,
+                            HighPart: (_luid_packed >> 32) as i32,
+                        };
+                        let (c, t) = crate::d3dkmt::read_clock_temp(luid);
+                        (c, t.or_else(|| self.gpu_temp_from_components()))
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        (None, self.gpu_temp_from_components())
+                    }
+                };
                 return GpuData {
                     name,
                     temperature_c: temp,
+                    clock_mhz,
                     vram_used_mb: used,
                     vram_total_mb: total,
                     is_integrated: integrated,
