@@ -52,6 +52,9 @@ pub struct SensorPoller {
     gpu_backend: GpuBackend,
     // Persistent PDH query for the live CPU clock (Windows boost-aware).
     cpu_freq: Option<CpuFreq>,
+    // Previous-sample state for D3DKMT GPU utilization (AMD/Intel, delta-based).
+    #[cfg(windows)]
+    gpu_usage: d3dkmt::UsageSampler,
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -603,7 +606,7 @@ impl SensorPoller {
             GpuBackend::Dxgi => {
                 if let Some((name, _, total, _)) = dxgi_query() {
                     tracing::info!(
-                        "GPU backend: DXGI — '{}' ({:.0} MB VRAM); temp/clock unavailable",
+                        "GPU backend: DXGI '{}' ({:.0} MB VRAM) + D3DKMT clock/usage/temp",
                         name,
                         total
                     );
@@ -624,6 +627,8 @@ impl SensorPoller {
             nvml,
             gpu_backend,
             cpu_freq: CpuFreq::new(),
+            #[cfg(windows)]
+            gpu_usage: d3dkmt::UsageSampler::default(),
         }
     }
 
@@ -746,7 +751,7 @@ impl SensorPoller {
         None
     }
 
-    fn read_gpu(&self) -> GpuData {
+    fn read_gpu(&mut self) -> GpuData {
         // NVIDIA via NVML — full data.
         if self.gpu_backend == GpuBackend::Nvml {
             if let Some(nvml) = &self.nvml {
@@ -801,7 +806,7 @@ impl SensorPoller {
         if self.gpu_backend == GpuBackend::Dxgi {
             if let Some((name, used, total, _luid_packed)) = dxgi_query() {
                 let integrated = gpu_name_is_integrated(&name);
-                let (clock_mhz, temp) = {
+                let (clock_mhz, temp, usage) = {
                     #[cfg(windows)]
                     {
                         let luid = windows::Win32::Foundation::LUID {
@@ -809,15 +814,19 @@ impl SensorPoller {
                             HighPart: (_luid_packed >> 32) as i32,
                         };
                         let (c, t) = crate::d3dkmt::read_clock_temp(luid);
-                        (c, t.or_else(|| self.gpu_temp_from_components()))
+                        // Sequence the borrows: components (temp) then the sampler.
+                        let temp = t.or_else(|| self.gpu_temp_from_components());
+                        let usage = self.gpu_usage.read(luid).unwrap_or(0.0);
+                        (c, temp, usage)
                     }
                     #[cfg(not(windows))]
                     {
-                        (None, self.gpu_temp_from_components())
+                        (None, self.gpu_temp_from_components(), 0.0)
                     }
                 };
                 return GpuData {
                     name,
+                    usage_percent: usage,
                     temperature_c: temp,
                     clock_mhz,
                     vram_used_mb: used,
