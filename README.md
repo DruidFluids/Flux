@@ -8,7 +8,7 @@
 
 Real-time CPU, GPU, RAM, network, and disk stats — always on your desktop, never in your way.
 
-[![Release](https://img.shields.io/badge/release-v1.0.25-5898a0)](../../releases)
+[![Release](https://img.shields.io/badge/release-v1.0.26-5898a0)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](#requirements)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20iced-dea584)](https://iced.rs)
 [![License](https://img.shields.io/badge/license-Personal%20Use-c0392b)](LICENSE)
@@ -178,7 +178,7 @@ Flux is built with security-conscious defaults:
 - **No telemetry** — the app makes zero analytics calls. The only outbound connections are the optional update check, the optional PawnIO driver download (user-initiated), and LAN-only remote monitoring.
 - **PawnIO is never bundled** — the CPU temperature driver is downloaded on demand from its [official GitHub release](https://github.com/namazso/PawnIO.Setup/releases), and is never redistributed here.
 - **Verified updates** — the in-app updater refuses to run a downloaded installer unless its SHA-256 matches a checksum published alongside the release.
-- **Scanned on VirusTotal** — every release is scanned and the result is linked in its notes. v1.0.25: **[0 / 69](https://www.virustotal.com/gui/file/aaa934913dc49fd35a19c804b230497bb83ace41ff18c4b1183f9a11636d5d9c)** (clean).
+- **Scanned on VirusTotal** — every release is scanned and the result is linked in its notes. v1.0.26: **[0 / 70](https://www.virustotal.com/gui/file/27cda7b87f6a42b6cca4271172c65eeef873dbf62363c58c17890b69c7ec041e)** (clean).
 - **Unsigned build** — the installer is not code-signed, so Windows SmartScreen shows a one-time prompt. Verify any download against the `.sha256` published with each release before running it.
 - **Settings stay local** — all configuration lives in `%APPDATA%\Flux`. Nothing is sent anywhere.
 - **Source-available** — every line is in this repo for inspection (see [License](#license)).
