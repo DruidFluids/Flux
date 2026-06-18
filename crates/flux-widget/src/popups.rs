@@ -182,7 +182,7 @@ pub fn widget_menu_view<'a>(p: Palette) -> Element<'a, Message> {
 // button that toggles an inline hex editor (shown to its left while `editing`).
 fn color_swatch_field<'a, F>(hex: &str, editing: bool, toggle: Message, p: Palette, on_input: F) -> Element<'a, Message>
 where
-    F: Fn(String) -> Message + 'a,
+    F: Fn(String) -> Message + Clone + 'a,
 {
     let c = crate::style::parse_hex(hex, p.muted);
     let swatch = button(Space::new(24, 16))
@@ -201,14 +201,13 @@ where
         })
         .on_press(toggle);
     if editing {
-        row![
-            text_input("#AARRGGBB", hex).size(10).width(112)
-                .font(iced::Font::with_name("Consolas"))
-                .on_input(on_input)
-                .style(crate::style::dark_input_style(p)),
-            Space::with_width(6),
+        // The chip stays as the toggle (click again to close); the shared visual
+        // picker drops in below it.
+        column![
             swatch,
-        ].align_y(iced::Alignment::Center).into()
+            Space::with_height(6),
+            crate::color_picker::view(hex, on_input, p),
+        ].spacing(0).into()
     } else {
         swatch.into()
     }

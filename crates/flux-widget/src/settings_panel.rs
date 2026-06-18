@@ -1057,7 +1057,8 @@ pub fn view<'a>(
     }
     let swatch_strip = row(swatch_cols).spacing(6);
 
-    // Inline hex editor for the swatch the user clicked (EditColor toggles it).
+    // Visual colour picker for the swatch the user clicked (EditColor toggles it):
+    // a header (colour's name + Done) above the shared picker panel.
     let color_editor: Element<'a, Message> = if let Some(slot) = editing_color {
         let (lbl, hex) = match slot {
             0 => ("Background", settings.theme_bg.clone()),
@@ -1066,17 +1067,20 @@ pub fn view<'a>(
             3 => ("Text", settings.theme_text.clone()),
             _ => ("Muted", settings.theme_muted.clone()),
         };
-        row![
-            text(format!("{} hex", lbl)).size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
-            Space::with_width(8),
-            text_input("#AARRGGBB", &hex).size(11).font(iced::Font::with_name("Consolas")).width(160)
-                .on_input(move |s| Message::SetHexColor(slot, s))
-                .style(crate::style::dark_input_style(p)),
-            Space::with_width(8),
-            crate::style::with_tip(button(text("done").size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-                .padding([3, 10]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
-                .on_press(Message::EditColor(slot)), "Close the color editor", p),
-        ].spacing(0).align_y(iced::Alignment::Center).into()
+        let header = row![
+            text(format!("{lbl} color")).size(11)
+                .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+            Space::with_width(Length::Fill),
+            crate::style::with_tip(button(text("Done").size(10).style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
+                .padding([3, 12]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 5.0.into(), width: 1.0, color: iced::Color { a: 0.4, ..p.muted } }, ..Default::default() })
+                .on_press(Message::EditColor(slot)), "Close the color picker", p),
+        ].align_y(iced::Alignment::Center);
+        column![
+            header,
+            Space::with_height(6),
+            crate::color_picker::view(&hex, move |s| Message::SetHexColor(slot, s), p),
+        ].spacing(0).into()
     } else {
         Space::with_height(0).into()
     };

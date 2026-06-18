@@ -11,6 +11,7 @@ mod style;
 mod fmt;
 mod settings_panel;
 mod popups;
+mod color_picker;
 mod fonts;
 mod hotkeys;
 mod updates;
@@ -1010,6 +1011,12 @@ impl App {
                         changelog: "## Highlights\n- Example pending update".into(),
                         url: String::new(), sha256: None,
                     });
+                }
+                "color-picker" => {
+                    // Settings → Appearance with the Accent swatch's colour picker open.
+                    app.settings_tab = 1;
+                    app.editing_color = Some(2);
+                    batch.push(Task::done(Message::OpenSettings));
                 }
                 "update-available" => {
                     // The Auto-mode "update available" notification popup.
