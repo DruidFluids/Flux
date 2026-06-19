@@ -240,6 +240,22 @@ pub fn probe() -> String {
     s
 }
 
+/// Decode the IGCL `ctl_result_t` codes seen in the field into short names, so the
+/// `--gpu-debug` report is readable without an IGCL header on hand.
+fn result_name(r: i32) -> &'static str {
+    match r as u32 {
+        0x0000_0000 => "SUCCESS",
+        0x4000_0001 => "NOT_INITIALIZED",
+        0x4000_0002 => "ALREADY_INITIALIZED",
+        0x4000_0007 => "NOT_AVAILABLE",
+        0x4000_0009 => "UNSUPPORTED_VERSION",
+        0x4000_000C => "INVALID_API_HANDLE",
+        0x4000_0020 => "PLATFORM_NOT_SUPPORTED",
+        0x4000_0021 => "UNKNOWN_APPLICATION_UID",
+        _ => "",
+    }
+}
+
 unsafe fn probe_inner(s: &mut String) {
     let hmod = match LoadLibraryW(w!("ControlLib.dll")) {
         Ok(h) if !h.is_invalid() => h,
@@ -255,19 +271,59 @@ unsafe fn probe_inner(s: &mut String) {
         return;
     };
 
-    let (api, ver) = match try_init(init) {
-        Some(v) => v,
-        None => {
-            let _ = writeln!(s, "  ctlInit: every AppVersion rejected");
-            let _ = FreeLibrary(hmod);
-            return;
+    // Instrumented init sweep — report each attempt's decoded result code and the
+    // SupportedVersion IGCL echoes back, so a failed init can be diagnosed across
+    // machines rather than guessed. Try both the zeroed UID (what Intel's own
+    // samples pass) and our nonzero UID across the version matrix.
+    //
+    // Observed on a Server-2022 iGPU + newer driver: nonzero UID → 0x40000021
+    // UNKNOWN_APPLICATION_UID; zeroed UID → 0x40000009 UNSUPPORTED_VERSION. Newer
+    // drivers validate the UID against Intel's registered list (older ones, e.g. a
+    // working laptop, accept any nonzero UID). Telemetry is ONLY attempted after a
+    // clean (result==0) init — pushing a half-initialised handle into the Size
+    // sweep blocks the driver call indefinitely.
+    let zero_uid = AppId { d1: 0, d2: 0, d3: 0, d4: [0; 8] };
+    let uids: &[(&str, AppId)] = &[("zero", zero_uid), ("nonzero", APP_UID)];
+    let mut api: ApiHandle = null_mut();
+    let mut ok_label: Option<String> = None;
+    'sweep: for &(uid_name, uid) in uids {
+        for &(major, minor) in APP_VERSIONS {
+            let mut args = InitArgs {
+                size: std::mem::size_of::<InitArgs>() as u32,
+                version: 0,
+                app_version: VersionInfo { major, minor },
+                flags: 0,
+                supported_version: VersionInfo { major: 0, minor: 0 },
+                application_uid: uid,
+            };
+            let mut h: ApiHandle = null_mut();
+            let r = init(&mut args, &mut h);
+            let sup = args.supported_version;
+            let _ = writeln!(
+                s,
+                "  ctlInit uid={uid_name} v{major}.{minor}: result=0x{r:08X} {}  supported=v{}.{}  handle={}",
+                result_name(r),
+                sup.major,
+                sup.minor,
+                if h.is_null() { "null" } else { "set" },
+            );
+            if r == 0 && !h.is_null() {
+                api = h;
+                ok_label = Some(format!("uid={uid_name} v{major}.{minor}"));
+                break 'sweep;
+            }
         }
+    }
+    let Some(label) = ok_label else {
+        let _ = writeln!(s, "  ctlInit: no AppVersion/UID combination succeeded — IGCL telemetry unavailable on this driver");
+        let _ = FreeLibrary(hmod);
+        return;
     };
-    let _ = writeln!(s, "  ctlInit: OK with AppVersion v{}.{}", ver.0, ver.1);
+    let _ = writeln!(s, "  ctlInit: OK with {label}");
 
     let mut count: u32 = 0;
     let r = enumerate(api, &mut count, null_mut());
-    let _ = writeln!(s, "  ctlEnumerateDevices: result={r}  count={count}");
+    let _ = writeln!(s, "  ctlEnumerateDevices: result=0x{r:08X} {}  count={count}", result_name(r));
     if r == 0 && count > 0 {
         let mut devices: Vec<DeviceHandle> = vec![null_mut(); count as usize];
         if enumerate(api, &mut count, devices.as_mut_ptr()) == 0 {
