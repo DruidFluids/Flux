@@ -330,11 +330,13 @@ fn dxgi_query() -> Option<(String, f32, f32, u64)> {
     use windows::core::Interface;
     use windows::Win32::Graphics::Dxgi::{
         CreateDXGIFactory1, IDXGIAdapter3, IDXGIFactory1, DXGI_ADAPTER_DESC1,
-        DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, DXGI_QUERY_VIDEO_MEMORY_INFO,
+        DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+        DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, DXGI_QUERY_VIDEO_MEMORY_INFO,
     };
     unsafe {
         let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
         let mut best: Option<(String, f32, f32, u64)> = None;
+        let mut best_dedicated = -1.0f32;
         let mut i = 0u32;
         loop {
             let adapter = match factory.EnumAdapters1(i) {
@@ -352,21 +354,37 @@ fn dxgi_query() -> Option<(String, f32, f32, u64)> {
             }
             let raw = String::from_utf16_lossy(&desc.Description);
             let name = raw.trim_end_matches('\0').trim().to_string();
-            let total_mb = desc.DedicatedVideoMemory as f32 / (1024.0 * 1024.0);
+            let dedicated_mb = desc.DedicatedVideoMemory as f32 / (1024.0 * 1024.0);
+            let shared_mb = desc.SharedSystemMemory as f32 / (1024.0 * 1024.0);
+            // A small-carve-out iGPU (e.g. Intel Xe/Arc reports only ~128 MB
+            // "dedicated") really runs on shared system RAM, so its dedicated figure
+            // is useless (that's what produced "0.2/0.1 GB"). Detect that and report
+            // the shared budget + usage across BOTH memory segments. A large-UMA
+            // iGPU (e.g. 780M with a 4 GB BIOS carve-out) and discrete GPUs keep
+            // their dedicated figure.
+            let small_carveout = dedicated_mb < 512.0;
+            let total_mb = if small_carveout { dedicated_mb + shared_mb } else { dedicated_mb };
             let luid = ((desc.AdapterLuid.HighPart as u64) << 32)
                 | (desc.AdapterLuid.LowPart as u64);
             let mut used_mb = 0.0f32;
             if let Ok(adapter3) = adapter.cast::<IDXGIAdapter3>() {
-                let mut info = DXGI_QUERY_VIDEO_MEMORY_INFO::default();
-                if adapter3
-                    .QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &mut info)
-                    .is_ok()
-                {
-                    used_mb = info.CurrentUsage as f32 / (1024.0 * 1024.0);
+                let usage = |grp| -> f32 {
+                    let mut info = DXGI_QUERY_VIDEO_MEMORY_INFO::default();
+                    if adapter3.QueryVideoMemoryInfo(0, grp, &mut info).is_ok() {
+                        info.CurrentUsage as f32 / (1024.0 * 1024.0)
+                    } else {
+                        0.0
+                    }
+                };
+                used_mb = usage(DXGI_MEMORY_SEGMENT_GROUP_LOCAL);
+                if small_carveout {
+                    used_mb += usage(DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL);
                 }
             }
-            // Prefer the adapter with the most dedicated VRAM (the discrete GPU)
-            if best.as_ref().is_none_or(|b| total_mb > b.2) {
+            // Pick the adapter with the most DEDICATED VRAM (so a discrete GPU still
+            // wins over an iGPU whose shared budget can be larger).
+            if dedicated_mb > best_dedicated {
+                best_dedicated = dedicated_mb;
                 best = Some((name, used_mb, total_mb, luid));
             }
         }
