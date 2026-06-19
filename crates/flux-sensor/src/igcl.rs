@@ -1,21 +1,21 @@
 #![cfg(windows)]
-#![allow(dead_code)] // layout structs documented for offsets; probe reads raw bytes
+#![allow(dead_code)] // layout structs documented for offsets; reads use raw bytes
 //! Optional Intel GPU telemetry via IGCL (Intel Graphics Control Library,
-//! `ControlLib.dll`) — used to read the live GPU **core clock** on Intel parts,
-//! where D3DKMT reports 0 Hz at idle (so the tile would otherwise show "—").
+//! `ControlLib.dll`) — reads the live GPU **core clock** on Intel parts, where
+//! D3DKMT reports 0 Hz at idle (so the tile would otherwise show a bare "—").
 //!
 //! Fully optional and dynamically loaded: the DLL is absent on non-Intel systems
-//! (load fails → no-op), and IGCL's Size/Version handshake means a wrong struct
-//! layout fails cleanly rather than returning garbage. Any failure falls back to
-//! the D3DKMT node-scan in `d3dkmt::read_clock_temp`.
-//!
-//! This first cut exposes only `probe()` (a diagnostic for `--gpu-debug`); it is
-//! NOT yet wired into the live clock path. The probe even sweeps the telemetry
-//! struct's `Size` field until the driver accepts it, so a single run on real
-//! Intel hardware reveals both reachability and the exact struct size.
+//! (load fails → no-op). It's **self-tuning** — rather than hardcode IGCL's struct
+//! version / size (which vary by driver), it sweeps the `ctlInit` AppVersion and
+//! the telemetry `Size` field until the driver accepts them, caches the working
+//! combo, and reads the clock at a fixed offset. Every value is sanity-ranged and
+//! any failure falls back to the D3DKMT node-scan, so it can't show garbage or
+//! destabilise other vendors.
 
+use std::cell::RefCell;
 use std::ffi::c_void;
 use std::fmt::Write as _;
+use std::ptr::null_mut;
 use windows::core::{s, w};
 use windows::Win32::Foundation::{FreeLibrary, HMODULE};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
@@ -50,8 +50,8 @@ struct InitArgs {
 }
 
 // ctl_oc_telemetry_item_t: { bool bSupported; ctl_units_t units; ctl_data_type_t
-// type; ctl_data_value_t value; }. With #[repr(C)] this is 24 bytes (the f64 value
-// forces 8-byte alignment): b_supported@0, units@4, data_type@8, value@16.
+// type; ctl_data_value_t value; } → 24 bytes (the f64 value forces 8-byte align):
+// b_supported@0, units@4, data_type@8, value@16.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 struct TelemetryItem {
@@ -61,21 +61,18 @@ struct TelemetryItem {
     value: f64,
 }
 
-// FFI signatures. On x64 Windows there is a single calling convention, so
-// `extern "system"` matches IGCL's CTL_APICALL regardless of cdecl/stdcall.
 type FnInit = unsafe extern "system" fn(*mut InitArgs, *mut ApiHandle) -> i32;
 type FnEnumerate = unsafe extern "system" fn(ApiHandle, *mut u32, *mut DeviceHandle) -> i32;
 type FnTelemetry = unsafe extern "system" fn(DeviceHandle, *mut c_void) -> i32;
 type FnClose = unsafe extern "system" fn(ApiHandle) -> i32;
 
-/// Byte offsets within `ctl_power_telemetry_t` for the field we care about. The
-/// header (Size u32 @0, Version u8 @4) is followed by 8-aligned telemetry items
-/// starting at 8; `gpuCurrentClockFrequency` is the 4th item (8 + 3*24 = 80), and
-/// its `value` (a double) sits 16 bytes into the item.
+// Byte offsets within ctl_power_telemetry_t: header (Size u32 @0, Version u8 @4)
+// then 8-aligned telemetry items from offset 8; gpuCurrentClockFrequency is the
+// 4th item (8 + 3*24 = 80), its value (f64) 16 bytes in.
 const CLOCK_ITEM_OFFSET: usize = 80;
-const CLOCK_SUPPORTED_OFFSET: usize = CLOCK_ITEM_OFFSET; // b_supported @ item+0
+const CLOCK_SUPPORTED_OFFSET: usize = CLOCK_ITEM_OFFSET;
 const CLOCK_UNITS_OFFSET: usize = CLOCK_ITEM_OFFSET + 4;
-const CLOCK_VALUE_OFFSET: usize = CLOCK_ITEM_OFFSET + 16; // value (f64) @ item+16
+const CLOCK_VALUE_OFFSET: usize = CLOCK_ITEM_OFFSET + 16;
 
 /// A nonzero application UID (IGCL rejects an all-zero UID).
 const APP_UID: AppId = AppId {
@@ -85,9 +82,157 @@ const APP_UID: AppId = AppId {
     d4: [0xB9, 0x62, 0x02, 0x42, 0xAC, 0x12, 0x00, 0x02],
 };
 
-/// Full IGCL diagnostic for `--gpu-debug`: load the DLL, init, enumerate devices,
-/// and (sweeping the Size field) attempt `ctlPowerTelemetryGet`, reporting the GPU
-/// core clock if it succeeds. Best-effort; never panics.
+/// AppVersions to try for `ctlInit`, in order. The driver reported "supported
+/// v1.1", and the v1.0 request was rejected — so try a small matrix.
+const APP_VERSIONS: &[(u16, u16)] = &[(1, 1), (1, 2), (1, 3), (2, 0), (1, 0)];
+
+/// Telemetry buffer: generously larger than any plausible ctl_power_telemetry_t,
+/// 8-aligned (Vec<u64>), so a Size sweep can never overrun it.
+const BUF_U64: usize = 512; // 4096 bytes
+const SIZE_SWEEP: std::ops::Range<u32> = 256..1400;
+
+struct Igcl {
+    _hmod: HMODULE,
+    close: FnClose,
+    telemetry: FnTelemetry,
+    api: ApiHandle,
+    devices: Vec<DeviceHandle>,
+    tele_size: u32,
+}
+
+thread_local! {
+    static CACHE: RefCell<Cache> = const { RefCell::new(Cache::Uninit) };
+}
+
+enum Cache {
+    Uninit,
+    Failed,
+    Ready(Igcl),
+}
+
+unsafe fn resolve(hmod: HMODULE) -> Option<(FnInit, FnEnumerate, FnTelemetry, FnClose)> {
+    let init: FnInit = std::mem::transmute(GetProcAddress(hmod, s!("ctlInit"))?);
+    let enumerate: FnEnumerate = std::mem::transmute(GetProcAddress(hmod, s!("ctlEnumerateDevices"))?);
+    let telemetry: FnTelemetry = std::mem::transmute(GetProcAddress(hmod, s!("ctlPowerTelemetryGet"))?);
+    let close: FnClose = std::mem::transmute(GetProcAddress(hmod, s!("ctlClose"))?);
+    Some((init, enumerate, telemetry, close))
+}
+
+/// Sweep AppVersions until `ctlInit` succeeds. Returns the api handle + the
+/// (major,minor) that worked.
+unsafe fn try_init(init: FnInit) -> Option<(ApiHandle, (u16, u16))> {
+    for &(major, minor) in APP_VERSIONS {
+        let mut args = InitArgs {
+            size: std::mem::size_of::<InitArgs>() as u32,
+            version: 0,
+            app_version: VersionInfo { major, minor },
+            flags: 0,
+            supported_version: VersionInfo { major: 0, minor: 0 },
+            application_uid: APP_UID,
+        };
+        let mut api: ApiHandle = null_mut();
+        if init(&mut args, &mut api) == 0 && !api.is_null() {
+            return Some((api, (major, minor)));
+        }
+    }
+    None
+}
+
+/// Sweep the telemetry Size on each device until one is accepted. Returns the
+/// working (Size, device index).
+unsafe fn find_tele_size(telemetry: FnTelemetry, devices: &[DeviceHandle]) -> Option<(u32, usize)> {
+    let mut buf = vec![0u64; BUF_U64];
+    let base = buf.as_mut_ptr() as *mut u8;
+    for (idx, &dev) in devices.iter().enumerate() {
+        let mut size = SIZE_SWEEP.start;
+        while size < SIZE_SWEEP.end {
+            std::ptr::write_bytes(base, 0, BUF_U64 * 8);
+            *(base as *mut u32) = size;
+            *base.add(4) = 1;
+            if telemetry(dev, base as *mut c_void) == 0 {
+                return Some((size, idx));
+            }
+            size += 4;
+        }
+    }
+    None
+}
+
+unsafe fn discover() -> Option<Igcl> {
+    let hmod = LoadLibraryW(w!("ControlLib.dll")).ok().filter(|h| !h.is_invalid())?;
+    let Some((init, enumerate, telemetry, close)) = resolve(hmod) else {
+        let _ = FreeLibrary(hmod);
+        return None;
+    };
+    let Some((api, _ver)) = try_init(init) else {
+        let _ = FreeLibrary(hmod);
+        return None;
+    };
+    // Enumerate devices (two-call: count, then fill).
+    let mut count: u32 = 0;
+    if enumerate(api, &mut count, null_mut()) != 0 || count == 0 {
+        close(api);
+        let _ = FreeLibrary(hmod);
+        return None;
+    }
+    let mut devices: Vec<DeviceHandle> = vec![null_mut(); count as usize];
+    if enumerate(api, &mut count, devices.as_mut_ptr()) != 0 {
+        close(api);
+        let _ = FreeLibrary(hmod);
+        return None;
+    }
+    let Some((tele_size, _)) = find_tele_size(telemetry, &devices) else {
+        close(api);
+        let _ = FreeLibrary(hmod);
+        return None;
+    };
+    Some(Igcl { _hmod: hmod, close, telemetry, api, devices, tele_size })
+}
+
+impl Igcl {
+    /// Read the highest plausible GPU core clock across devices (MHz). Sanity-gated
+    /// so a wrong struct offset yields `None` rather than a bogus reading.
+    unsafe fn read_clock(&self) -> Option<f32> {
+        let mut buf = vec![0u64; BUF_U64];
+        let base = buf.as_mut_ptr() as *mut u8;
+        let mut best = 0.0f32;
+        for &dev in &self.devices {
+            std::ptr::write_bytes(base, 0, BUF_U64 * 8);
+            *(base as *mut u32) = self.tele_size;
+            *base.add(4) = 1;
+            if (self.telemetry)(dev, base as *mut c_void) == 0 {
+                let supported = *base.add(CLOCK_SUPPORTED_OFFSET) != 0;
+                let value = *(base.add(CLOCK_VALUE_OFFSET) as *const f64);
+                if supported && (1.0..6000.0).contains(&value) {
+                    best = best.max(value as f32);
+                }
+            }
+        }
+        (best > 0.0).then_some(best)
+    }
+}
+
+/// Live GPU core clock (MHz) via IGCL, or `None` if IGCL is unavailable / the read
+/// fails / the value is implausible. Initialises once per thread and caches.
+pub fn gpu_clock_mhz() -> Option<f32> {
+    CACHE.with(|cell| {
+        let mut c = cell.borrow_mut();
+        if matches!(&*c, Cache::Uninit) {
+            *c = match unsafe { discover() } {
+                Some(i) => Cache::Ready(i),
+                None => Cache::Failed,
+            };
+        }
+        match &*c {
+            Cache::Ready(igcl) => unsafe { igcl.read_clock() },
+            _ => None,
+        }
+    })
+}
+
+/// Verbose IGCL diagnostic for `--gpu-debug`: reports DLL load, the working init
+/// AppVersion, device count, telemetry Size, and the clock item (supported/units/
+/// value) — so the live read can be cross-checked against reality.
 pub fn probe() -> String {
     let mut s = String::new();
     let _ = writeln!(s, "\n-- IGCL (Intel control library) --");
@@ -96,8 +241,7 @@ pub fn probe() -> String {
 }
 
 unsafe fn probe_inner(s: &mut String) {
-    // 1. Load ControlLib.dll (present only with Intel's graphics driver/runtime).
-    let hmod: HMODULE = match LoadLibraryW(w!("ControlLib.dll")) {
+    let hmod = match LoadLibraryW(w!("ControlLib.dll")) {
         Ok(h) if !h.is_invalid() => h,
         _ => {
             let _ = writeln!(s, "  ControlLib.dll: not found (no Intel control runtime — expected on non-Intel)");
@@ -105,104 +249,49 @@ unsafe fn probe_inner(s: &mut String) {
         }
     };
     let _ = writeln!(s, "  ControlLib.dll: loaded");
+    let Some((init, enumerate, telemetry, close)) = resolve(hmod) else {
+        let _ = writeln!(s, "  exports: missing one of ctlInit/Enumerate/Telemetry/Close");
+        let _ = FreeLibrary(hmod);
+        return;
+    };
 
-    // 2. Resolve the entry points.
-    let init: FnInit = match GetProcAddress(hmod, s!("ctlInit")) {
-        Some(p) => std::mem::transmute(p),
+    let (api, ver) = match try_init(init) {
+        Some(v) => v,
         None => {
-            let _ = writeln!(s, "  ctlInit: not exported");
+            let _ = writeln!(s, "  ctlInit: every AppVersion rejected");
             let _ = FreeLibrary(hmod);
             return;
         }
     };
-    let enumerate: Option<FnEnumerate> =
-        GetProcAddress(hmod, s!("ctlEnumerateDevices")).map(|p| std::mem::transmute(p));
-    let telemetry: Option<FnTelemetry> =
-        GetProcAddress(hmod, s!("ctlPowerTelemetryGet")).map(|p| std::mem::transmute(p));
-    let close: Option<FnClose> =
-        GetProcAddress(hmod, s!("ctlClose")).map(|p| std::mem::transmute(p));
-    let _ = writeln!(
-        s,
-        "  exports: ctlInit=yes enumerate={} telemetry={} close={}",
-        enumerate.is_some(),
-        telemetry.is_some(),
-        close.is_some()
-    );
+    let _ = writeln!(s, "  ctlInit: OK with AppVersion v{}.{}", ver.0, ver.1);
 
-    // 3. ctlInit.
-    let mut args = InitArgs {
-        size: std::mem::size_of::<InitArgs>() as u32,
-        version: 0,
-        app_version: VersionInfo { major: 1, minor: 0 },
-        flags: 0,
-        supported_version: VersionInfo { major: 0, minor: 0 },
-        application_uid: APP_UID,
-    };
-    let mut api: ApiHandle = std::ptr::null_mut();
-    let r = init(&mut args, &mut api);
-    let _ = writeln!(
-        s,
-        "  ctlInit: result={r} (0=ok)  supported v{}.{}",
-        args.supported_version.major, args.supported_version.minor
-    );
-    if r != 0 || api.is_null() {
-        let _ = FreeLibrary(hmod);
-        return;
-    }
-
-    // 4. Enumerate devices.
-    if let (Some(enumerate), Some(telemetry)) = (enumerate, telemetry) {
-        let mut count: u32 = 0;
-        let r = enumerate(api, &mut count, std::ptr::null_mut());
-        let _ = writeln!(s, "  ctlEnumerateDevices: result={r}  count={count}");
-        if r == 0 && count > 0 {
-            let mut devices: Vec<DeviceHandle> = vec![std::ptr::null_mut(); count as usize];
-            let r = enumerate(api, &mut count, devices.as_mut_ptr());
-            if r == 0 {
-                for (i, &dev) in devices.iter().enumerate() {
-                    probe_device_telemetry(s, telemetry, i, dev);
+    let mut count: u32 = 0;
+    let r = enumerate(api, &mut count, null_mut());
+    let _ = writeln!(s, "  ctlEnumerateDevices: result={r}  count={count}");
+    if r == 0 && count > 0 {
+        let mut devices: Vec<DeviceHandle> = vec![null_mut(); count as usize];
+        if enumerate(api, &mut count, devices.as_mut_ptr()) == 0 {
+            match find_tele_size(telemetry, &devices) {
+                Some((size, idx)) => {
+                    let mut buf = vec![0u64; BUF_U64];
+                    let base = buf.as_mut_ptr() as *mut u8;
+                    *(base as *mut u32) = size;
+                    *base.add(4) = 1;
+                    let _ = telemetry(devices[idx], base as *mut c_void);
+                    let supported = *base.add(CLOCK_SUPPORTED_OFFSET) != 0;
+                    let units = *(base.add(CLOCK_UNITS_OFFSET) as *const i32);
+                    let value = *(base.add(CLOCK_VALUE_OFFSET) as *const f64);
+                    let _ = writeln!(
+                        s,
+                        "  telemetry OK: device {idx} Size={size}  clock.supported={supported} units={units} value={value:.1}",
+                    );
                 }
-            } else {
-                let _ = writeln!(s, "  ctlEnumerateDevices (fill): result={r}");
+                None => {
+                    let _ = writeln!(s, "  ctlPowerTelemetryGet: no Size in {}..{} accepted", SIZE_SWEEP.start, SIZE_SWEEP.end);
+                }
             }
         }
     }
-
-    if let Some(close) = close {
-        let _ = close(api);
-    }
+    close(api);
     let _ = FreeLibrary(hmod);
-}
-
-/// Sweep the telemetry struct's Size field until the driver accepts it, then read
-/// the GPU core clock from the known offset. Reports the working size so the live
-/// path can use it directly next iteration.
-unsafe fn probe_device_telemetry(s: &mut String, telemetry: FnTelemetry, idx: usize, dev: DeviceHandle) {
-    // 8-aligned scratch buffer big enough for any plausible ctl_power_telemetry_t.
-    let mut buf = vec![0u64; 512]; // 4096 bytes
-    let base = buf.as_mut_ptr() as *mut u8;
-
-    for size in (256u32..=1400).step_by(4) {
-        // Re-zero and set the Size/Version handshake fields.
-        std::ptr::write_bytes(base, 0, buf.len() * 8);
-        *(base as *mut u32) = size;
-        *base.add(4) = 1u8; // Version
-        let r = telemetry(dev, base as *mut c_void);
-        if r == 0 {
-            let supported = *base.add(CLOCK_SUPPORTED_OFFSET) != 0;
-            let units = *(base.add(CLOCK_UNITS_OFFSET) as *const i32);
-            let value = *(base.add(CLOCK_VALUE_OFFSET) as *const f64);
-            let _ = writeln!(
-                s,
-                "  device {idx}: telemetry OK at Size={size}  clock.supported={supported} units={units} value={value:.1}",
-            );
-            return;
-        }
-    }
-    // Nothing accepted — report the result for our own struct size as a hint.
-    std::ptr::write_bytes(base, 0, buf.len() * 8);
-    *(base as *mut u32) = 1024;
-    *base.add(4) = 1u8;
-    let r = telemetry(dev, base as *mut c_void);
-    let _ = writeln!(s, "  device {idx}: no Size in 256..1400 accepted (last result={r})");
 }

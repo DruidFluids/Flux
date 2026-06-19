@@ -118,6 +118,10 @@ impl GpuSource for NvmlGpu {
 struct DxgiGpu {
     luid: u64,
     usage: d3dkmt::UsageSampler,
+    /// Intel integrated GPU: D3DKMT reports 0 Hz when the engine parks at idle, so
+    /// we fall back to IGCL for the real idle clock. Gated to Intel iGPUs so the
+    /// IGCL read never shadows a discrete card's clock on a hybrid system.
+    is_intel_igpu: bool,
 }
 #[cfg(windows)]
 impl GpuSource for DxgiGpu {
@@ -131,7 +135,14 @@ impl GpuSource for DxgiGpu {
         // engine is idle/clock-gated, and None only when the query is unsupported —
         // so the tile can keep the row reserved (showing "—" at idle) yet stay
         // hidden on GPUs that genuinely report no clock.
-        let (clock_mhz, temperature_c) = d3dkmt::read_clock_temp(luid);
+        let (mut clock_mhz, temperature_c) = d3dkmt::read_clock_temp(luid);
+        // Intel parks the clock to 0 at idle (D3DKMT then reports Some(0.0)); pull
+        // the real low idle clock from IGCL instead so the tile shows MHz, not "—".
+        if self.is_intel_igpu && clock_mhz.unwrap_or(0.0) <= 0.0 {
+            if let Some(mhz) = igcl::gpu_clock_mhz() {
+                clock_mhz = Some(mhz);
+            }
+        }
         GpuMetrics {
             usage_percent: self.usage.read(luid).unwrap_or(0.0),
             temperature_c,
@@ -198,8 +209,9 @@ fn select_gpu_source() -> Box<dyn GpuSource> {
     }
     #[cfg(windows)]
     {
-        if let Some((.., luid)) = dxgi_query() {
-            return Box::new(DxgiGpu { luid, usage: d3dkmt::UsageSampler::default() });
+        if let Some((name, .., luid)) = dxgi_query() {
+            let is_intel_igpu = gpu_name_is_integrated(&name) && name.to_lowercase().contains("intel");
+            return Box::new(DxgiGpu { luid, usage: d3dkmt::UsageSampler::default(), is_intel_igpu });
         }
     }
     Box::new(NoneGpu)
