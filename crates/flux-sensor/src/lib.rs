@@ -12,6 +12,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod pawnio;
 #[cfg(windows)]
 mod d3dkmt;
+#[cfg(windows)]
+mod igcl;
 
 /// Drop the cached CPU-temp driver probe so the next poll re-detects PawnIO.
 /// Call right after the user installs or removes the driver. Must be called on
@@ -431,6 +433,7 @@ pub fn gpu_debug_report() -> String {
     {
         let _ = writeln!(s, "\n-- raw DXGI adapters + D3DKMT per-node --");
         s.push_str(&dxgi_raw_dump());
+        s.push_str(&igcl::probe());
     }
     s
 }
