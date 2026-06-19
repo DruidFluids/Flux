@@ -1733,6 +1733,14 @@ impl App {
                 self.settings_window().map(|id| window::resize(id, self.settings_size())).unwrap_or(Task::none())
             }
             Message::StartTileDrag(name) => {
+                // Ensure every tile is in tile_order (in canonical order for any that
+                // are missing) so the drag's indices match the displayed list — the
+                // Settings list shows all six regardless of tile_order completeness.
+                for t in ["Clock", "CPU", "GPU", "RAM", "Network", "Disk"] {
+                    if !self.settings.tile_order.iter().any(|x| x == t) {
+                        self.settings.tile_order.push(t.to_string());
+                    }
+                }
                 let origin_index = self.settings.tile_order.iter().position(|t| t == &name).unwrap_or(0);
                 self.tile_drag = Some(TileDrag { name, origin_index, target_index: origin_index });
                 // Reset the discrete-drag trackers for this fresh drag (shared with
