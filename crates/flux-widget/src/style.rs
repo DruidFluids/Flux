@@ -434,6 +434,28 @@ pub fn lerp(a: Color, b: Color, t: f32) -> Color {
     }
 }
 
+/// A recessed "chrome" shade derived from the theme background — used for window
+/// backdrops and sunken bars (the Settings tab strip, popup frames). Works on BOTH
+/// dark and light themes: a plain multiply-toward-black darken washes a near-white
+/// light-theme `bg` out to flat mid-gray (the "bars aren't using theme colors"
+/// bug), so on light themes we darken far less and tint toward the accent so the
+/// bar still reads as themed. `depth` 0..1 = how recessed (≈0.12 window, ≈0.30
+/// sunken groove). Dark themes are pixel-identical to the old `bg * (1 - depth)`.
+pub fn chrome_shade(p: Palette, depth: f32) -> Color {
+    let luma = 0.2126 * p.bg.r + 0.7152 * p.bg.g + 0.0722 * p.bg.b;
+    if luma < 0.5 {
+        // Dark theme: multiply toward black, exactly as before (opaque backdrop).
+        Color { r: p.bg.r * (1.0 - depth), g: p.bg.g * (1.0 - depth), b: p.bg.b * (1.0 - depth), a: 1.0 }
+    } else {
+        // Light theme: gentle darkening that stays light, tinted toward the accent.
+        let f = 1.0 - depth * 0.32;
+        let base = Color { r: p.bg.r * f, g: p.bg.g * f, b: p.bg.b * f, a: 1.0 };
+        let mut c = lerp(base, p.accent, depth * 0.35);
+        c.a = 1.0;
+        c
+    }
+}
+
 impl Palette {
     pub fn from_settings(s: &AppSettings, opacity: f32) -> Self {
         let bg = parse_hex(&s.theme_bg, Color::from_rgb(0.118, 0.118, 0.133));

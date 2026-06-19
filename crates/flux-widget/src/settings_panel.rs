@@ -1372,9 +1372,8 @@ pub fn view<'a>(
     let active = tab.min(tab_panes.len() - 1);
 
     // ── Soft Premium chrome colours (derived from the live palette) ──
-    let darken = |c: iced::Color, f: f32| iced::Color { r: c.r * f, g: c.g * f, b: c.b * f, a: 1.0 };
-    let window_bg = darken(p.bg, 0.88);
-    let sunken = darken(p.bg, 0.70);
+    let window_bg = crate::style::chrome_shade(p, 0.12);
+    let sunken = crate::style::chrome_shade(p, 0.30);
     let hairline = iced::Color { a: 0.22, ..p.muted };
     let accent_border = crate::style::lerp(window_bg, p.accent, 0.45);
     let bg_opaque = iced::Color { a: 1.0, ..p.bg };

@@ -110,7 +110,7 @@ fn shell<'a>(title: &str, win_id: window::Id, p: Palette, body: Element<'a, Mess
 fn shell_leading<'a>(title: &str, win_id: window::Id, p: Palette, leading: Option<Element<'a, Message>>, body: Element<'a, Message>) -> Element<'a, Message> {
     // Match the Settings window's "Soft Premium" frame: a slightly darkened
     // window backdrop, a soft accent-tinted hairline border, and a large radius.
-    let window_bg = Color { r: p.bg.r * 0.88, g: p.bg.g * 0.88, b: p.bg.b * 0.88, ..p.bg };
+    let window_bg = crate::style::chrome_shade(p, 0.12);
     let accent_border = crate::style::lerp(window_bg, p.accent, 0.45);
     // Caption is flush in the top-left corner; only the body is inset.
     // Thin accent hairline under the title bar, mirroring the Settings window.
