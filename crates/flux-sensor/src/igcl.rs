@@ -67,12 +67,19 @@ type FnTelemetry = unsafe extern "system" fn(DeviceHandle, *mut c_void) -> i32;
 type FnClose = unsafe extern "system" fn(ApiHandle) -> i32;
 
 // Byte offsets within ctl_power_telemetry_t: header (Size u32 @0, Version u8 @4)
-// then 8-aligned telemetry items from offset 8; gpuCurrentClockFrequency is the
-// 4th item (8 + 3*24 = 80), its value (f64) 16 bytes in.
+// then 8-aligned 24-byte telemetry items from offset 8. The item order is
+// timeStamp, gpuEnergyCounter, gpuVoltage, gpuCurrentClockFrequency,
+// gpuCurrentTemperature, … so the clock is item 3 (8 + 3*24 = 80) and the
+// temperature the next item (8 + 4*24 = 104). Each item: b_supported@0, units@4,
+// data_type@8, value(f64)@16.
 const CLOCK_ITEM_OFFSET: usize = 80;
 const CLOCK_SUPPORTED_OFFSET: usize = CLOCK_ITEM_OFFSET;
 const CLOCK_UNITS_OFFSET: usize = CLOCK_ITEM_OFFSET + 4;
 const CLOCK_VALUE_OFFSET: usize = CLOCK_ITEM_OFFSET + 16;
+const TEMP_ITEM_OFFSET: usize = 104;
+const TEMP_SUPPORTED_OFFSET: usize = TEMP_ITEM_OFFSET;
+const TEMP_UNITS_OFFSET: usize = TEMP_ITEM_OFFSET + 4;
+const TEMP_VALUE_OFFSET: usize = TEMP_ITEM_OFFSET + 16;
 
 /// A nonzero application UID (IGCL rejects an all-zero UID).
 const APP_UID: AppId = AppId {
@@ -190,31 +197,45 @@ unsafe fn discover() -> Option<Igcl> {
 }
 
 impl Igcl {
-    /// Read the highest plausible GPU core clock across devices (MHz). Sanity-gated
-    /// so a wrong struct offset yields `None` rather than a bogus reading.
-    unsafe fn read_clock(&self) -> Option<f32> {
+    /// Read the highest plausible GPU core clock (MHz) and temperature (°C) across
+    /// devices from a single telemetry fetch per device. Each value is sanity-gated
+    /// independently, so a wrong struct offset for one yields `None` for it rather
+    /// than a bogus reading — and a part that reports a clock but no temp (or vice
+    /// versa) still returns whatever it does expose.
+    unsafe fn read_clock_temp(&self) -> (Option<f32>, Option<f32>) {
         let mut buf = vec![0u64; BUF_U64];
         let base = buf.as_mut_ptr() as *mut u8;
-        let mut best = 0.0f32;
+        let mut best_clock = 0.0f32;
+        let mut best_temp = 0.0f32;
         for &dev in &self.devices {
             std::ptr::write_bytes(base, 0, BUF_U64 * 8);
             *(base as *mut u32) = self.tele_size;
             *base.add(4) = 1;
             if (self.telemetry)(dev, base as *mut c_void) == 0 {
-                let supported = *base.add(CLOCK_SUPPORTED_OFFSET) != 0;
-                let value = *(base.add(CLOCK_VALUE_OFFSET) as *const f64);
-                if supported && (1.0..6000.0).contains(&value) {
-                    best = best.max(value as f32);
+                if *base.add(CLOCK_SUPPORTED_OFFSET) != 0 {
+                    let v = *(base.add(CLOCK_VALUE_OFFSET) as *const f64);
+                    if (1.0..6000.0).contains(&v) {
+                        best_clock = best_clock.max(v as f32);
+                    }
+                }
+                if *base.add(TEMP_SUPPORTED_OFFSET) != 0 {
+                    let v = *(base.add(TEMP_VALUE_OFFSET) as *const f64);
+                    if (1.0..130.0).contains(&v) {
+                        best_temp = best_temp.max(v as f32);
+                    }
                 }
             }
         }
-        (best > 0.0).then_some(best)
+        ((best_clock > 0.0).then_some(best_clock), (best_temp > 0.0).then_some(best_temp))
     }
 }
 
-/// Live GPU core clock (MHz) via IGCL, or `None` if IGCL is unavailable / the read
-/// fails / the value is implausible. Initialises once per thread and caches.
-pub fn gpu_clock_mhz() -> Option<f32> {
+/// Live GPU core clock (MHz) and temperature (°C) via IGCL — either `None` if IGCL
+/// is unavailable / the read fails / the value is implausible. Initialises once per
+/// thread and caches. The temperature only populates on Intel parts/drivers that
+/// expose `gpuCurrentTemperature` (D3DKMT reports no separate iGPU temp on many of
+/// them); both are independently sanity-gated.
+pub fn gpu_clock_temp() -> (Option<f32>, Option<f32>) {
     CACHE.with(|cell| {
         let mut c = cell.borrow_mut();
         if matches!(&*c, Cache::Uninit) {
@@ -224,8 +245,8 @@ pub fn gpu_clock_mhz() -> Option<f32> {
             };
         }
         match &*c {
-            Cache::Ready(igcl) => unsafe { igcl.read_clock() },
-            _ => None,
+            Cache::Ready(igcl) => unsafe { igcl.read_clock_temp() },
+            _ => (None, None),
         }
     })
 }
@@ -334,12 +355,15 @@ unsafe fn probe_inner(s: &mut String) {
                     *(base as *mut u32) = size;
                     *base.add(4) = 1;
                     let _ = telemetry(devices[idx], base as *mut c_void);
-                    let supported = *base.add(CLOCK_SUPPORTED_OFFSET) != 0;
-                    let units = *(base.add(CLOCK_UNITS_OFFSET) as *const i32);
-                    let value = *(base.add(CLOCK_VALUE_OFFSET) as *const f64);
+                    let c_sup = *base.add(CLOCK_SUPPORTED_OFFSET) != 0;
+                    let c_units = *(base.add(CLOCK_UNITS_OFFSET) as *const i32);
+                    let c_val = *(base.add(CLOCK_VALUE_OFFSET) as *const f64);
+                    let t_sup = *base.add(TEMP_SUPPORTED_OFFSET) != 0;
+                    let t_units = *(base.add(TEMP_UNITS_OFFSET) as *const i32);
+                    let t_val = *(base.add(TEMP_VALUE_OFFSET) as *const f64);
                     let _ = writeln!(
                         s,
-                        "  telemetry OK: device {idx} Size={size}  clock.supported={supported} units={units} value={value:.1}",
+                        "  telemetry OK: device {idx} Size={size}\n    clock: supported={c_sup} units={c_units} value={c_val:.1}\n    temp:  supported={t_sup} units={t_units} value={t_val:.1}",
                     );
                 }
                 None => {

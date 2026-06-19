@@ -135,12 +135,20 @@ impl GpuSource for DxgiGpu {
         // engine is idle/clock-gated, and None only when the query is unsupported —
         // so the tile can keep the row reserved (showing "—" at idle) yet stay
         // hidden on GPUs that genuinely report no clock.
-        let (mut clock_mhz, temperature_c) = d3dkmt::read_clock_temp(luid);
-        // Intel parks the clock to 0 at idle (D3DKMT then reports Some(0.0)); pull
-        // the real low idle clock from IGCL instead so the tile shows MHz, not "—".
-        if self.is_intel_igpu && clock_mhz.unwrap_or(0.0) <= 0.0 {
-            if let Some(mhz) = igcl::gpu_clock_mhz() {
-                clock_mhz = Some(mhz);
+        let (mut clock_mhz, mut temperature_c) = d3dkmt::read_clock_temp(luid);
+        // Intel parks the clock to 0 at idle (D3DKMT then reports Some(0.0)) and many
+        // Intel iGPUs report no separate temperature at all (D3DKMT gives None) — so
+        // for Intel iGPUs fall back to IGCL, which exposes both the real idle clock
+        // and gpuCurrentTemperature. One telemetry fetch yields both; each is taken
+        // only when D3DKMT didn't already provide it, so a discrete card's values are
+        // never shadowed.
+        if self.is_intel_igpu && (clock_mhz.unwrap_or(0.0) <= 0.0 || temperature_c.is_none()) {
+            let (igcl_clock, igcl_temp) = igcl::gpu_clock_temp();
+            if clock_mhz.unwrap_or(0.0) <= 0.0 {
+                if let Some(mhz) = igcl_clock { clock_mhz = Some(mhz); }
+            }
+            if temperature_c.is_none() {
+                temperature_c = igcl_temp;
             }
         }
         GpuMetrics {
