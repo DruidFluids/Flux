@@ -55,6 +55,12 @@ pub struct InstallOptions {
     pub desktop_shortcut: bool,
     pub run_at_startup: bool,
     pub launch_after: bool,
+    /// Pre-open the inbound firewall port for remote monitoring (setup is already
+    /// elevated, so no extra UAC — unlike the widget's on-demand path).
+    pub open_remote_port: bool,
+    /// Install the optional PawnIO CPU-temperature driver + sensor service now,
+    /// while we're elevated, so the user doesn't get a separate UAC later.
+    pub setup_cpu_temp: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -611,12 +617,24 @@ mod imp {
             rep.step("Enabled start with Windows".to_string());
         }
 
-        // Note: the remote-monitoring firewall rule is intentionally NOT added here.
-        // Doing it at install time prompted for elevation on EVERY install/update
-        // (a scary "Windows Command Processor" UAC), even for users who never use
-        // remote monitoring. The widget now adds the rule on demand the first time
-        // the feed is enabled (flux-widget/src/firewall.rs), with a UAC that clearly
-        // shows "Flux". Uninstall still removes the rule if present.
+        // 7a. Remote-monitoring firewall port (optional, on by default). Setup is
+        // already elevated, so we add it directly via netsh — no separate UAC (the
+        // old reason this was deferred). The widget still adds it on demand if it's
+        // missing, and uninstall removes it.
+        if opts.open_remote_port {
+            add_firewall_rule(REMOTE_PORT);
+            rep.step(format!("Opened remote-monitoring port (TCP {REMOTE_PORT})"));
+        }
+
+        // 7b. Optional CPU-temperature driver (PawnIO) + sensor service. We're
+        // elevated, so hand off to the widget's headless setup; best-effort, so a
+        // failure (e.g. offline, or the user later declines) never blocks install.
+        if opts.setup_cpu_temp {
+            match Command::new(&exe).arg("--setup-cpu-temp").status() {
+                Ok(s) if s.success() => rep.step("Installed CPU temperature driver".to_string()),
+                _ => rep.step("CPU temperature driver skipped (set it up later in Settings)".to_string()),
+            }
+        }
 
         // 8. Launch.
         if opts.launch_after {
@@ -709,6 +727,8 @@ mod imp {
     /// Inbound firewall rule the widget adds for remote monitoring. Keep this
     /// name in sync with `flux-widget/src/firewall.rs` (`RULE_NAME`).
     const FIREWALL_RULE: &str = "Flux Remote Sensor";
+    /// Default remote-monitoring TCP port (matches the widget's default).
+    const REMOTE_PORT: u16 = 5199;
 
     /// Remove the remote-monitoring firewall rule if present. Returns true if a
     /// rule existed and a delete was issued. Querying needs no elevation; the
@@ -735,9 +755,9 @@ mod imp {
     /// Create the remote-monitoring inbound rule (delete-then-add for
     /// idempotency). Needs elevation; runs directly when the installer is
     /// already elevated, otherwise one UAC prompt. Returns true if attempted.
-    /// No longer called at install time (the widget adds the rule on demand with
-    /// a "Flux"-labelled prompt); kept for potential future use.
-    #[allow(dead_code)]
+    /// (Re)create the inbound allow rule for the remote feed. Called at install
+    /// time when the user opts in (default on); setup is already elevated so it
+    /// runs netsh directly. The widget also adds it on demand if it's missing.
     fn add_firewall_rule(port: u16) -> bool {
         let combined = format!(
             "netsh advfirewall firewall delete rule name=\"{FIREWALL_RULE}\" >nul 2>&1 & \

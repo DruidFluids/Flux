@@ -246,6 +246,57 @@ pub fn run_elevated_install(pawnio_installer: Option<PathBuf>) -> i32 {
     }
 }
 
+/// Headless full setup (`flux.exe --setup-cpu-temp`), invoked by the installer
+/// while it is ALREADY elevated — download + verify PawnIO, install it, and
+/// register the sensor service, with no extra UAC. Returns a process exit code
+/// (0 = done / already present). Best-effort: any failure (offline, signature,
+/// etc.) just returns non-zero so the installer can note it and move on.
+#[cfg(target_os = "windows")]
+pub fn setup_headless() -> i32 {
+    if is_installed() && crate::sensor_service::is_running() {
+        return 0;
+    }
+    if is_installed() {
+        // PawnIO present, only the service is missing — just register it.
+        return run_elevated_install(None);
+    }
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(r) => r,
+        Err(_) => return 1,
+    };
+    let bytes = match rt.block_on(download_installer()) {
+        Ok(b) => b,
+        Err(_) => return 1,
+    };
+    let path = temp_installer_path();
+    if std::fs::write(&path, &bytes).is_err() {
+        return 1;
+    }
+    if verify_authenticode(&path).is_err() {
+        try_delete(&path);
+        return 1;
+    }
+    // If setup is already elevated (All-users install) do it silently; otherwise
+    // (a "Just me" install) re-enter elevated once with a single "Flux" UAC.
+    let elevated = unsafe { windows::Win32::UI::Shell::IsUserAnAdmin().as_bool() };
+    let code = if elevated {
+        run_elevated_install(Some(path.clone()))
+    } else if let Ok(exe) = std::env::current_exe() {
+        let params = format!("--install-sensor-service --pawnio \"{}\"", path.display());
+        match run_elevated_wait(&exe, &params) {
+            Ok(true) => 0,
+            _ => 1,
+        }
+    } else {
+        1
+    };
+    try_delete(&path);
+    code
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn setup_headless() -> i32 { 1 }
+
 /// Elevated re-entry (`flux.exe --uninstall-sensor-service`): remove the sensor
 /// service, then run the PawnIO uninstaller. Returns a process exit code.
 #[cfg(target_os = "windows")]

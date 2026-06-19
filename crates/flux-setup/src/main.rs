@@ -125,6 +125,8 @@ fn run_apply_cli(args: &[String]) -> i32 {
         desktop_shortcut: !cli::has(args, &["no-desktop", "nodesktop"]),
         run_at_startup: !cli::has(args, &["no-startup", "nostartup"]),
         launch_after: !cli::has(args, &["no-launch", "nolaunch"]),
+        open_remote_port: !cli::has(args, &["no-remote-port", "noremoteport"]),
+        setup_cpu_temp: !cli::has(args, &["no-cpu-temp", "nocputemp"]),
     };
     let silent = cli::is_silent(args);
     match engine::install(opts) {
@@ -261,6 +263,8 @@ mod gui {
         ToggleDesktop(bool),
         ToggleStartup(bool),
         ToggleLaunch(bool),
+        ToggleRemotePort(bool),
+        ToggleCpuTemp(bool),
         StartInstall,
         Installed(Outcome),
         ToggleRemoveSettings(bool),
@@ -300,6 +304,8 @@ mod gui {
         desktop: bool,
         startup: bool,
         launch: bool,
+        open_port: bool,
+        cpu_temp: bool,
         /// Uninstall: also delete settings/themes/skins + sensor service + driver.
         remove_settings: bool,
         outcome: Option<Outcome>,
@@ -349,6 +355,8 @@ mod gui {
                     desktop: true,
                     startup: true,
                     launch: true,
+                    open_port: true,
+                    cpu_temp: true,
                     remove_settings: true, // "remove all traces" on by default
                     outcome,
                     qa,
@@ -363,6 +371,8 @@ mod gui {
                 desktop_shortcut: self.desktop,
                 run_at_startup: self.startup,
                 launch_after: self.launch,
+                open_remote_port: self.open_port,
+                setup_cpu_temp: self.cpu_temp,
             }
         }
 
@@ -390,6 +400,14 @@ mod gui {
                 }
                 Message::ToggleLaunch(v) => {
                     self.launch = v;
+                    Task::none()
+                }
+                Message::ToggleRemotePort(v) => {
+                    self.open_port = v;
+                    Task::none()
+                }
+                Message::ToggleCpuTemp(v) => {
+                    self.cpu_temp = v;
                     Task::none()
                 }
                 Message::StartInstall => {
@@ -546,6 +564,10 @@ mod gui {
                     .on_toggle(Message::ToggleStartup),
                 checkbox("Launch Flux when setup finishes", self.launch)
                     .on_toggle(Message::ToggleLaunch),
+                checkbox("Open the remote-monitoring port (firewall)", self.open_port)
+                    .on_toggle(Message::ToggleRemotePort),
+                checkbox("Install CPU temperature driver (PawnIO)", self.cpu_temp)
+                    .on_toggle(Message::ToggleCpuTemp),
             ]
             .spacing(9)
             .width(Length::Fixed(380.0));

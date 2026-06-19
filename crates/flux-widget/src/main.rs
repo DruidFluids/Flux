@@ -65,6 +65,11 @@ fn main() -> iced::Result {
         if args.iter().any(|a| a == "--uninstall-sensor-service") {
             std::process::exit(cpu_driver::run_elevated_uninstall());
         }
+        // Headless full CPU-temp setup, invoked by the (already elevated) installer:
+        // download + verify + install PawnIO and register the sensor service.
+        if args.iter().any(|a| a == "--setup-cpu-temp") {
+            std::process::exit(cpu_driver::setup_headless());
+        }
         // Elevated re-entry to add the remote-monitoring firewall rule via netsh,
         // so the UAC prompt shows "Flux" rather than "Windows Command Processor".
         if let Some(i) = args.iter().position(|a| a == "--apply-firewall") {
