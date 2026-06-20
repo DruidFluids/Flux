@@ -8,7 +8,7 @@
 
 Real-time CPU, GPU, RAM, network, and disk stats — always on your desktop, never in your way.
 
-[![Release](https://img.shields.io/badge/release-v1.1.10-5898a0)](../../releases)
+[![Release](https://img.shields.io/badge/release-v1.1.11-5898a0)](../../releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](#requirements)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20iced-dea584)](https://iced.rs)
 [![License](https://img.shields.io/badge/license-Personal%20Use-c0392b)](LICENSE)
@@ -152,16 +152,22 @@ Quick launchers for popular Windows optimization tools and a window-snap blockli
 
 ### Remote monitoring
 
-Run Flux on multiple machines and watch them all from one desktop. TCP over TLS with mutual handshake-key authentication. Each remote device gets its own popout widget with independent layout and theming.
+Run Flux on multiple machines and watch them all from one desktop. TCP over TLS with mutual handshake-key authentication. Each machine appears as a tab in the widget, with independent layout, theming, and alerts.
 
 <div align="center">
 <img src="docs/images/remote-monitoring.png" alt="Remote monitoring" width="420">
 </div>
 
-Watching another machine — here a headless server:
+Switch between machines with the tabs — here a headless server:
 
 <div align="center">
 <img src="docs/images/remote-widget.png" alt="Watching a remote server" width="200">
+</div>
+
+**Pop devices out like browser tabs.** Drag a device's tab out of the widget, right-click it, or click the **↗** button to give that machine its own always-on-top window — theme-matched, snapping, and fully independent. Drag the window back onto the widget (or close it) to re-dock the tab.
+
+<div align="center">
+<img src="docs/images/popout.png" alt="A remote server popped out into its own window" width="150">
 </div>
 
 ### Tools & updates
@@ -204,7 +210,7 @@ Flux is built with security-conscious defaults:
 - **No telemetry** — the app makes zero analytics calls. The only outbound connections are the optional update check, the optional PawnIO driver download (user-initiated), and LAN-only remote monitoring.
 - **PawnIO is never bundled** — the CPU temperature driver is downloaded on demand from its [official GitHub release](https://github.com/namazso/PawnIO.Setup/releases), and is never redistributed here.
 - **Verified updates** — the in-app updater refuses to run a downloaded installer unless its SHA-256 matches a checksum published alongside the release.
-- **Scanned on VirusTotal** — every release is scanned and the result is linked in its notes. v1.1.10: **[0 / 66](https://www.virustotal.com/gui/file/7f5384d46886dab0b7a0a4770237a728a066c5c3e7636ca0cbb27d1c153873b0)** (clean).
+- **Scanned on VirusTotal** — every release is scanned and the result is linked in its notes. v1.1.11: **[0 / 69](https://www.virustotal.com/gui/file/23852ffdea2c792f2fe4ff859680fa2b707bbc2752c7fa3c69e98338d7744318)** (clean).
 - **Unsigned build** — the installer is not code-signed, so Windows SmartScreen shows a one-time prompt. Verify any download against the `.sha256` published with each release before running it.
 - **Settings stay local** — all configuration lives in `%APPDATA%\Flux`. Nothing is sent anywhere.
 - **Source-available** — every line is in this repo for inspection (see [License](#license)).
