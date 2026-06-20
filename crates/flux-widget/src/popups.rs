@@ -664,7 +664,7 @@ pub fn update_available_view<'a>(version: &str, changelog: &str, p: Palette, win
         });
 
     // How to quiet these pop-ups, in the box's own muted style.
-    let hint = text("Prefer no pop-ups? Set Updates to Manual (a quiet dot on the gear) or Off in Settings \u{2192} Tools.")
+    let hint = text("Prefer no pop-ups? Set Updates to Manual or Off in Settings \u{2192} Tools \u{2192} Updates.")
         .size(10).style(move |_| iced::widget::text::Style { color: Some(Color { a: 0.8, ..p.muted }) });
 
     let footer = column![
@@ -1113,40 +1113,9 @@ pub fn popout_config_view<'a>(dev: Option<&'a RemoteDevice>, p: Palette, win_id:
         text(format!("Popout appearance for \u{201C}{}\u{201D}", dev.name)).size(11)
             .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
         Space::with_height(4),
-        section("Colors"),
+        text("Colors always follow the main widget's theme, so every Flux window stays in sync.").size(10)
+            .style(move |_| iced::widget::text::Style { color: Some(Color { a: 0.85, ..p.muted }) }),
     ].spacing(8);
-
-    // Sync toggle
-    let sid = id.clone();
-    col = col.push(row![
-        crate::style::with_tip(toggler(po.sync_colors).size(14).on_toggle(move |b| Message::PopoutSyncColors(sid.clone(), b)).style(crate::style::toggler_style(p)), "Match this popout to the main widget theme colours.", p),
-        text("Use the widget's theme colors").size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-    ].spacing(6).align_y(iced::Alignment::Center));
-
-    // Per-colour rows (only when not synced)
-    if !po.sync_colors {
-        let color_row = |slot: u8, name: &str, hex: &str| -> Element<'a, Message> {
-            let c = crate::style::parse_hex(hex, p.muted);
-            let cid = id.clone();
-            row![
-                text(name.to_string()).size(11).width(Length::Fixed(80.0))
-                    .style(move |_| iced::widget::text::Style { color: Some(p.muted) }),
-                container(Space::new(16, 16)).style(move |_| iced::widget::container::Style {
-                    background: Some(iced::Background::Color(c)),
-                    border: Border { radius: 3.0.into(), width: 1.0, color: Color { a: 0.3, ..p.muted } }, ..Default::default()
-                }),
-                Space::with_width(6),
-                text_input("#AARRGGBB", hex).size(11).width(Length::Fixed(150.0))
-                    .on_input(move |s| Message::PopoutColor(cid.clone(), slot, s))
-                    .style(crate::style::dark_input_style(p)),
-            ].spacing(4).align_y(iced::Alignment::Center).into()
-        };
-        col = col.push(color_row(0, "Background", &po.bg));
-        col = col.push(color_row(1, "Tile", &po.tile));
-        col = col.push(color_row(2, "Accent", &po.accent));
-        col = col.push(color_row(3, "Text", &po.text));
-        col = col.push(color_row(4, "Muted", &po.muted));
-    }
 
     // Opacity
     let oid = id.clone();

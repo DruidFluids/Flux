@@ -1362,8 +1362,9 @@ impl App {
         let sp = style::skin_style(&self.settings.active_skin).tile_spacing;
         let n = [po.show_cpu, po.show_gpu, po.show_ram, po.show_network, po.show_storage]
             .iter().filter(|x| **x).count().max(1) as f32;
-        // 6px popout padding each side → window = tile width + 12.
-        Size::new(tw + 12.0, 12.0 + 16.0 + 4.0 + n * th + (n - 1.0) * sp + 12.0)
+        // 6px popout padding each side → window = tile width + 12. Chrome height:
+        // 12 (top+bottom padding) + 18 (title bar) + 4 (gap) + tiles + 10 slack.
+        Size::new(tw + 12.0, 12.0 + 18.0 + 4.0 + n * th + (n - 1.0) * sp + 10.0)
     }
 
     fn eval_warnings(&mut self) {
@@ -2873,14 +2874,11 @@ impl App {
         let snap = self.remote_snapshots.get(&dev_id).cloned().unwrap_or_default();
         let no_warn = tile::WarnView { flash: false, accent_override: None };
 
-        // Build a per-device settings view: its colours (unless synced), opacity,
-        // labels, and tile subset. Tile fns don't borrow `s` into their output.
+        // The popout always mirrors the main widget's theme colours so every Flux
+        // window stays visually consistent — only opacity, the tile subset, labels
+        // and per-device alerts are popout-specific. Tile fns don't borrow `s`.
         let po = dev.map(|d| d.popout.clone()).unwrap_or_default();
         let mut s = self.settings.clone();
-        if !po.sync_colors {
-            s.theme_bg = po.bg.clone(); s.theme_tile = po.tile.clone(); s.theme_accent = po.accent.clone();
-            s.theme_text = po.text.clone(); s.theme_muted = po.muted.clone();
-        }
         s.cpu_custom_name = po.cpu_label.clone();
         s.gpu_custom_name = po.gpu_label.clone();
         let p = Palette::from_settings(&s, po.opacity);
@@ -2894,18 +2892,30 @@ impl App {
         let skin = style::skin_style(&s.active_skin);
         let body = column(tiles).spacing(skin.tile_spacing).align_x(iced::Alignment::Center);
 
-        let label = if connected { name } else { format!("{name}  \u{2022} offline") };
+        // Title bar: a live status dot + device name on the left, a subtle close
+        // on the right — mirrors the device-tab styling so the popout reads as a
+        // first-class Flux window.
+        let dot_c = if connected { Color::from_rgb(0.30, 0.78, 0.45) } else { Color::from_rgb(0.86, 0.30, 0.25) };
         let header = row![
-            Space::with_width(Length::Fill),
-            text(label).size(9)
+            status_dot(dot_c),
+            text(name).size(11)
                 .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
-                .style(move |_| iced::widget::text::Style { color: Some(p.accent) }),
+                .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
             Space::with_width(Length::Fill),
             button(text("\u{2715}").size(11).font(iced::Font::with_name("Segoe UI Symbol"))
                 .style(move |_| iced::widget::text::Style { color: Some(p.muted) }))
-                .padding(0).style(|_, _| button::Style { background: None, ..Default::default() })
+                .padding(iced::Padding { top: 1.0, right: 4.0, bottom: 1.0, left: 4.0 })
+                .style(move |_: &iced::Theme, status: button::Status| {
+                    let hover = matches!(status, button::Status::Hovered);
+                    button::Style {
+                        background: if hover { Some(iced::Background::Color(Color { a: 0.18, ..p.muted })) } else { None },
+                        text_color: if hover { p.text } else { p.muted },
+                        border: Border { radius: 4.0.into(), ..Border::default() },
+                        ..Default::default()
+                    }
+                })
                 .on_press(Message::ClosePopup(id)),
-        ].align_y(iced::Alignment::Center).height(16);
+        ].spacing(3).align_y(iced::Alignment::Center).height(18);
 
         let widget_border = skin.border_color(&p);
         let root = container(column![header, Space::with_height(4), body])

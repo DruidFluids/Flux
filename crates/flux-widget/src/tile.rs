@@ -360,7 +360,7 @@ pub fn gpu_tile<'a>(gpu: &GpuData, s: &AppSettings, p: Palette, w: WarnView) -> 
                     .font(iced::Font::with_name("Segoe UI Symbol"))
                     .style(move |_| iced::widget::text::Style { color: Some(p.muted) });
                 primary = primary
-                    .push(crate::style::with_tip(chain, "This GPU doesn't report a separate temperature \u{2014} it shares the CPU package sensor. A limitation of this specific GPU, not integrated GPUs in general.", p))
+                    .push(crate::style::with_tip(chain, "No separate sensor on this GPU \u{2014} it reads the CPU package temperature. Specific to this chip, not integrated GPUs in general.", p))
                     .push(Space::with_width(8));
             }
             None => {}
