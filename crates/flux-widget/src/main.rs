@@ -31,7 +31,7 @@ use style::Palette;
 use tile::WarnView;
 use tray_icon::{
     menu::{Menu, MenuEvent, MenuItem},
-    TrayIcon, TrayIconBuilder,
+    TrayIcon, TrayIconBuilder, TrayIconEvent,
 };
 
 // Unique title applied to the widget window so click-through targets only it
@@ -42,7 +42,39 @@ const WIDGET_TITLE: &str = "Flux Widget";
 // window by this title, then renames it to WIDGET_TITLE. Keep the two in sync.
 const DEFAULT_TITLE: &str = "Flux";
 
+// ── Diagnostic file log (flux-diag.log in the config dir) ─────────────────────
+// A GUI app launched at Windows login has no console, so stderr is lost. This
+// best-effort file log captures the startup → window-setup → opacity → show/hide
+// sequence so a login-time freeze can be diagnosed after the fact. Truncated when
+// it grows past ~512 KB so it can't leak disk.
+fn diag_path() -> std::path::PathBuf {
+    flux_core::settings::AppSettings::config_dir().join("flux-diag.log")
+}
+fn diag(msg: &str) {
+    use std::io::Write;
+    let p = diag_path();
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&p) {
+        let ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let _ = writeln!(f, "{ms} | {msg}");
+    }
+}
+fn diag_init() {
+    let p = diag_path();
+    // Ensure the config dir exists, otherwise the very first-run / login-time
+    // diagnostics (the whole point of this log) would be silently dropped.
+    if let Some(dir) = p.parent() { let _ = std::fs::create_dir_all(dir); }
+    if std::fs::metadata(&p).map(|m| m.len() > 512 * 1024).unwrap_or(false) {
+        let _ = std::fs::remove_file(&p);
+    }
+    diag("==== flux launch ====");
+}
+
 fn main() -> iced::Result {
+    diag_init();
+    diag(&format!("main: args={:?}", std::env::args().skip(1).collect::<Vec<_>>()));
     // Service + elevated-setup entry points (Windows). These run before any GUI
     // init and exit immediately — they never start the iced daemon.
     #[cfg(windows)]
@@ -101,8 +133,10 @@ fn main() -> iced::Result {
                         if already {
                             // Another widget is already running — let it keep the
                             // hotkeys and tray icon; quit so we don't fight over them.
+                            diag("single-instance: another instance already running — exiting");
                             std::process::exit(0);
                         }
+                        diag("single-instance: acquired (this is the primary)");
                         // `HANDLE` is a Copy newtype with no Drop, so the OS mutex
                         // handle is never closed by Rust — it stays held for the whole
                         // process lifetime (the kernel releases it on exit). That's
@@ -453,7 +487,7 @@ fn set_click_through(_title: &str, on: bool) {
     };
     let hwnd = match widget_hwnd() {
         Some(h) => h,
-        None => return,
+        None => { diag(&format!("set_click_through({on}): hwnd NOT found — skipped")); return; }
     };
     unsafe {
         let mut ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
@@ -461,6 +495,7 @@ fn set_click_through(_title: &str, on: bool) {
         if on { ex |= flag; } else { ex &= !flag; }
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
     }
+    diag(&format!("set_click_through({on}): applied to hwnd={:?}", hwnd.0));
 }
 #[cfg(not(target_os = "windows"))]
 fn set_click_through(_: &str, _: bool) {}
@@ -470,8 +505,10 @@ fn set_click_through(_: &str, _: bool) {}
 // composites the desktop through the widget on hwnd-swapchain GPUs (AMD), where
 // per-pixel surface alpha baked into the iced colours is ignored and the window
 // stays opaque. `alpha` is 0 (invisible) .. 255 (opaque).
+// Returns true once the alpha was actually applied (window found + call succeeded),
+// so the caller knows whether to stop deferring or retry.
 #[cfg(target_os = "windows")]
-fn set_widget_window_alpha(alpha: u8) {
+fn set_widget_window_alpha(alpha: u8) -> bool {
     use windows::Win32::Foundation::COLORREF;
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, SetLayeredWindowAttributes, GWL_EXSTYLE,
@@ -479,18 +516,21 @@ fn set_widget_window_alpha(alpha: u8) {
     };
     let hwnd = match widget_hwnd() {
         Some(h) => h,
-        None => return,
+        None => { diag(&format!("set_widget_window_alpha({alpha}): hwnd NOT found — skipped")); return false; }
     };
     unsafe {
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        if ex & WS_EX_LAYERED.0 as isize == 0 {
+        let was_layered = ex & WS_EX_LAYERED.0 as isize != 0;
+        if !was_layered {
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED.0 as isize);
         }
-        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), alpha, LWA_ALPHA);
+        let _ = was_layered;
+        let r = SetLayeredWindowAttributes(hwnd, COLORREF(0), alpha, LWA_ALPHA);
+        r.is_ok()
     }
 }
 #[cfg(not(target_os = "windows"))]
-fn set_widget_window_alpha(_: u8) {}
+fn set_widget_window_alpha(_: u8) -> bool { true }
 
 // Round (or square) the widget window's corners via DWM (Windows 11+). iced's
 // container border-radius doesn't render on the transparent root window's top
@@ -844,6 +884,15 @@ struct App {
     // dock-back or edge-snap. Timer-based like the widget's pending_snap, because a
     // popout's on_release doesn't reliably fire after an OS window-drag.
     pending_popout_settle: Option<(window::Id, Instant)>,
+    // Widget is hidden in the tray (start-minimized or user "Hide"). Used to avoid
+    // touching the window (e.g. layered-alpha opacity) while it's not shown.
+    widget_hidden: bool,
+    // Deferred opacity application: applying WS_EX_LAYERED to the GPU swapchain
+    // window before the desktop compositor is ready (login, or right as it's shown
+    // from the tray) can wedge its first present and freeze the widget. So we wait
+    // until this time, then apply once the widget is actually visible. None = nothing
+    // pending.
+    opacity_defer_until: Option<Instant>,
     // ── Global hotkeys ──
     hotkeys: Option<hotkeys::HotkeyManager>,
     hotkey_rx: Option<std::sync::mpsc::Receiver<hotkeys::HotkeyEvent>>,
@@ -1050,12 +1099,11 @@ impl App {
         }
         if devices_changed { let _ = settings.save(); }
 
-        // Start the remote-monitoring runtime; it hands back the handshake key.
-        let (remote, remote_rx, handshake_key) =
-            flux_remote::RemoteManager::start(settings.remote_port);
-        settings.remote_key = handshake_key;
-        remote.set_devices(settings.remote_devices.clone());
-        if settings.remote_enabled { remote.set_server_enabled(true); }
+        // The handshake key is computed cheaply (no runtime, no sockets). The remote
+        // async runtime — and its loopback waker socket, which triggers a Windows
+        // Firewall prompt — is started LAZILY (ensure_remote), only when remote
+        // monitoring is actually in use. So users who never touch it never see it.
+        settings.remote_key = flux_remote::handshake_key();
 
         // Register global hotkeys from the saved combos.
         let (hotkeys_mgr, hotkey_rx) = hotkeys::HotkeyManager::start();
@@ -1071,7 +1119,9 @@ impl App {
         let ei = MenuItem::new("Exit", true, None);
         let (sid, wid, gid, eid) = (si.id().clone(), wi.id().clone(), gi.id().clone(), ei.id().clone());
         menu.append(&si).ok(); menu.append(&wi).ok(); menu.append(&gi).ok(); menu.append(&ei).ok();
-        let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("Flux").with_icon(make_tray_icon()).build().expect("tray");
+        // Left-click shows the widget (handled via TrayIconEvent below); only
+        // right-click pops the menu — the conventional tray behaviour.
+        let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_menu_on_left_click(false).with_tooltip("Flux").with_icon(make_tray_icon()).build().expect("tray");
         let mut app = Self {
             settings, snapshot: SensorSnapshot::default(), poller: None,
             windows: BTreeMap::new(), warn_state: HashMap::new(),
@@ -1079,7 +1129,7 @@ impl App {
             click_through_applied: false,
             pending_snap: None, ignore_next_move: false, snap_right: false, snap_bottom: false,
             _tray: tray, settings_id: sid, show_id: wid, game_id: gid, exit_id: eid,
-            remote: Some(remote), remote_rx: Some(remote_rx),
+            remote: None, remote_rx: None,
             remote_snapshots: HashMap::new(), remote_conn: HashMap::new(),
             popout_device: HashMap::new(), popout_pos: HashMap::new(),
             dock_locked: std::collections::HashSet::new(),
@@ -1095,6 +1145,8 @@ impl App {
             latest_changelog: None,
             updates_show_info: false,
             last_window_open: None,
+            widget_hidden: false,
+            opacity_defer_until: None,
             pulse_clock: Instant::now(),
             help_expanded: std::collections::HashSet::new(),
             appearance_status: String::new(),
@@ -1242,6 +1294,11 @@ impl App {
                 }
             }
         }
+        // Spin up the remote runtime now only if remote is actually in use at launch
+        // (server enabled, or we're watching remote devices); otherwise stay lazy.
+        if app.settings.remote_enabled || !app.settings.remote_devices.is_empty() {
+            app.ensure_remote();
+        }
         (app, Task::batch(batch))
     }
 
@@ -1378,10 +1435,14 @@ impl App {
     fn open_settings(&mut self) -> Task<Message> {
         if self.settings_window().is_some() { return Task::none(); }
         // Always open centered on the active monitor.
-        let (_, t) = window::open(window::Settings {
+        let (id, t) = window::open(window::Settings {
             size: self.settings_size(), position: window::Position::Centered, decorations: false, transparent: true, resizable: false,
             level: window::Level::AlwaysOnTop, platform_specific: no_taskbar(), ..Default::default()
         });
+        // Register the kind NOW, before this window's first view() — otherwise the
+        // unknown id falls back to the widget view and the Settings window briefly
+        // flashes the widget tiles ("starts out as widget") before laying out.
+        self.windows.insert(id, WindowKind::Settings);
         let open = t.map(|id| Message::WindowOpened(id, WindowKind::Settings));
         // Fetch the latest release notes once per session to fill the Updates card.
         if self.latest_changelog.is_none() {
@@ -1390,12 +1451,15 @@ impl App {
             open
         }
     }
-    fn open_popup(&self, kind: WindowKind, size: Size) -> Task<Message> {
+    fn open_popup(&mut self, kind: WindowKind, size: Size) -> Task<Message> {
         if self.windows.values().any(|k| *k == kind) { return Task::none(); }
-        let (_, t) = window::open(window::Settings {
+        let (id, t) = window::open(window::Settings {
             size, position: self.popup_position(kind), decorations: false, transparent: true,
             resizable: false, level: window::Level::AlwaysOnTop, platform_specific: no_taskbar(), ..Default::default()
         });
+        // Register the kind immediately so the window renders as this popup from its
+        // first frame, not as the fallback widget view (avoids a tile flash on open).
+        self.windows.insert(id, kind);
         t.map(move |id| Message::WindowOpened(id, kind))
     }
     // Remembered position for a popup kind, falling back to centered.
@@ -1844,12 +1908,82 @@ impl App {
         op.clamp(0.2, 1.0)
     }
 
+    // Restore the widget from the tray: mark it shown, schedule the (deferred)
+    // opacity for after it composites, and switch the window back to Windowed.
+    fn show_widget(&mut self) -> Task<Message> {
+        self.widget_hidden = false;
+        self.opacity_defer_until = Some(Instant::now() + Duration::from_millis(500));
+        diag("show_widget -> opacity scheduled (~0.5s)");
+        self.widget_window()
+            .map(|id| window::change_mode(id, window::Mode::Windowed))
+            .unwrap_or(Task::none())
+    }
+
     // Push the current opacity to the widget window as a real window-level alpha.
     // (Baking alpha into the iced colours doesn't composite see-through on AMD.)
-    fn apply_widget_opacity(&self) -> Task<Message> {
+    // Never touch a HIDDEN window's layered style — applying WS_EX_LAYERED to a
+    // window whose swapchain hasn't composited (in the tray, or mid-login) can wedge
+    // its first present and freeze the widget; defer until it's shown instead.
+    fn apply_widget_opacity(&mut self) -> Task<Message> {
+        if self.widget_hidden {
+            self.opacity_defer_until = Some(Instant::now() + Duration::from_millis(500));
+            diag("apply_widget_opacity: widget hidden — deferred");
+            return Task::none();
+        }
         let alpha = (self.effective_widget_opacity() * 255.0).round() as u8;
-        set_widget_window_alpha(alpha);
+        if set_widget_window_alpha(alpha) {
+            // Applied — stop deferring.
+            self.opacity_defer_until = None;
+        } else {
+            // Window not resolvable yet (early in startup) — retry shortly so the
+            // widget doesn't get stuck fully opaque.
+            self.opacity_defer_until = Some(Instant::now() + Duration::from_millis(300));
+        }
         Task::none()
+    }
+
+    // Apply the deferred opacity if it's due and the widget is shown. Driven by
+    // both SensorTick and the faster (200ms) TrayPoll so it lands within ~200ms of
+    // its schedule rather than waiting a full (up to 5s) sensor interval.
+    fn tick_deferred_opacity(&mut self) {
+        if let Some(t) = self.opacity_defer_until {
+            if !self.widget_hidden && Instant::now() >= t {
+                let _ = self.apply_widget_opacity();
+                diag(if self.opacity_defer_until.is_none() {
+                    "deferred opacity: applied"
+                } else {
+                    "deferred opacity: hwnd not ready — retrying"
+                });
+            }
+        }
+    }
+
+    // Start the remote-monitoring async runtime if it isn't already running. Lazy,
+    // so its loopback waker socket (the Windows Firewall prompt) is only created
+    // when remote monitoring is actually used. Applies the current device list +
+    // server-enabled state to the freshly-started runtime.
+    fn ensure_remote(&mut self) {
+        if self.remote.is_some() { return; }
+        let (remote, rx, key) = flux_remote::RemoteManager::start(self.settings.remote_port);
+        self.settings.remote_key = key;
+        remote.set_devices(self.settings.remote_devices.clone());
+        remote.set_server_enabled(self.settings.remote_enabled);
+        self.remote = Some(remote);
+        self.remote_rx = Some(rx);
+        diag("remote: runtime started (lazy)");
+    }
+
+    // Reconcile the runtime with current settings: start it if remote is now in use,
+    // then push the device list + server-enabled state. Call after any change to
+    // `remote_enabled` or `remote_devices`.
+    fn sync_remote(&mut self) {
+        if self.settings.remote_enabled || !self.settings.remote_devices.is_empty() {
+            self.ensure_remote();
+        }
+        if let Some(r) = &self.remote {
+            r.set_devices(self.settings.remote_devices.clone());
+            r.set_server_enabled(self.settings.remote_enabled);
+        }
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -1860,6 +1994,10 @@ impl App {
                 self.snapshot = poller.poll(); self.eval_warnings();
                 // Feed the TCP server so connected remotes receive this machine.
                 if let Some(r) = &self.remote { r.push_snapshot(self.snapshot.clone()); }
+                // Deferred opacity: apply the layered alpha only once the widget has
+                // had time to composite and is actually shown (avoids the login/tray
+                // first-present freeze). Also driven by TrayPoll for lower latency.
+                self.tick_deferred_opacity();
                 Task::none()
             }
             Message::FlashTick => { self.flash_on = !self.flash_on; Task::none() }
@@ -1871,12 +2009,23 @@ impl App {
             }
             Message::TrayPoll => {
                 let mut tasks: Vec<Task<Message>> = Vec::new();
+                // Low-latency deferred-opacity apply (SensorTick also does this, but
+                // can be up to ~5s apart on a slow update interval).
+                self.tick_deferred_opacity();
                 if let Ok(event) = MenuEvent::receiver().try_recv() {
                     if event.id == self.exit_id { return exit_clean(); }
                     if event.id == self.settings_id { tasks.push(self.open_settings()); }
-                    if event.id == self.show_id { if let Some(id) = self.widget_window() { tasks.push(window::change_mode(id, window::Mode::Windowed)); } }
+                    if event.id == self.show_id { tasks.push(self.show_widget()); }
                     if event.id == self.game_id {
                         tasks.push(self.toggle_game_mode());
+                    }
+                }
+                // A left-click on the tray icon shows the widget (right-click pops the
+                // menu — disabled on left-click at build time).
+                while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
+                    if let TrayIconEvent::Click { button: tray_icon::MouseButton::Left, button_state: tray_icon::MouseButtonState::Up, .. } = ev {
+                        diag("tray: left-click -> show widget");
+                        tasks.push(self.show_widget());
                     }
                 }
                 tasks.push(self.drain_hotkey_events());
@@ -1985,12 +2134,20 @@ impl App {
                     set_all_windows_rounded(self.settings.round_corners);
                     self.round_retry_until = Some(Instant::now() + Duration::from_millis(1200));
                     let ct = self.apply_click_through();
-                    let op = self.apply_widget_opacity();
-                    let mut tasks = vec![op, ct];
-                    // "Start minimized": launch quietly to the tray (after the window
-                    // setup above, so the HWND is resolved and styled first).
+                    let mut tasks = vec![ct];
                     if self.settings.start_minimized {
+                        // Launch quietly to the tray. Opacity is applied later, once
+                        // it's actually shown (see the tray-show path + SensorTick).
+                        self.widget_hidden = true;
+                        self.opacity_defer_until = None;
+                        diag("WindowOpened(Widget): start_minimized -> hiding to tray");
                         tasks.push(window::change_mode(id, window::Mode::Hidden));
+                    } else {
+                        // Defer the layered-alpha opacity off the fragile open moment
+                        // (compositor may not be ready at login -> wedged present).
+                        self.widget_hidden = false;
+                        self.opacity_defer_until = Some(Instant::now() + Duration::from_millis(1200));
+                        diag("WindowOpened(Widget): shown -> opacity deferred ~1.2s");
                     }
                     return Task::batch(tasks);
                 }
@@ -2073,7 +2230,11 @@ impl App {
                 level
             }
             Message::OpenSettings => self.open_settings(),
-            Message::HideWidget => self.widget_window().map(|id| window::change_mode(id, window::Mode::Hidden)).unwrap_or(Task::none()),
+            Message::HideWidget => {
+                self.widget_hidden = true;
+                diag("HideWidget -> hide to tray");
+                self.widget_window().map(|id| window::change_mode(id, window::Mode::Hidden)).unwrap_or(Task::none())
+            }
             Message::OpenAlerts => self.open_popup(WindowKind::Alerts, popups::ALERTS_SIZE),
             Message::OpenGameMode => self.open_popup(WindowKind::GameMode, popups::GAME_MODE_SIZE),
             Message::OpenHelp => self.open_popup(WindowKind::Help, popups::HELP_SIZE),
@@ -2342,11 +2503,13 @@ impl App {
                     Some((x, y)) => Point::new(x, y),
                     None => Point::new(self.settings.window_x as f32 + 8.0, self.settings.window_y as f32 + 26.0),
                 };
-                let (_, t) = window::open(window::Settings {
+                let (id, t) = window::open(window::Settings {
                     size: popups::WIDGET_MENU_SIZE, position: window::Position::Specific(pos),
                     decorations: false, transparent: true, resizable: false,
                     level: window::Level::AlwaysOnTop, platform_specific: no_taskbar(), ..Default::default()
                 });
+                // Register immediately so it renders as the menu, not a widget flash.
+                self.windows.insert(id, WindowKind::WidgetMenu);
                 t.map(|id| Message::WindowOpened(id, WindowKind::WidgetMenu))
             }
             Message::WidgetMenuSettings => Task::batch([self.close_kind(WindowKind::WidgetMenu), self.open_settings()]),
@@ -2377,10 +2540,7 @@ impl App {
                 // the feed. Push that to the live runtime so it stops connecting to
                 // the now-removed machines, and drop their cached snapshots/state —
                 // otherwise it keeps polling devices the user just reset away.
-                if let Some(r) = &self.remote {
-                    r.set_devices(self.settings.remote_devices.clone());
-                    r.set_server_enabled(self.settings.remote_enabled);
-                }
+                self.sync_remote();
                 self.remote_snapshots.clear();
                 self.remote_conn.clear();
                 self.widget_device = None;
@@ -2472,6 +2632,8 @@ impl App {
                 self.snap_right = false;
                 self.snap_bottom = false;
                 let _ = self.settings.save();
+                self.widget_hidden = false;
+                self.opacity_defer_until = Some(Instant::now() + Duration::from_millis(500));
                 if let Some(id) = self.widget_window() {
                     self.ignore_next_move = true;
                     Task::batch([
@@ -2549,7 +2711,7 @@ impl App {
                     firewall::ensure_rule(self.settings.remote_port);
                     self.settings.remote_firewall_configured = true;
                 }
-                if let Some(r) = &self.remote { r.set_server_enabled(on); }
+                self.sync_remote();
                 let _ = self.settings.save();
                 Task::none()
             }
@@ -2559,6 +2721,7 @@ impl App {
                 Task::none()
             }
             Message::RegenerateKey => {
+                self.ensure_remote();
                 if let Some(r) = &self.remote { r.regenerate_key(); }
                 Task::none()
             }
@@ -2576,6 +2739,7 @@ impl App {
                 match self.build_device_from_form() {
                     Ok(dev) => {
                         self.device_test_status = "Testing\u{2026}".into();
+                        self.ensure_remote();
                         if let Some(r) = &self.remote { r.test_device(dev.host, dev.port, dev.key); }
                     }
                     Err(msg) => { self.device_test_status = msg.into(); self.device_test_ok = false; }
@@ -2588,7 +2752,7 @@ impl App {
                     Ok(dev) => {
                         self.settings.remote_devices.push(dev);
                         let _ = self.settings.save();
-                        if let Some(r) = &self.remote { r.set_devices(self.settings.remote_devices.clone()); }
+                        self.sync_remote();
                         self.add_device_open = false;
                     }
                     Err(msg) => { self.device_test_status = msg.into(); self.device_test_ok = false; }
@@ -2600,7 +2764,7 @@ impl App {
                 self.remote_snapshots.remove(&id); self.remote_conn.remove(&id);
                 if self.widget_device.as_deref() == Some(id.as_str()) { self.widget_device = None; }
                 let _ = self.settings.save();
-                if let Some(r) = &self.remote { r.set_devices(self.settings.remote_devices.clone()); }
+                self.sync_remote();
                 Task::none()
             }
             Message::OpenPopout(id) => self.open_popout(&id, None),
@@ -2977,10 +3141,7 @@ impl App {
                     let keep_key = self.settings.remote_key.clone();
                     self.settings = AppSettings::default();
                     self.settings.remote_key = keep_key;
-                    if let Some(r) = &self.remote {
-                        r.set_devices(self.settings.remote_devices.clone());
-                        r.set_server_enabled(self.settings.remote_enabled);
-                    }
+                    self.sync_remote();
                     self.remote_snapshots.clear();
                     self.remote_conn.clear();
                     self.widget_device = None;

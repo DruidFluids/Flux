@@ -49,6 +49,16 @@ pub struct RemoteManager {
     cmd_tx: mpsc::UnboundedSender<Cmd>,
 }
 
+/// The current handshake key WITHOUT starting the runtime (no thread, no sockets).
+/// Lets the UI show the key while remote monitoring is off, so the async runtime
+/// (and its loopback waker socket → firewall prompt) is only spun up on demand.
+pub fn handshake_key() -> String {
+    let path = ServerIdentity::default_path();
+    let identity = ServerIdentity::load_or_create(&path)
+        .unwrap_or_else(|_| ServerIdentity::generate().expect("generate identity"));
+    identity.handshake_key()
+}
+
 impl RemoteManager {
     /// Start the runtime. Returns the manager, the event receiver to drain on
     /// the UI tick, and the current handshake key.
