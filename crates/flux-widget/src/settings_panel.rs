@@ -1319,7 +1319,7 @@ pub fn view<'a>(
     let behavior_tab: Element<'a, Message> = column![
         sh("Layout", "Stack tiles vertically (tall) or horizontally (wide)."), layout_pills,
         Space::with_height(6),
-        sh("Behavior", "Always-on-top, startup, snapping, click-through, and refresh rate."), behavior,
+        sh("Behavior", "Always-on-top, start-minimized, startup, snapping, click-through, lock/reset position, and refresh rate."), behavior,
     ].spacing(4).into();
 
     // ── Tools tab: a 2×2 grid of launcher cards (icon-tinted, with live status) ──
@@ -1389,7 +1389,7 @@ pub fn view<'a>(
     let c_util = crate::style::shift_hue(p.accent, -42.0);
     let c_remote = crate::style::shift_hue(p.accent, 90.0);
     let tools_tab: Element<'a, Message> = column![
-        sh("Tools", "Configure Alerts, Game Mode, and Utilities."),
+        sh("Tools", "Configure Alerts, Game Mode, Utilities, and Remote monitoring."),
         row![
             tool_card("\u{26A0}", c_alerts, "Alerts", "Temp / load thresholds", alerts_status, Message::OpenAlerts),
             tool_card("\u{1F3AE}", c_game, "Game Mode", "Hotkey-snap overlay", gm_status, Message::OpenGameMode),

@@ -37,7 +37,7 @@ Most system monitors are either heavyweight dashboards or cryptic taskbar number
 
 ### Live hardware tiles
 
-CPU, GPU, RAM, Network, Disk, and Clock tiles — each individually toggleable and **drag-to-reorder**. CPU and GPU tiles show temperature, load, and clock speed. RAM shows usage and capacity. Network shows live up/down traffic with animated indicators. Disk shows real-time read/write speeds.
+CPU, GPU, RAM, Network, Disk, and Clock tiles — each individually toggleable and **drag-to-reorder**. CPU and GPU tiles show temperature, load, and clock speed. RAM shows usage and capacity. Network shows live up/down traffic with animated indicators — in bytes (KB/s) or **bits (Mbps)**, like your router quotes. Disk shows real-time read/write speeds. A **Display** section sets the temperature unit and the spacing between tiles.
 
 Vertical or horizontal layout — switch any time.
 
@@ -47,6 +47,14 @@ Vertical or horizontal layout — switch any time.
 
 <div align="center">
 <img src="docs/images/settings-tiles.png" alt="Tiles settings" width="420">
+</div>
+
+### Settings, organized
+
+Everything lives in four tabs — **Appearance** (themes, skins, colors, fonts, size, **opacity**), **Behavior** (layout, always-on-top, start-minimized-to-tray, snapping, click-through, **lock position**, reset position, refresh rate), **Tiles** (which tiles show and what each displays, plus the Display/units section), and **Tools** (Alerts, Game Mode, Utilities, Remote).
+
+<div align="center">
+<img src="docs/images/settings-behavior.png" alt="Behavior settings" width="420">
 </div>
 
 ### Themes, skins, and colors
