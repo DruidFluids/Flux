@@ -1004,7 +1004,7 @@ enum Message {
     SetTileWidth(f32), SetTileHeight(f32),
     SetPrimaryFontOffset(f32), SetSecondaryFontOffset(f32), SetIndicatorFontOffset(f32),
     SetMutedContrast(f32), SetInterval(f32),
-    SetNetworkBits(bool), SetTileSpacingOffset(f32),
+    SetNetworkBits(bool), SetDiskBits(bool), SetTileSpacingOffset(f32),
     SetStartMinimized(bool), SetLockPosition(bool), ResetWidgetPosition,
     SetCpuName(String), SetGpuName(String),
     SetDisk(String), SetAdapter(String),
@@ -2621,6 +2621,7 @@ impl App {
             Message::SetMutedContrast(v) => { self.settings.muted_contrast = v; Task::none() }
             Message::SetInterval(v) => { self.settings.update_interval_ms = v as u64; Task::none() }
             Message::SetNetworkBits(on) => { self.settings.network_bits = on; Task::none() }
+            Message::SetDiskBits(on) => { self.settings.disk_bits = on; Task::none() }
             Message::SetTileSpacingOffset(v) => { self.settings.tile_spacing_offset = v; self.resize_widget() }
             Message::SetStartMinimized(on) => { self.settings.start_minimized = on; let _ = self.settings.save(); Task::none() }
             Message::SetLockPosition(on) => { self.settings.lock_position = on; let _ = self.settings.save(); Task::none() }

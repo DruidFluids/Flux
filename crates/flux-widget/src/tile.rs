@@ -475,8 +475,8 @@ pub fn disk_tile<'a>(disk: &DiskData, s: &AppSettings, p: Palette, w: WarnView) 
         "None" => String::new(),
         _ => letters, // "Letter"
     };
-    let (rv, ru) = fmt::fmt_disk(read);
-    let (wv, wu) = fmt::fmt_disk(write);
+    let (rv, ru) = fmt::fmt_disk(read, s.disk_bits);
+    let (wv, wu) = fmt::fmt_disk(write, s.disk_bits);
 
     // R: / W: labels: DiskLabelFontSize = max(8, 13 + indicatorOffset + diskLabelOffset).
     let label_size = sz(13, s.indicator_font_offset + s.disk_label_font_offset, s);

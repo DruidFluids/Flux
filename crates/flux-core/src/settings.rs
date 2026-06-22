@@ -125,6 +125,8 @@ pub struct AppSettings {
     #[serde(default = "def_true")] pub clock_show_date: bool,
     // Network tile: show rates in bits (Kbps/Mbps/Gbps) instead of bytes (KB/s…).
     #[serde(default)] pub network_bits: bool,
+    // Disk tile: same, for read/write speeds.
+    #[serde(default)] pub disk_bits: bool,
     // User nudge added to the active skin's tile gap (px); 0 = the skin's own spacing.
     #[serde(default)] pub tile_spacing_offset: f32,
 }
@@ -216,6 +218,7 @@ impl Default for AppSettings {
             disk_show_read: true, disk_show_write: true,
             clock_show_date: true,
             network_bits: false,
+            disk_bits: false,
             tile_spacing_offset: 0.0,
         }
     }

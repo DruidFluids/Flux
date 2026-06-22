@@ -37,7 +37,7 @@ Most system monitors are either heavyweight dashboards or cryptic taskbar number
 
 ### Live hardware tiles
 
-CPU, GPU, RAM, Network, Disk, and Clock tiles — each individually toggleable and **drag-to-reorder**. CPU and GPU tiles show temperature, load, and clock speed. RAM shows usage and capacity. Network shows live up/down traffic with animated indicators — in bytes (KB/s) or **bits (Mbps)**, like your router quotes. Disk shows real-time read/write speeds. A **Display** section sets the temperature unit and the spacing between tiles.
+CPU, GPU, RAM, Network, Disk, and Clock tiles — each individually toggleable and **drag-to-reorder**. CPU and GPU tiles show temperature, load, and clock speed. RAM shows usage and capacity. Network shows live up/down traffic with animated indicators. Disk shows real-time read/write speeds. Both can read in bytes (KB/s) or **bits (Mbps)**, switchable independently. A **Display** section sets the temperature unit, network/disk units, and the spacing between tiles.
 
 Vertical or horizontal layout — switch any time.
 

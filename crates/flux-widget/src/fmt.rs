@@ -110,16 +110,9 @@ pub fn fmt_net(bps: f64, bits: bool) -> (String, String) {
     }
 }
 
-pub fn fmt_disk(bps: f64) -> (String, String) {
-    if !bps.is_finite() || bps < 1024.0 {
-        (format!("{:.0}", bps.max(0.0)), "B/s".into())
-    } else if bps < 1024.0 * 1024.0 {
-        (short(bps / 1024.0), "KB/s".into())
-    } else if bps < 1024.0 * 1024.0 * 1024.0 {
-        (short(bps / 1024.0 / 1024.0), "MB/s".into())
-    } else {
-        (short(bps / 1024.0 / 1024.0 / 1024.0), "GB/s".into())
-    }
+// Disk read/write rates format exactly like network traffic (bytes or bits).
+pub fn fmt_disk(bps: f64, bits: bool) -> (String, String) {
+    fmt_net(bps, bits)
 }
 
 /// C# Temp(): em-dash when missing/<=0; (value, unit) otherwise

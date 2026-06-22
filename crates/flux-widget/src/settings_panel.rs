@@ -777,6 +777,12 @@ pub fn view<'a>(
             crate::style::with_tip(seg("Bytes".into(), !settings.network_bits, Message::SetNetworkBits(false)), "Network speeds in bytes \u{2014} KB/s, MB/s.", p),
             crate::style::with_tip(seg("Bits".into(), settings.network_bits, Message::SetNetworkBits(true)), "Network speeds in bits \u{2014} Kbps, Mbps (how ISPs and routers quote them).", p),
         ].align_y(iced::Alignment::Center),
+        row![
+            fl("Disk units"),
+            Space::with_width(Length::Fill),
+            crate::style::with_tip(seg("Bytes".into(), !settings.disk_bits, Message::SetDiskBits(false)), "Disk read/write speeds in bytes \u{2014} KB/s, MB/s.", p),
+            crate::style::with_tip(seg("Bits".into(), settings.disk_bits, Message::SetDiskBits(true)), "Disk read/write speeds in bits \u{2014} Kbps, Mbps, Gbps.", p),
+        ].align_y(iced::Alignment::Center),
         column![
             row![fl("Tile spacing"), Space::with_width(Length::Fill), vl(format!("{:.0}px", tile_gap_eff))],
             crate::style::with_tip(marked_slider(-6.0, 20.0, settings.tile_spacing_offset, 1.0, 0.0, p, Message::SetTileSpacingOffset), "Gap between tiles on the widget (added to the skin's own spacing).", p),
