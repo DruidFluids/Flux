@@ -110,6 +110,14 @@ fn main() -> iced::Result {
             std::process::exit(0);
         }
 
+        // Screenshot/QA mode never persists settings: it injects fabricated demo
+        // state (e.g. a remote device), and a snap-on-open save would write that
+        // phantom into the user's real settings.json. Set this before anything can
+        // save.
+        if args.iter().any(|a| a == "--shot") {
+            flux_core::settings::SUPPRESS_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+
         // Single-instance guard. A second widget instance is poison: only ONE
         // process wins RegisterHotKey for a given combo (the rest fail silently),
         // and the click-through / snap code finds the widget by its global window
@@ -1285,7 +1293,7 @@ impl App {
         } else { window::Position::Centered };
         let level = if app.settings.always_on_top { window::Level::AlwaysOnTop } else { window::Level::Normal };
         let icon = logo_rgba().and_then(|(rgba, w, h)| window::icon::from_rgba(rgba, w, h).ok());
-        let (_id, open) = window::open(window::Settings {
+        let (widget_id, open) = window::open(window::Settings {
             size, position, decorations: false, transparent: true, resizable: false, level, icon, ..Default::default()
         });
         let open_task = open.map(|id| Message::WindowOpened(id, WindowKind::Widget));
@@ -1393,6 +1401,16 @@ impl App {
                     if let Some(m) = msg { batch.push(Task::done(m)); }
                 }
             }
+        }
+        // The window was sized (above) from the pre-`--shot` state. A `--shot` demo
+        // can mutate that state after the fact — `remote-widget` injects a device,
+        // which adds the device-tabs row (tabs_h) the window wasn't sized for, so the
+        // bottom tile clips and a scrollbar appears. Resize to the post-setup content
+        // size so the capture is clean. (Real use never hits this: adding a device
+        // through Settings already calls resize_widget.)
+        let post_size = app.widget_size();
+        if (post_size.height - size.height).abs() > 0.5 || (post_size.width - size.width).abs() > 0.5 {
+            batch.push(window::resize(widget_id, post_size));
         }
         // Spin up the remote runtime now only if remote is actually in use at launch
         // (server enabled, or we're watching remote devices); otherwise stay lazy.

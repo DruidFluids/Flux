@@ -4,6 +4,11 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// When true, [`AppSettings::save`] becomes a no-op. Set by the widget binary
+/// during `--shot` screenshot/QA runs so injected demo state (e.g. a fake remote
+/// device) is never written back to the user's real `settings.json`.
+pub static SUPPRESS_SAVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -418,6 +423,11 @@ impl AppSettings {
         }
     }
     pub fn save(&self) -> Result<()> {
+        // Screenshot/QA (`--shot`) runs inject fabricated state (e.g. a demo remote
+        // device) into the in-memory settings. Persisting that would corrupt the
+        // user's real config — a snap-on-open save was appending a phantom "Server1"
+        // device every capture. Suppress all writes while a shot is active.
+        if SUPPRESS_SAVE.load(std::sync::atomic::Ordering::Relaxed) { return Ok(()); }
         let path = Self::config_path();
         if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
         let json = serde_json::to_string_pretty(self)?;
