@@ -203,6 +203,7 @@ Updates are never installed silently — you choose **Off**, **Manual**, or **Au
 
 - **Snap to edges and windows** — the widget docks flush to screen edges and other windows' borders, with a configurable blocklist
 - **Click-through mode** — make the widget invisible to the mouse; toggle back with a hotkey
+- **Single instance, re-open anywhere** — launching Flux again (double-clicking its shortcut) brings the running widget back to the foreground instead of starting a second copy; the tray menu's **Reset position** snaps it back on-screen if it ever wanders off
 - **Slider default markers** — every settings slider shows a tick at its factory default that glows as you approach it
 - **Built-in help** — the **?** button opens a categorized guide to every feature
 - **Dark and light mode** — full palette swap with one click

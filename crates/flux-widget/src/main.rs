@@ -131,9 +131,13 @@ fn main() -> iced::Result {
                 match handle {
                     Ok(h) => {
                         if already {
-                            // Another widget is already running — let it keep the
-                            // hotkeys and tray icon; quit so we don't fight over them.
-                            diag("single-instance: another instance already running — exiting");
+                            // Another widget is already running — don't start a rival
+                            // process (it would fight over hotkeys + tray). Instead,
+                            // signal the primary to pop its widget to the foreground,
+                            // so double-clicking the shortcut "re-opens" the app, then
+                            // quit.
+                            diag("single-instance: another instance already running — signalling foreground & exiting");
+                            signal_show_primary();
                             std::process::exit(0);
                         }
                         diag("single-instance: acquired (this is the primary)");
@@ -142,6 +146,9 @@ fn main() -> iced::Result {
                         // process lifetime (the kernel releases it on exit). That's
                         // exactly what we want, so just keep the value around.
                         let _ = h;
+                        // We're the primary: create the named event a later launch
+                        // signals to ask us to bring the widget forward.
+                        create_show_event();
                     }
                     // Couldn't create the mutex at all — proceed unguarded rather
                     // than refuse to start.
@@ -499,6 +506,87 @@ fn set_click_through(_title: &str, on: bool) {
 }
 #[cfg(not(target_os = "windows"))]
 fn set_click_through(_: &str, _: bool) {}
+
+// ── Re-launch → foreground IPC ──
+// A second launch of the exe (double-clicking the shortcut while the widget is
+// already running) shouldn't start a rival process. Instead it signals the
+// primary via a named auto-reset event; the primary polls that event in TrayPoll
+// and pops the widget back to the foreground. This makes the shortcut behave like
+// a normal app: "open it" when it's hidden in the tray or buried behind windows.
+#[cfg(target_os = "windows")]
+static SHOW_EVENT: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+// Primary: create the named event we'll wait on. Auto-reset so a wait consumes it.
+#[cfg(target_os = "windows")]
+fn create_show_event() {
+    use std::sync::atomic::Ordering;
+    use windows::core::w;
+    use windows::Win32::System::Threading::CreateEventW;
+    unsafe {
+        // manual_reset = false (auto-reset), initial_state = false (non-signaled).
+        if let Ok(ev) = CreateEventW(None, false, false, w!("Local\\FluxWidget.ShowEvent")) {
+            SHOW_EVENT.store(ev.0 as isize, Ordering::Relaxed);
+        }
+    }
+}
+
+// Second launch: signal the primary's event (if present) so it brings the widget
+// to the foreground, then we exit.
+#[cfg(target_os = "windows")]
+fn signal_show_primary() {
+    use windows::core::w;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenEventW, SetEvent, EVENT_MODIFY_STATE};
+    use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
+    unsafe {
+        // We're the freshly-launched (foreground-eligible) process; grant any process
+        // the right to steal foreground so the primary's SetForegroundWindow takes
+        // effect instead of just flashing the taskbar.
+        let _ = AllowSetForegroundWindow(ASFW_ANY);
+        if let Ok(ev) = OpenEventW(EVENT_MODIFY_STATE, false, w!("Local\\FluxWidget.ShowEvent")) {
+            let _ = SetEvent(ev);
+            let _ = CloseHandle(ev);
+        }
+    }
+}
+
+// Primary (polled in TrayPoll): true if a re-launch asked us to come forward.
+// Non-blocking — a 0ms wait both tests and consumes the auto-reset event.
+#[cfg(target_os = "windows")]
+fn take_show_request() -> bool {
+    use std::sync::atomic::Ordering;
+    use windows::Win32::Foundation::{HANDLE, WAIT_OBJECT_0};
+    use windows::Win32::System::Threading::WaitForSingleObject;
+    let h = SHOW_EVENT.load(Ordering::Relaxed);
+    if h == 0 { return false; }
+    unsafe { WaitForSingleObject(HANDLE(h as *mut _), 0) == WAIT_OBJECT_0 }
+}
+
+// Raise the widget above other windows and give it focus. Used when a re-launch
+// asks the app to "come forward". Doesn't change the always-on-top setting — it
+// just brings the existing window to the top of its band and activates it.
+#[cfg(target_os = "windows")]
+fn raise_widget_window() {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, SetForegroundWindow, ShowWindow, SW_SHOW,
+    };
+    if let Some(hwnd) = widget_hwnd() {
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_SHOW);
+            let _ = BringWindowToTop(hwnd);
+            let _ = SetForegroundWindow(hwnd);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn create_show_event() {}
+#[cfg(not(target_os = "windows"))]
+fn signal_show_primary() {}
+#[cfg(not(target_os = "windows"))]
+fn take_show_request() -> bool { false }
+#[cfg(not(target_os = "windows"))]
+fn raise_widget_window() {}
 
 // Set the widget's translucency at the WINDOW level via WS_EX_LAYERED +
 // SetLayeredWindowAttributes(LWA_ALPHA). This is the only opacity that actually
@@ -894,6 +982,11 @@ struct App {
     // until this time, then apply once the widget is actually visible. None = nothing
     // pending.
     opacity_defer_until: Option<Instant>,
+    // A second launch (double-clicking the shortcut while the widget already runs)
+    // asks the primary to pop the widget to the foreground. Set when that request
+    // arrives; the next TrayPoll raises the window once iced has un-hidden it (the
+    // un-hide is a queued Task, so raising on a later tick avoids racing it).
+    pending_foreground: Option<Instant>,
     // ── Global hotkeys ──
     hotkeys: Option<hotkeys::HotkeyManager>,
     hotkey_rx: Option<std::sync::mpsc::Receiver<hotkeys::HotkeyEvent>>,
@@ -1149,6 +1242,7 @@ impl App {
             last_window_open: None,
             widget_hidden: false,
             opacity_defer_until: None,
+            pending_foreground: None,
             pulse_clock: Instant::now(),
             help_expanded: std::collections::HashSet::new(),
             appearance_status: String::new(),
@@ -1921,6 +2015,17 @@ impl App {
             .unwrap_or(Task::none())
     }
 
+    // A re-launch (double-clicking the shortcut while already running) asked us to
+    // come forward. Un-hide the widget if it's in the tray, then raise + focus it.
+    // The un-hide is a queued Task, so the actual Win32 raise is deferred one
+    // TrayPoll tick (pending_foreground) to land *after* the window is shown.
+    fn bring_widget_to_front(&mut self) -> Task<Message> {
+        diag("re-launch -> bring widget to front");
+        let task = self.show_widget();
+        self.pending_foreground = Some(Instant::now() + Duration::from_millis(80));
+        task
+    }
+
     // Snap the widget back to a guaranteed on-screen spot and make sure it's shown
     // (rescues a widget that ended up off-screen or hidden). Shared by the settings
     // button and the tray menu's "Reset position" item.
@@ -2036,6 +2141,18 @@ impl App {
                 // Low-latency deferred-opacity apply (SensorTick also does this, but
                 // can be up to ~5s apart on a slow update interval).
                 self.tick_deferred_opacity();
+                // A re-launch of the exe asked us to come forward.
+                if take_show_request() {
+                    tasks.push(self.bring_widget_to_front());
+                }
+                // Deferred raise: run it once the un-hide from bring_widget_to_front
+                // has been processed (a tick later), so we raise a visible window.
+                if let Some(t) = self.pending_foreground {
+                    if Instant::now() >= t {
+                        self.pending_foreground = None;
+                        raise_widget_window();
+                    }
+                }
                 if let Ok(event) = MenuEvent::receiver().try_recv() {
                     if event.id == self.exit_id { return exit_clean(); }
                     if event.id == self.settings_id { tasks.push(self.open_settings()); }
