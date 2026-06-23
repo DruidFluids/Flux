@@ -400,6 +400,16 @@ pub fn view<'a>(
     let always_tip = "Keep the widget pinned above all other windows so it's never hidden behind them.";
     let snap_edges_tip = "Dock the widget flush against screen edges as you drag it close.";
     let _ = &sw; // (toggles below all carry tooltips)
+    // Small subsection label inside the Behavior card (subordinate to the tab's
+    // accent `sh` headers) — groups the toggles into scannable clusters.
+    let subhead = |t: &str| -> Element<'a, Message> {
+        text(t.to_uppercase()).size(10)
+            .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+            .style(move |_| iced::widget::text::Style { color: Some(iced::Color { a: 0.75, ..p.muted }) })
+            .into()
+    };
+    // Snapping cluster: edges + (when on) windows + distance. The Click-through
+    // toggle now lives in its own subsection alongside the hotkey.
     let snap_block: Element<'a, Message> = if settings.snap_to_edges {
         column![
             row![
@@ -411,12 +421,11 @@ pub fn view<'a>(
                 row![fl("Snap distance"), Space::with_width(Length::Fill), vl(format!("{:.0}px", settings.snap_distance))],
                 crate::style::with_tip(marked_slider(0.0, 50.0, settings.snap_distance, 1.0, 20.0, p, Message::SetSnapDistance), "How close (in pixels) the widget must be to an edge or window before it snaps.", p),
             ].spacing(2),
-            sw_tt("Click-through", settings.click_through, Message::SetClickThrough, click_tip),
         ].spacing(4).into()
     } else {
         row![
             sw_tt("Snap to edges", settings.snap_to_edges, Message::SetSnap, snap_edges_tip),
-            sw_tt("Click-through", settings.click_through, Message::SetClickThrough, click_tip),
+            Space::with_width(Length::FillPortion(1)),
         ].spacing(8).into()
     };
 
@@ -435,14 +444,23 @@ pub fn view<'a>(
             .on_press(Message::ResetWidgetPosition),
         "Move the widget back to a default on-screen position (rescues it if it's off-screen).", p);
     let behavior = column![
+        // ── Startup & Window ──
+        subhead("Startup & Window"),
         row![sw_tt("Always on top", settings.always_on_top, Message::SetAlwaysOnTop, always_tip), sw_tt("Run at Windows startup", settings.run_at_startup, Message::SetRunAtStartup, startup_tip)].spacing(8),
         row![
             sw_tt("Start minimized to tray", settings.start_minimized, Message::SetStartMinimized, "Launch Flux hidden in the system tray (click the tray icon to show it)."),
             sw_tt("Lock position", settings.lock_position, Message::SetLockPosition, "Prevent the widget from being dragged, so it can't be knocked out of place."),
         ].spacing(8),
+        Space::with_height(6),
+        // ── Snapping ──
+        subhead("Snapping"),
         snap_block,
-        Space::with_height(4),
-        fl("Click-through hotkey"),
+        Space::with_height(6),
+        // ── Click-through (toggle + global hotkey) ──
+        subhead("Click-through"),
+        sw_tt("Click-through", settings.click_through, Message::SetClickThrough, click_tip),
+        crate::style::with_tip(fl("Click-through hotkey"),
+            "Set a global shortcut to toggle click-through on/off from anywhere. Click the field, then press your key combo (e.g. Ctrl+Alt+C). Use \u{2715} to clear it.", p),
         row![
             hotkey_field(&settings.click_through_hotkey, capturing_click_through, 150.0,
                 Message::ArmHotkey(crate::hotkeys::HotkeyTarget::ClickThrough), p),
@@ -450,7 +468,9 @@ pub fn view<'a>(
                 .padding([2, 6]).style(move |_,_| button::Style { background: Some(iced::Background::Color(p.tile)), border: Border { radius: 4.0.into(), ..Border::default() }, ..Default::default() })
                 .on_press(Message::ClearHotkey(crate::hotkeys::HotkeyTarget::ClickThrough)), "Clear the hotkey", p),
         ].spacing(6).align_y(iced::Alignment::Center),
-        Space::with_height(4),
+        Space::with_height(6),
+        // ── Refresh & recovery ──
+        subhead("Refresh"),
         pslider("Update interval", format!("{} ms", settings.update_interval_ms), 250.0, 5000.0, settings.update_interval_ms as f32, 1500.0, 250.0, Message::SetInterval, "How often the stats refresh, in milliseconds."),
         Space::with_height(4),
         reset_pos_btn,
@@ -674,6 +694,11 @@ pub fn view<'a>(
     }
 
     let mut tcol = column![].spacing(0);
+    // Master-detail: the list is just the headers; the selected tile's options
+    // render in a fixed panel BELOW the list (filling the tab's empty space)
+    // instead of expanding inline and shoving the rows around.
+    let mut selected_body: Option<Element<'a, Message>> = None;
+    let mut selected_name: Option<&str> = None;
     let last = display_order.len() - 1;
     for (i, &name) in display_order.iter().enumerate() {
         let canon_idx = CANON.iter().position(|c| *c == name).unwrap();
@@ -714,7 +739,7 @@ pub fn view<'a>(
                 .padding(iced::Padding { top: 7.0, right: 9.0, bottom: 7.0, left: 9.0 })
                 .style(|_: &iced::Theme, _: button::Status| button::Style { background: None, ..Default::default() })
                 .on_press(Message::ToggleTileSection(name.to_string())),
-            if open { "Collapse options" } else { "Expand for more options" }, p);
+            if open { "Editing below \u{2014} click to close" } else { "Edit this tile's options below" }, p);
         // Thin separator between the Shown/Hidden chip and the expand arrow.
         let sep = container(Space::with_width(Length::Fixed(1.0)))
             .height(Length::Fixed(16.0))
@@ -744,12 +769,7 @@ pub fn view<'a>(
         });
         tcol = tcol.push(header);
         let body = bodies[canon_idx].take().unwrap();
-        if open {
-            tcol = tcol.push(
-                container(body).width(Length::Fill)
-                    .padding(iced::Padding { top: 2.0, right: 4.0, bottom: 12.0, left: 16.0 })
-            );
-        }
+        if open { selected_body = Some(body); selected_name = Some(name); }
         if i != last { tcol = tcol.push(row_divider()); }
     }
     // (Layout + Behavior live on their own tabs now — see behavior_tab below.)
@@ -788,14 +808,47 @@ pub fn view<'a>(
             crate::style::with_tip(marked_slider(-6.0, 20.0, settings.tile_spacing_offset, 1.0, 0.0, p, Message::SetTileSpacingOffset), "Gap between tiles on the widget (added to the skin's own spacing).", p),
         ].spacing(2),
     ].spacing(10);
+    // Shared panel chrome for the three Tiles-tab cards (list / detail / display).
+    let panel_style = move |_: &iced::Theme| iced::widget::container::Style {
+        background: Some(iced::Background::Color(p.tile)),
+        border: Border { radius: 8.0.into(), ..Border::default() },
+        ..Default::default()
+    };
+    // Detail panel: the selected tile's options, filling the space the inline
+    // accordion used to push around. Empty (with a prompt) until a tile is picked.
+    let detail_panel: Element<'a, Message> = if let Some(body) = selected_body {
+        let title = selected_name.unwrap_or("Tile").to_string();
+        container(
+            column![
+                text(format!("{title} options")).size(12)
+                    .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
+                    .style(move |_| iced::widget::text::Style { color: Some(p.accent) }),
+                Space::with_height(8),
+                body,
+            ]
+        ).padding(iced::Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
+            .width(Length::Fill).height(Length::Fill).style(panel_style).into()
+    } else {
+        container(
+            text("Select a tile above to edit its options").size(11)
+                .style(move |_| iced::widget::text::Style { color: Some(p.muted) })
+        ).padding(iced::Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
+            .width(Length::Fill).height(Length::Fill)
+            .center_x(Length::Fill).center_y(Length::Fill).style(panel_style).into()
+    };
     let tiles_tab: Element<'a, Message> = column![
-        drag_hint,
-        tcol,
-        Space::with_height(16),
-        sh("Display", "Units and tile spacing."),
+        container(column![drag_hint, tcol])
+            .padding(iced::Padding { top: 8.0, right: 6.0, bottom: 6.0, left: 6.0 })
+            .width(Length::Fill).style(panel_style),
+        Space::with_height(8),
+        detail_panel,
+        Space::with_height(8),
+        sh("Display", "Units and tile spacing \u{2014} these apply to every tile."),
         Space::with_height(4),
-        display_section,
-    ].into();
+        container(display_section)
+            .padding(iced::Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
+            .width(Length::Fill).style(panel_style),
+    ].height(Length::Fill).into();
 
     // ════════════════════════════════════════════════════════════
     //  RIGHT COLUMN  (Appearance / Font / Remote / Updates)
@@ -1480,12 +1533,14 @@ pub fn view<'a>(
     // stretches to fill the rest); the other tabs keep their content vertically
     // centred in the fixed-height window.
     let is_tools = active == TAB_TOOLS;
-    // Non-tools tabs scroll when their content overflows the window — otherwise
-    // expanding a tile's options (Tiles tab) pushes everything below it off the
-    // bottom with no way to reach it. The drag-reorder collapses all sections
-    // first, so the list always fits (scroll offset 0) while dragging — keeping
-    // the floating drag row aligned. Tools keeps its own fill layout.
-    let pane_inner: Element<'a, Message> = if is_tools {
+    // Tools and Tiles both use a fixed fill layout (no outer scroll): Tools pins
+    // its grid to the top with the Updates card stretching to fill; Tiles pins the
+    // tile list to the top with the selected-tile detail panel filling the rest.
+    // (Tiles no longer expands options inline, so nothing pushes content off the
+    // bottom — the reason the other tabs still scroll.) The remaining tabs scroll
+    // when their content overflows the window.
+    let fills_height = is_tools || active == TAB_TILES;
+    let pane_inner: Element<'a, Message> = if fills_height {
         tab_panes.remove(active)
     } else {
         // Inset the scrolled content on the right so the scrollbar sits in its

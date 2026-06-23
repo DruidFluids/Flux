@@ -841,6 +841,7 @@ struct App {
     _tray: TrayIcon,
     settings_id: tray_icon::menu::MenuId,
     show_id: tray_icon::menu::MenuId,
+    reset_id: tray_icon::menu::MenuId,
     game_id: tray_icon::menu::MenuId,
     exit_id: tray_icon::menu::MenuId,
     // ── Remote monitoring ──
@@ -1115,10 +1116,11 @@ impl App {
         let menu = Menu::new();
         let si = MenuItem::new("Settings", true, None);
         let wi = MenuItem::new("Show Widget", true, None);
+        let ri = MenuItem::new("Reset position", true, None);
         let gi = MenuItem::new("Game Mode", true, None);
         let ei = MenuItem::new("Exit", true, None);
-        let (sid, wid, gid, eid) = (si.id().clone(), wi.id().clone(), gi.id().clone(), ei.id().clone());
-        menu.append(&si).ok(); menu.append(&wi).ok(); menu.append(&gi).ok(); menu.append(&ei).ok();
+        let (sid, wid, rid, gid, eid) = (si.id().clone(), wi.id().clone(), ri.id().clone(), gi.id().clone(), ei.id().clone());
+        menu.append(&si).ok(); menu.append(&wi).ok(); menu.append(&ri).ok(); menu.append(&gi).ok(); menu.append(&ei).ok();
         // Left-click shows the widget (handled via TrayIconEvent below); only
         // right-click pops the menu — the conventional tray behaviour.
         let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_menu_on_left_click(false).with_tooltip("Flux").with_icon(make_tray_icon()).build().expect("tray");
@@ -1128,7 +1130,7 @@ impl App {
             flash_on: false, anim_t: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, editing_warn_color: None, settings_tab: settings_panel::TAB_APPEARANCE, game_mode: false,
             click_through_applied: false,
             pending_snap: None, ignore_next_move: false, snap_right: false, snap_bottom: false,
-            _tray: tray, settings_id: sid, show_id: wid, game_id: gid, exit_id: eid,
+            _tray: tray, settings_id: sid, show_id: wid, reset_id: rid, game_id: gid, exit_id: eid,
             remote: None, remote_rx: None,
             remote_snapshots: HashMap::new(), remote_conn: HashMap::new(),
             popout_device: HashMap::new(), popout_pos: HashMap::new(),
@@ -1919,6 +1921,28 @@ impl App {
             .unwrap_or(Task::none())
     }
 
+    // Snap the widget back to a guaranteed on-screen spot and make sure it's shown
+    // (rescues a widget that ended up off-screen or hidden). Shared by the settings
+    // button and the tray menu's "Reset position" item.
+    fn reset_widget_position(&mut self) -> Task<Message> {
+        self.settings.window_x = 100.0;
+        self.settings.window_y = 100.0;
+        self.snap_right = false;
+        self.snap_bottom = false;
+        let _ = self.settings.save();
+        self.widget_hidden = false;
+        self.opacity_defer_until = Some(Instant::now() + Duration::from_millis(500));
+        if let Some(id) = self.widget_window() {
+            self.ignore_next_move = true;
+            Task::batch([
+                window::change_mode(id, window::Mode::Windowed),
+                window::move_to(id, Point::new(100.0, 100.0)),
+            ])
+        } else {
+            Task::none()
+        }
+    }
+
     // Push the current opacity to the widget window as a real window-level alpha.
     // (Baking alpha into the iced colours doesn't composite see-through on AMD.)
     // Never touch a HIDDEN window's layered style — applying WS_EX_LAYERED to a
@@ -2016,6 +2040,7 @@ impl App {
                     if event.id == self.exit_id { return exit_clean(); }
                     if event.id == self.settings_id { tasks.push(self.open_settings()); }
                     if event.id == self.show_id { tasks.push(self.show_widget()); }
+                    if event.id == self.reset_id { tasks.push(self.reset_widget_position()); }
                     if event.id == self.game_id {
                         tasks.push(self.toggle_game_mode());
                     }
@@ -2625,26 +2650,7 @@ impl App {
             Message::SetTileSpacingOffset(v) => { self.settings.tile_spacing_offset = v; self.resize_widget() }
             Message::SetStartMinimized(on) => { self.settings.start_minimized = on; let _ = self.settings.save(); Task::none() }
             Message::SetLockPosition(on) => { self.settings.lock_position = on; let _ = self.settings.save(); Task::none() }
-            Message::ResetWidgetPosition => {
-                // Snap the widget back to a guaranteed on-screen spot and make sure
-                // it's shown (rescues a widget that ended up off-screen or hidden).
-                self.settings.window_x = 100.0;
-                self.settings.window_y = 100.0;
-                self.snap_right = false;
-                self.snap_bottom = false;
-                let _ = self.settings.save();
-                self.widget_hidden = false;
-                self.opacity_defer_until = Some(Instant::now() + Duration::from_millis(500));
-                if let Some(id) = self.widget_window() {
-                    self.ignore_next_move = true;
-                    Task::batch([
-                        window::change_mode(id, window::Mode::Windowed),
-                        window::move_to(id, Point::new(100.0, 100.0)),
-                    ])
-                } else {
-                    Task::none()
-                }
-            }
+            Message::ResetWidgetPosition => self.reset_widget_position(),
             Message::SetCpuName(v) => { self.settings.cpu_custom_name = v; Task::none() }
             Message::SetGpuName(v) => { self.settings.gpu_custom_name = v; Task::none() }
             Message::SetDisk(v) => { self.settings.selected_disk_mount = v; Task::none() }
