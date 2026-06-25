@@ -13,6 +13,7 @@ dist/
 
 # Claude / AI-assistant + internal dev docs — keep out of the public repo
 CLAUDE.md
+STATUS.md
 .claude/
 .cursor/
 /NOTES.md
