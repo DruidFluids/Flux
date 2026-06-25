@@ -926,6 +926,8 @@ struct App {
     // Which alert colour swatch has its inline hex editor open (e.g. "CPU/hot").
     editing_warn_color: Option<String>,
     settings_tab: usize,
+    // Active sub-tab within the Appearance tab: 0 Colors, 1 Size, 2 Font, 3 Tiles.
+    appearance_subtab: usize,
     game_mode: bool,
     click_through_applied: bool,
     pending_snap: Option<(window::Id, Point, Instant)>,
@@ -1145,6 +1147,7 @@ enum Message {
     EditColor(u8),
     EditWarnColor(String),
     SetSettingsTab(usize),
+    SetAppearanceSubtab(usize),
     ArmHotkey(hotkeys::HotkeyTarget),
     HotkeyKeyPressed(iced::keyboard::Key, iced::keyboard::Modifiers),
     ClearHotkey(hotkeys::HotkeyTarget),
@@ -1228,7 +1231,7 @@ impl App {
         let mut app = Self {
             settings, snapshot: SensorSnapshot::default(), poller: None,
             windows: BTreeMap::new(), warn_state: HashMap::new(),
-            flash_on: false, anim_t: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, editing_warn_color: None, settings_tab: settings_panel::TAB_APPEARANCE, game_mode: false,
+            flash_on: false, anim_t: 0.0, font_list: fonts::system_fonts(), appearance_undo: Vec::new(), editing_color: None, editing_warn_color: None, settings_tab: settings_panel::TAB_APPEARANCE, appearance_subtab: 0, game_mode: false,
             click_through_applied: false,
             pending_snap: None, ignore_next_move: false, snap_right: false, snap_bottom: false,
             _tray: tray, settings_id: sid, show_id: wid, reset_id: rid, game_id: gid, exit_id: eid,
@@ -1377,9 +1380,11 @@ impl App {
                 }
                 // Settings tab / dialog shots (capture the "Flux" window):
                 other => {
-                    use settings_panel::{TAB_APPEARANCE, TAB_BEHAVIOR, TAB_TILES, TAB_TOOLS};
+                    use settings_panel::{TAB_APPEARANCE, TAB_BEHAVIOR, TAB_TOOLS};
+                    // Tile/help/cpu surfaces now live under Appearance > Tiles sub-tab (index 3).
+                    let appearance_sub = match other { "tiles" | "help" | "cpu" => 3, _ => 0 };
                     let (tab, msg): (usize, Option<Message>) = match other {
-                        "tiles"      => (TAB_TILES, Some(Message::OpenSettings)),
+                        "tiles"      => (TAB_APPEARANCE, Some(Message::OpenSettings)),
                         "appearance" => (TAB_APPEARANCE, Some(Message::OpenSettings)),
                         "behavior"   => (TAB_BEHAVIOR, Some(Message::OpenSettings)),
                         "tools"      => (TAB_TOOLS, Some(Message::OpenSettings)),
@@ -1387,13 +1392,14 @@ impl App {
                         "game"       => (TAB_TOOLS, Some(Message::OpenGameMode)),
                         "utilities"  => (TAB_TOOLS, Some(Message::OpenUtilities)),
                         "remote"     => (TAB_TOOLS, Some(Message::OpenRemote)),
-                        "help"       => (TAB_TILES, Some(Message::OpenHelp)),
-                        "cpu"        => (TAB_TILES, Some(Message::OpenCpuDriver)),
+                        "help"       => (TAB_APPEARANCE, Some(Message::OpenHelp)),
+                        "cpu"        => (TAB_APPEARANCE, Some(Message::OpenCpuDriver)),
                         "themes"     => (TAB_APPEARANCE, Some(Message::OpenThemeStore)),
                         "skins"      => (TAB_APPEARANCE, Some(Message::OpenSkinPicker)),
                         _ => (TAB_APPEARANCE, None),
                     };
                     app.settings_tab = tab;
+                    app.appearance_subtab = appearance_sub;
                     // For the Tiles README shot, pre-open a tile so the master-detail
                     // panel below the list is shown populated (not the empty
                     // "select a tile" placeholder).
@@ -2825,6 +2831,10 @@ impl App {
                 self.settings_tab = i;
                 self.settings_window().map(|id| window::resize(id, self.settings_size())).unwrap_or(Task::none())
             }
+            Message::SetAppearanceSubtab(i) => {
+                self.appearance_subtab = i;
+                Task::none()
+            }
             Message::ArmHotkey(target) => {
                 // Toggle capture: clicking the armed field again disarms it.
                 self.capturing_hotkey = if self.capturing_hotkey == Some(target) { None } else { Some(target) };
@@ -3519,7 +3529,7 @@ impl App {
                     let e = t.elapsed().as_secs_f32();
                     if e < 0.9 { 1.0 } else { ((1.8 - e) / 0.9).clamp(0.0, 1.0) }
                 }).unwrap_or(0.0);
-                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, capturing_ct, self.appearance_status.clone(), update, self.cpu_driver_installed, self.cpu_pawnio_installed, self.tiles_section.clone(), self.preset_arming, self.appearance_undo.last().map(|a| style::parse_hex(&a.accent, p.accent)), self.share_dialog.clone(), copied_opacity, self.settings.tile_order.clone(), self.tile_drag.as_ref().map(|d| (d.name.clone(), d.target_index)))
+                settings_panel::view(&self.settings, p, id, self.theme_name(), self.disk_options(), self.adapter_options(), self.font_list.clone(), cpu_name, gpu_name, self.editing_color, self.settings_tab, self.appearance_subtab, capturing_ct, self.appearance_status.clone(), update, self.cpu_driver_installed, self.cpu_pawnio_installed, self.tiles_section.clone(), self.preset_arming, self.appearance_undo.last().map(|a| style::parse_hex(&a.accent, p.accent)), self.share_dialog.clone(), copied_opacity, self.settings.tile_order.clone(), self.tile_drag.as_ref().map(|d| (d.name.clone(), d.target_index)))
             }
             WindowKind::Alerts => popups::alerts_view(&self.settings, p, id, self.editing_warn_color.as_deref()),
             WindowKind::GameMode => popups::game_mode_view(&self.settings, p, id, self.capturing_hotkey == Some(hotkeys::HotkeyTarget::GameMode)),
@@ -3598,11 +3608,20 @@ impl App {
         // on the right — mirrors the device-tab styling so the popout reads as a
         // first-class Flux window.
         let dot_c = if connected { Color::from_rgb(0.30, 0.78, 0.45) } else { Color::from_rgb(0.86, 0.30, 0.25) };
-        let header = row![
+        // Centered title (dot + name) like the "This PC" tab, with the close pinned
+        // right. A fixed left spacer balances the close button's width so the title
+        // sits centered across the whole bar; the two Fills keep it from colliding
+        // with the close button when the name is long.
+        let title = row![
             status_dot(dot_c),
             text(name).size(11)
                 .font(iced::Font { weight: iced::font::Weight::Semibold, ..iced::Font::DEFAULT })
                 .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+        ].spacing(3).align_y(iced::Alignment::Center);
+        let header = row![
+            Space::with_width(Length::Fixed(18.0)),
+            Space::with_width(Length::Fill),
+            title,
             Space::with_width(Length::Fill),
             button(text("\u{2715}").size(11).font(iced::Font::with_name("Segoe UI Symbol"))
                 .style(move |_| iced::widget::text::Style { color: Some(p.muted) }))

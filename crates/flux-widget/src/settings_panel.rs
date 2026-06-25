@@ -138,8 +138,9 @@ pub(crate) fn hotkey_field<'a>(combo: &str, capturing: bool, width: f32, arm_msg
 // main.rs) references the tabs by these names, not bare numbers.
 pub const TAB_APPEARANCE: usize = 0;
 pub const TAB_BEHAVIOR: usize = 1;
-pub const TAB_TILES: usize = 2;
-pub const TAB_TOOLS: usize = 3;
+pub const TAB_TOOLS: usize = 2;
+// Tiles is no longer a top-level tab — it's a sub-tab inside Appearance
+// (Colors | Size | Font | Tiles), index 3 of `appearance_subtab`.
 
 pub fn view<'a>(
     settings: &AppSettings, p: Palette, win_id: iced::window::Id,
@@ -148,6 +149,7 @@ pub fn view<'a>(
     cpu_name: String, gpu_name: String,
     editing_color: Option<u8>,
     tab: usize,
+    appearance_subtab: usize,
     capturing_click_through: bool,
     appearance_status: String,
     update: UpdateView,
@@ -200,14 +202,24 @@ pub fn view<'a>(
             .on_press(msg).into()
     };
     // C# layout / °C-°F segmented toggle: radius 4, tile fill (off) / accent (on).
+    // The OFF segment carries a 1px border so it still reads as a button — its
+    // tile fill sits too close to the panel surface to define an edge on its own
+    // (the unselected option otherwise looked like floating text). Hover accents it.
     let seg = |label_text: String, active: bool, msg: Message| -> Element<'a, Message> {
         button(text(label_text).size(11).font(iced::Font::with_name("Segoe UI Symbol")))
             .padding(iced::Padding { top: 4.0, right: 14.0, bottom: 4.0, left: 14.0 })
-            .style(move |_: &iced::Theme, _: button::Status| button::Style {
-                background: Some(iced::Background::Color(if active { p.accent } else { p.tile })),
-                text_color: if active { iced::Color::WHITE } else { p.text },
-                border: Border { radius: 4.0.into(), ..Border::default() },
-                ..Default::default()
+            .style(move |_: &iced::Theme, status: button::Status| {
+                let hover = matches!(status, button::Status::Hovered);
+                button::Style {
+                    background: Some(iced::Background::Color(if active { p.accent } else { p.tile })),
+                    text_color: if active { iced::Color::WHITE } else if hover { p.accent } else { p.text },
+                    border: Border {
+                        radius: 4.0.into(),
+                        width: 1.0,
+                        color: if active { p.accent } else if hover { p.accent } else { iced::Color { a: 0.6, ..p.muted } },
+                    },
+                    ..Default::default()
+                }
             })
             .on_press(msg).into()
     };
@@ -476,19 +488,23 @@ pub fn view<'a>(
         reset_pos_btn,
     ].spacing(4);
 
-    // ── Size: sliders that change tile/widget dimensions (live in Appearance) ──
-    let sizing = column![
-        row![
-            pslider("UI scale", format!("{:.2}x", settings.ui_scale), 0.75, 1.5, settings.ui_scale, 1.0, 0.01, Message::SetUiScale, "Scale the whole widget and its text up or down."),
-            Space::with_width(8),
-            pslider("Tile width", format!("{:.0}px", settings.tile_width), 110.0, 200.0, settings.tile_width, 130.0, 5.0, Message::SetTileWidth, "Width of each tile, in pixels."),
-        ],
-        column![
-            row![fl("Tile height"), Space::with_width(Length::Fill), vl(format!("{:.0}px", settings.tile_height))],
-            crate::style::with_tip(marked_slider(80.0, 150.0, settings.tile_height, 2.0, 110.0, p, Message::SetTileHeight), "Height of each tile, in pixels.", p),
-        ].spacing(2),
+    // ── Widget-level size (Appearance > Size): scale + corners (opacity added below) ──
+    // Tile width/height moved to the Tiles sub-tab so all tile settings live together.
+    let widget_sizing = column![
+        pslider("UI scale", format!("{:.2}x", settings.ui_scale), 0.75, 1.5, settings.ui_scale, 1.0, 0.01, Message::SetUiScale, "Scale the whole widget and its text up or down."),
         sw_tt("Round widget corners", settings.round_corners, Message::SetRoundCorners,
             "Round the outer corners of the widget window (Windows 11)."),
+    ].spacing(4);
+    // ── Tile dimensions (Appearance > Tiles): width + height, side by side ──
+    let tile_dims = column![
+        row![
+            pslider("Tile width", format!("{:.0}px", settings.tile_width), 110.0, 200.0, settings.tile_width, 130.0, 5.0, Message::SetTileWidth, "Width of each tile, in pixels."),
+            Space::with_width(8),
+            column![
+                row![fl("Tile height"), Space::with_width(Length::Fill), vl(format!("{:.0}px", settings.tile_height))],
+                crate::style::with_tip(marked_slider(80.0, 150.0, settings.tile_height, 2.0, 110.0, p, Message::SetTileHeight), "Height of each tile, in pixels.", p),
+            ].spacing(2).width(Length::FillPortion(1)),
+        ],
     ].spacing(4);
 
     // ── Network: paired grid ──
@@ -833,16 +849,19 @@ pub fn view<'a>(
     } else {
         Space::with_height(Length::Fill).into()
     };
-    let tiles_tab: Element<'a, Message> = column![
+    // Tiles sub-pane (Appearance > Tiles): the reorderable tile list, the selected
+    // tile's detail panel, then a Size & display card (tile width/height + units +
+    // spacing). Fills height so the detail panel takes the slack, like before.
+    let tiles_pane: Element<'a, Message> = column![
         container(column![drag_hint, tcol])
             .padding(iced::Padding { top: 8.0, right: 6.0, bottom: 6.0, left: 6.0 })
             .width(Length::Fill).style(panel_style),
         Space::with_height(8),
         detail_panel,
         Space::with_height(8),
-        sh("Display", "Units and tile spacing \u{2014} these apply to every tile."),
+        sh("Size & display", "Tile width/height, units, and spacing \u{2014} these apply to every tile."),
         Space::with_height(4),
-        container(display_section)
+        container(column![tile_dims, Space::with_height(8), display_section])
             .padding(iced::Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
             .width(Length::Fill).style(panel_style),
     ].height(Length::Fill).into();
@@ -1362,14 +1381,66 @@ pub fn view<'a>(
         ..Default::default()
     });
 
+    // ── Appearance sub-tabs: Colors | Size | Font | Tiles ──
+    // A pinned inner pill strip switches between four sub-panes. Tiles holds ALL
+    // tile settings (list/reorder/detail + dimensions + units/spacing); the widget's
+    // own scale/opacity/corners live under Size. Mirrors the top-tab pill styling,
+    // a touch smaller.
+    let sub_labels = ["Colors", "Size", "Font", "Tiles"];
+    let asub = appearance_subtab.min(sub_labels.len() - 1);
+    let sub_sunken = crate::style::chrome_shade(p, 0.30);
+    let sub_hairline = iced::Color { a: 0.22, ..p.muted };
+    let sub_bg_opaque = iced::Color { a: 1.0, ..p.bg };
+    let mut sub_strip = row![].spacing(4);
+    for (i, lbl) in sub_labels.iter().enumerate() {
+        let on = i == asub;
+        sub_strip = sub_strip.push(
+            button(container(text(lbl.to_string()).size(12)
+                .wrapping(iced::widget::text::Wrapping::None)
+                .font(iced::Font { weight: if on { iced::font::Weight::Semibold } else { iced::font::Weight::Normal }, ..iced::Font::DEFAULT }))
+                .center_x(Length::Fill))
+                .width(Length::Fill)
+                .padding(iced::Padding { top: 5.0, right: 4.0, bottom: 5.0, left: 4.0 })
+                .style(move |_: &iced::Theme, status: button::Status| {
+                    let hover = matches!(status, button::Status::Hovered);
+                    button::Style {
+                        background: Some(iced::Background::Color(if on { p.accent } else if hover { iced::Color { a: 0.10, ..p.text } } else { iced::Color::TRANSPARENT })),
+                        text_color: if on { sub_bg_opaque } else { iced::Color { a: 0.62, ..p.text } },
+                        border: Border { radius: 8.0.into(), ..Default::default() },
+                        ..Default::default()
+                    }
+                })
+                .on_press(Message::SetAppearanceSubtab(i)),
+        );
+    }
+    let sub_strip_bar = container(sub_strip)
+        .padding(3)
+        .style(move |_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(sub_sunken)),
+            border: Border { radius: 11.0.into(), width: 1.0, color: sub_hairline },
+            ..Default::default()
+        });
+
+    let sub_pane: Element<'a, Message> = match asub {
+        1 => column![widget_sizing, opacity_ctrl].spacing(4).into(),
+        2 => fonts.into(),
+        3 => tiles_pane,
+        _ => appearance.into(),
+    };
+    // Tiles fills height (its detail panel takes the slack, like the old Tiles tab);
+    // the others scroll if they overflow. The sub-strip stays pinned above.
+    let sub_body: Element<'a, Message> = if asub == 3 {
+        sub_pane
+    } else {
+        scrollable(
+            container(sub_pane).padding(iced::Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 0.0 })
+        ).width(Length::Fill).height(Length::Fill).style(crate::style::scrollable_style(p)).into()
+    };
     let appearance_tab: Element<'a, Message> = column![
-        sh("Appearance", "Customize colors. Click any swatch in the strip to open the color picker."), appearance,
-        Space::with_height(6),
-        sh("Size", "Scale the whole widget, set tile width/height, opacity, and corners."),
-        column![sizing, opacity_ctrl].spacing(4),
-        Space::with_height(6),
-        sh("Font", "Pick fonts for Primary numbers, Secondary labels, and Indicators (units). Toggle 'Sync' to lock all three together. Sizes nudge the chosen font up or down."), fonts,
-    ].spacing(4).into();
+        sub_strip_bar,
+        Space::with_height(8),
+        sub_body,
+    ].height(Length::Fill).into();
 
     // ── Behavior tab: how the widget acts on the desktop (layout + window behaviour) ──
     let behavior_tab: Element<'a, Message> = column![
@@ -1463,9 +1534,10 @@ pub fn view<'a>(
     //  ASSEMBLY  (tabbed)
     // ════════════════════════════════════════════
 
-    // Order must match the TAB_* constants: Appearance, Behavior, Tiles, Tools.
-    let tab_labels = ["Appearance", "Behavior", "Tiles", "Tools"];
-    let mut tab_panes = vec![appearance_tab, behavior_tab, tiles_tab, tools_tab];
+    // Order must match the TAB_* constants: Appearance, Behavior, Tools.
+    // (Tiles is now a sub-tab inside Appearance, not a top-level tab.)
+    let tab_labels = ["Appearance", "Behavior", "Tools"];
+    let mut tab_panes = vec![appearance_tab, behavior_tab, tools_tab];
     let active = tab.min(tab_panes.len() - 1);
 
     // ── Soft Premium chrome colours (derived from the live palette) ──
@@ -1530,13 +1602,11 @@ pub fn view<'a>(
     // stretches to fill the rest); the other tabs keep their content vertically
     // centred in the fixed-height window.
     let is_tools = active == TAB_TOOLS;
-    // Tools and Tiles both use a fixed fill layout (no outer scroll): Tools pins
-    // its grid to the top with the Updates card stretching to fill; Tiles pins the
-    // tile list to the top with the selected-tile detail panel filling the rest.
-    // (Tiles no longer expands options inline, so nothing pushes content off the
-    // bottom — the reason the other tabs still scroll.) The remaining tabs scroll
-    // when their content overflows the window.
-    let fills_height = is_tools || active == TAB_TILES;
+    // Tools and Appearance both manage their own fixed fill layout (no outer scroll):
+    // Tools pins its grid to the top with the Updates card stretching to fill;
+    // Appearance pins its sub-tab strip and scrolls/fills the active sub-pane itself
+    // (the Tiles sub-pane fills so its detail panel takes the slack). Behavior scrolls.
+    let fills_height = is_tools || active == TAB_APPEARANCE;
     let pane_inner: Element<'a, Message> = if fills_height {
         tab_panes.remove(active)
     } else {
