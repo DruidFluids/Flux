@@ -926,7 +926,7 @@ struct App {
     // Which alert colour swatch has its inline hex editor open (e.g. "CPU/hot").
     editing_warn_color: Option<String>,
     settings_tab: usize,
-    // Active sub-tab within the Appearance tab: 0 Colors, 1 Size, 2 Font, 3 Tiles.
+    // Active sub-tab within the Appearance tab: 0 Colors, 1 Font, 2 Tiles.
     appearance_subtab: usize,
     game_mode: bool,
     click_through_applied: bool,
@@ -1381,8 +1381,8 @@ impl App {
                 // Settings tab / dialog shots (capture the "Flux" window):
                 other => {
                     use settings_panel::{TAB_APPEARANCE, TAB_BEHAVIOR, TAB_TOOLS};
-                    // Tile/help/cpu surfaces now live under Appearance > Tiles sub-tab (index 3).
-                    let appearance_sub = match other { "tiles" | "help" | "cpu" => 3, _ => 0 };
+                    // Tile/help/cpu surfaces now live under Appearance > Tiles sub-tab (index 2).
+                    let appearance_sub = match other { "tiles" | "help" | "cpu" => 2, _ => 0 };
                     let (tab, msg): (usize, Option<Message>) = match other {
                         "tiles"      => (TAB_APPEARANCE, Some(Message::OpenSettings)),
                         "appearance" => (TAB_APPEARANCE, Some(Message::OpenSettings)),
@@ -1400,10 +1400,10 @@ impl App {
                     };
                     app.settings_tab = tab;
                     app.appearance_subtab = appearance_sub;
-                    // For the Tiles README shot, pre-open a tile so the master-detail
-                    // panel below the list is shown populated (not the empty
-                    // "select a tile" placeholder).
-                    if other == "tiles" { app.tiles_section = Some("CPU".to_string()); }
+                    // The Tiles README shot leaves every tile collapsed so the whole
+                    // tab structure is visible in one frame: the tile list, the Size &
+                    // display card, and the new Widget card (scale/opacity/corners).
+                    // (Per-tile options have their own surfaces, e.g. --shot cpu.)
                     if let Some(m) = msg { batch.push(Task::done(m)); }
                 }
             }

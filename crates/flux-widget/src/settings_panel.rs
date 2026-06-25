@@ -140,7 +140,7 @@ pub const TAB_APPEARANCE: usize = 0;
 pub const TAB_BEHAVIOR: usize = 1;
 pub const TAB_TOOLS: usize = 2;
 // Tiles is no longer a top-level tab — it's a sub-tab inside Appearance
-// (Colors | Size | Font | Tiles), index 3 of `appearance_subtab`.
+// (Colors | Font | Tiles), index 2 of `appearance_subtab`.
 
 pub fn view<'a>(
     settings: &AppSettings, p: Palette, win_id: iced::window::Id,
@@ -441,9 +441,6 @@ pub fn view<'a>(
         ].spacing(8).into()
     };
 
-    // Opacity is a visual property, so it lives on the Appearance tab; the rest of
-    // these window-behaviour settings live on their own Behavior tab.
-    let opacity_ctrl = pslider("Opacity", format!("{:.0}%", settings.widget_opacity * 100.0), 0.3, 1.0, settings.widget_opacity, 0.9, 0.01, Message::SetOpacity, "How see-through the widget is (lower = more transparent).");
     let reset_pos_btn = crate::style::with_tip(
         button(text("Reset widget position").size(11)
             .style(move |_| iced::widget::text::Style { color: Some(p.text) }))
@@ -488,13 +485,22 @@ pub fn view<'a>(
         reset_pos_btn,
     ].spacing(4);
 
-    // ── Widget-level size (Appearance > Size): scale + corners (opacity added below) ──
-    // Tile width/height moved to the Tiles sub-tab so all tile settings live together.
-    let widget_sizing = column![
-        pslider("UI scale", format!("{:.2}x", settings.ui_scale), 0.75, 1.5, settings.ui_scale, 1.0, 0.01, Message::SetUiScale, "Scale the whole widget and its text up or down."),
+    // ── Whole-widget controls (Appearance > Tiles, folded into the Size & display
+    // card): UI scale + Opacity side by side, Round corners below. Compact (two rows)
+    // so the Tiles pane fits the fixed window height without scrolling. The standalone
+    // Size sub-tab was dropped; these moved here next to the per-tile dimensions. ──
+    let widget_controls = column![
+        row![
+            pslider("UI scale", format!("{:.2}x", settings.ui_scale), 0.75, 1.5, settings.ui_scale, 1.0, 0.01, Message::SetUiScale, "Scale the whole widget and its text up or down."),
+            Space::with_width(8),
+            column![
+                row![fl("Opacity"), Space::with_width(Length::Fill), vl(format!("{:.0}%", settings.widget_opacity * 100.0))],
+                crate::style::with_tip(marked_slider(0.3, 1.0, settings.widget_opacity, 0.01, 0.9, p, Message::SetOpacity), "How see-through the widget is (lower = more transparent).", p),
+            ].spacing(2).width(Length::FillPortion(1)),
+        ],
         sw_tt("Round widget corners", settings.round_corners, Message::SetRoundCorners,
             "Round the outer corners of the widget window (Windows 11)."),
-    ].spacing(4);
+    ].spacing(6);
     // ── Tile dimensions (Appearance > Tiles): width + height, side by side ──
     let tile_dims = column![
         row![
@@ -700,7 +706,9 @@ pub fn view<'a>(
     let drag_name: Option<&str> = drag.as_ref().map(|d| d.0.as_str());
     let drop_target: usize = drag.as_ref().map(|d| d.1).unwrap_or(0);
     // Row header height (pinned so expanding one row doesn't squeeze the others).
-    const FLOAT_H: f32 = 54.0;
+    // Kept compact so the six rows + the Size & display card fit the fixed settings
+    // window height without a scrollbar.
+    const FLOAT_H: f32 = 48.0;
     // Reorder the rows into the live preview order while dragging.
     if let Some(name) = drag_name {
         if let Some(cur) = display_order.iter().position(|t| *t == name) {
@@ -823,7 +831,7 @@ pub fn view<'a>(
             row![fl("Tile spacing"), Space::with_width(Length::Fill), vl(format!("{:.0}px", tile_gap_eff))],
             crate::style::with_tip(marked_slider(-6.0, 20.0, settings.tile_spacing_offset, 1.0, 0.0, p, Message::SetTileSpacingOffset), "Gap between tiles on the widget (added to the skin's own spacing).", p),
         ].spacing(2),
-    ].spacing(10);
+    ].spacing(7);
     // Shared panel chrome for the three Tiles-tab cards (list / detail / display).
     let panel_style = move |_: &iced::Theme| iced::widget::container::Style {
         background: Some(iced::Background::Color(p.tile)),
@@ -832,8 +840,8 @@ pub fn view<'a>(
     };
     // Detail panel: the selected tile's options, filling the space the inline
     // accordion used to push around. Shown ONLY once a tile is expanded — when
-    // nothing is picked it collapses to invisible flex space (no empty box), so
-    // the list and Display sit cleanly with the gap absorbed between them.
+    // nothing is picked it collapses to nothing (no empty box). The Tiles pane
+    // scrolls, so the detail panel takes its natural height rather than flexing.
     let detail_panel: Element<'a, Message> = if let Some(body) = selected_body {
         let title = selected_name.unwrap_or("Tile").to_string();
         container(
@@ -845,26 +853,44 @@ pub fn view<'a>(
                 body,
             ]
         ).padding(iced::Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
-            .width(Length::Fill).height(Length::Fill).style(panel_style).into()
+            .width(Length::Fill).style(panel_style).into()
     } else {
-        Space::with_height(Length::Fill).into()
+        Space::with_height(Length::Fixed(0.0)).into()
     };
-    // Tiles sub-pane (Appearance > Tiles): the reorderable tile list, the selected
-    // tile's detail panel, then a Size & display card (tile width/height + units +
-    // spacing). Fills height so the detail panel takes the slack, like before.
-    let tiles_pane: Element<'a, Message> = column![
-        container(column![drag_hint, tcol])
-            .padding(iced::Padding { top: 8.0, right: 6.0, bottom: 6.0, left: 6.0 })
-            .width(Length::Fill).style(panel_style),
-        Space::with_height(8),
-        detail_panel,
-        Space::with_height(8),
-        sh("Size & display", "Tile width/height, units, and spacing \u{2014} these apply to every tile."),
-        Space::with_height(4),
-        container(column![tile_dims, Space::with_height(8), display_section])
-            .padding(iced::Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
-            .width(Length::Fill).style(panel_style),
-    ].height(Length::Fill).into();
+    // Tiles sub-pane (Appearance > Tiles). Master-detail, sized to never need a
+    // scrollbar at the fixed window height: the reorderable tile list is always on
+    // top. When a tile is expanded we show ONLY its detail panel below the list
+    // (focus mode); when nothing is expanded we show the global "Size & display" card
+    // instead (tile width/height + units + spacing + whole-widget scale/opacity/
+    // corners). The detail panel and the global card never stack together.
+    let tiles_list_card = container(column![drag_hint, tcol])
+        .padding(iced::Padding { top: 8.0, right: 6.0, bottom: 6.0, left: 6.0 })
+        .width(Length::Fill).style(panel_style);
+    let tiles_pane: Element<'a, Message> = if selected_name.is_some() {
+        column![
+            tiles_list_card,
+            Space::with_height(8),
+            detail_panel,
+        ].into()
+    } else {
+        column![
+            tiles_list_card,
+            Space::with_height(8),
+            sh("Size & display", "Tile size, units, and spacing, plus whole-widget scale, opacity, and corners."),
+            Space::with_height(4),
+            container(column![
+                tile_dims,
+                Space::with_height(7),
+                display_section,
+                Space::with_height(7),
+                row_divider(),
+                Space::with_height(7),
+                widget_controls,
+            ])
+                .padding(iced::Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
+                .width(Length::Fill).style(panel_style),
+        ].into()
+    };
 
     // ════════════════════════════════════════════════════════════
     //  RIGHT COLUMN  (Appearance / Font / Remote / Updates)
@@ -1381,12 +1407,12 @@ pub fn view<'a>(
         ..Default::default()
     });
 
-    // ── Appearance sub-tabs: Colors | Size | Font | Tiles ──
-    // A pinned inner pill strip switches between four sub-panes. Tiles holds ALL
-    // tile settings (list/reorder/detail + dimensions + units/spacing); the widget's
-    // own scale/opacity/corners live under Size. Mirrors the top-tab pill styling,
-    // a touch smaller.
-    let sub_labels = ["Colors", "Size", "Font", "Tiles"];
+    // ── Appearance sub-tabs: Colors | Font | Tiles ──
+    // A pinned inner pill strip switches between three sub-panes. Tiles holds ALL
+    // tile settings (list/reorder/detail + dimensions + units/spacing) plus the
+    // whole-widget controls (scale/opacity/corners, in a "Widget" card). Mirrors the
+    // top-tab pill styling, a touch smaller.
+    let sub_labels = ["Colors", "Font", "Tiles"];
     let asub = appearance_subtab.min(sub_labels.len() - 1);
     let sub_sunken = crate::style::chrome_shade(p, 0.30);
     let sub_hairline = iced::Color { a: 0.22, ..p.muted };
@@ -1422,20 +1448,16 @@ pub fn view<'a>(
         });
 
     let sub_pane: Element<'a, Message> = match asub {
-        1 => column![widget_sizing, opacity_ctrl].spacing(4).into(),
-        2 => fonts.into(),
-        3 => tiles_pane,
+        1 => fonts.into(),
+        2 => tiles_pane,
         _ => appearance.into(),
     };
-    // Tiles fills height (its detail panel takes the slack, like the old Tiles tab);
-    // the others scroll if they overflow. The sub-strip stays pinned above.
-    let sub_body: Element<'a, Message> = if asub == 3 {
-        sub_pane
-    } else {
-        scrollable(
-            container(sub_pane).padding(iced::Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 0.0 })
-        ).width(Length::Fill).height(Length::Fill).style(crate::style::scrollable_style(p)).into()
-    };
+    // All three sub-panes scroll if they overflow (Tiles now carries the most
+    // content — list + detail + Size & display + Widget cards). The sub-strip stays
+    // pinned above.
+    let sub_body: Element<'a, Message> = scrollable(
+        container(sub_pane).padding(iced::Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 0.0 })
+    ).width(Length::Fill).height(Length::Fill).style(crate::style::scrollable_style(p)).into();
     let appearance_tab: Element<'a, Message> = column![
         sub_strip_bar,
         Space::with_height(8),
