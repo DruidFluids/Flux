@@ -1382,9 +1382,10 @@ impl App {
                 other => {
                     use settings_panel::{TAB_APPEARANCE, TAB_BEHAVIOR, TAB_TOOLS};
                     // Tile/help/cpu surfaces now live under Appearance > Tiles sub-tab (index 2).
-                    let appearance_sub = match other { "tiles" | "help" | "cpu" => 2, _ => 0 };
+                    let appearance_sub = match other { "tiles" | "help" | "cpu" => 2, "fonts" => 1, _ => 0 };
                     let (tab, msg): (usize, Option<Message>) = match other {
                         "tiles"      => (TAB_APPEARANCE, Some(Message::OpenSettings)),
+                        "fonts"      => (TAB_APPEARANCE, Some(Message::OpenSettings)),
                         "appearance" => (TAB_APPEARANCE, Some(Message::OpenSettings)),
                         "behavior"   => (TAB_BEHAVIOR, Some(Message::OpenSettings)),
                         "tools"      => (TAB_TOOLS, Some(Message::OpenSettings)),
@@ -2756,6 +2757,10 @@ impl App {
             Message::SetColorMode(dark) => {
                 self.push_appearance_undo();
                 style::apply_preset(&mut self.settings, if dark { 0 } else { 1 });
+                // Dark/Light are the "back to defaults" buttons, so also drop any
+                // active skin back to the Default skin — otherwise a bold skin
+                // (Paper, etc.) stuck around and the look didn't actually reset.
+                self.settings.active_skin = "Default".to_string();
                 let _ = self.settings.save();
                 Task::none()
             }

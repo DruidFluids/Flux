@@ -1192,72 +1192,103 @@ pub fn view<'a>(
     ].spacing(3);
 
     // ── Font: sync toggle + font pickers + 3-col size sliders ──
-    let fonts = column![
-        row![
-            tooltip(
-                row![
-                    toggler(settings.sync_fonts).size(14).on_toggle(Message::SetSyncFonts).style(crate::style::toggler_style(p)),
-                    text("Sync fonts").size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-                ].spacing(6).align_y(iced::Alignment::Center),
-                tip_box("When on, changing Primary font also sets Secondary and Indicator to the same font.", p), TipPos::FollowCursor,
-            ),
-            Space::with_width(16),
-            tooltip(
-                row![
-                    toggler(settings.randomize_fonts_on_dice).size(14).on_toggle(Message::SetRandomizeFonts).style(crate::style::toggler_style(p)),
-                    text("Allow random fonts with die button").size(11)
-                        .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
-                ].spacing(6).align_y(iced::Alignment::Center),
-                tip_box("When on, the die button also picks random fonts in addition to theme + skin.", p), TipPos::FollowCursor,
-            ),
-        ].spacing(6).align_y(iced::Alignment::Center),
-        {
-            let mut opts = vec![FONT_DEFAULT.to_string()];
-            opts.extend(fonts.iter().cloned());
-            let font_picker = |slot: u8, current: &Option<String>| -> Element<'a, Message> {
-                let mut o = opts.clone();
-                let sel = match current {
-                    Some(f) if !f.is_empty() => {
-                        if !o.contains(f) { o.push(f.clone()); }
-                        f.clone()
-                    }
-                    _ => FONT_DEFAULT.to_string(),
-                };
-                let tip = match slot {
-                    0 => "Font for the main value numbers.",
-                    1 => "Font for the secondary text (tile names).",
-                    _ => "Font for the unit indicators (\u{00B0}C, %, MHz).",
-                };
-                crate::style::with_tip(pick_list(o, Some(sel), move |s: String| {
-                    let name = if s == FONT_DEFAULT { String::new() } else { s };
-                    Message::SetFont(slot, name)
-                }).text_size(11).width(Length::Fill).style(crate::style::pick_list_style(p)), tip, p)
-            };
+    // Card chrome shared with the Tiles "Size & display" card: an accent `sh`
+    // heading above a tile-surface panel. The Font tab mirrors that look and adds a
+    // live preview of each chosen typeface beneath its picker.
+    let card_pad = iced::Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 };
+    let font_toggles = row![
+        tooltip(
             row![
-                column![fl("Primary font"), font_picker(0, &settings.primary_font)].width(Length::FillPortion(1)).spacing(2),
-                column![fl("Secondary font"), font_picker(1, &settings.secondary_font)].width(Length::FillPortion(1)).spacing(2),
-                column![fl("Indicator font"), font_picker(2, &settings.indicator_font)].width(Length::FillPortion(1)).spacing(2),
-            ].spacing(6)
-        },
-        fl("Font sizes"),
+                toggler(settings.sync_fonts).size(14).on_toggle(Message::SetSyncFonts).style(crate::style::toggler_style(p)),
+                text("Sync fonts").size(11).style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+            ].spacing(6).align_y(iced::Alignment::Center),
+            tip_box("When on, changing Primary font also sets Secondary and Indicator to the same font.", p), TipPos::FollowCursor,
+        ),
+        Space::with_width(16),
+        tooltip(
+            row![
+                toggler(settings.randomize_fonts_on_dice).size(14).on_toggle(Message::SetRandomizeFonts).style(crate::style::toggler_style(p)),
+                text("Allow random fonts with die button").size(11)
+                    .style(move |_| iced::widget::text::Style { color: Some(p.text) }),
+            ].spacing(6).align_y(iced::Alignment::Center),
+            tip_box("When on, the die button also picks random fonts in addition to theme + skin.", p), TipPos::FollowCursor,
+        ),
+    ].spacing(6).align_y(iced::Alignment::Center);
+    let font_pickers = {
+        let mut opts = vec![FONT_DEFAULT.to_string()];
+        opts.extend(fonts.iter().cloned());
+        let font_picker = |slot: u8, current: &Option<String>| -> Element<'a, Message> {
+            let mut o = opts.clone();
+            let sel = match current {
+                Some(f) if !f.is_empty() => {
+                    if !o.contains(f) { o.push(f.clone()); }
+                    f.clone()
+                }
+                _ => FONT_DEFAULT.to_string(),
+            };
+            let tip = match slot {
+                0 => "Font for the main value numbers.",
+                1 => "Font for the secondary text (tile names).",
+                _ => "Font for the unit indicators (\u{00B0}C, %, MHz).",
+            };
+            crate::style::with_tip(pick_list(o, Some(sel), move |s: String| {
+                let name = if s == FONT_DEFAULT { String::new() } else { s };
+                Message::SetFont(slot, name)
+            }).text_size(11).width(Length::Fill).style(crate::style::pick_list_style(p)), tip, p)
+        };
+        // Live preview swatch: render representative sample text in the chosen font
+        // over the recessed widget bg, so the typeface is legible before you apply
+        // it. Empty/Default falls back to the UI font.
+        let font_preview = |sample: &str, name: &Option<String>| -> Element<'a, Message> {
+            let f = crate::style::named_font(name, iced::font::Weight::Normal);
+            container(
+                text(sample.to_string()).size(15).font(f)
+                    .wrapping(iced::widget::text::Wrapping::None)
+                    .style(move |_| iced::widget::text::Style { color: Some(p.text) })
+            )
+            .width(Length::Fill)
+            .center_x(Length::Fill)
+            .padding(iced::Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 8.0 })
+            .style(move |_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(p.bg)),
+                border: Border { radius: 6.0.into(), width: 1.0, color: iced::Color { a: 0.28, ..p.muted } },
+                ..Default::default()
+            })
+            .into()
+        };
         row![
-            column![
-                fl("Primary"),
-                crate::style::with_tip(marked_slider(-5.0, 5.0, settings.primary_font_offset as f32, 1.0, 0.0, p, Message::SetPrimaryFontOffset), "Nudge the main value text (numbers) larger or smaller.", p),
-                vl(signed(settings.primary_font_offset)),
-            ].width(Length::FillPortion(1)).spacing(2).align_x(iced::Alignment::Center),
-            column![
-                fl("Secondary"),
-                crate::style::with_tip(marked_slider(-5.0, 5.0, settings.secondary_font_offset as f32, 1.0, 0.0, p, Message::SetSecondaryFontOffset), "Nudge the secondary text (names) larger or smaller.", p),
-                vl(signed(settings.secondary_font_offset)),
-            ].width(Length::FillPortion(1)).spacing(2).align_x(iced::Alignment::Center),
-            column![
-                fl("Indicators"),
-                crate::style::with_tip(marked_slider(-5.0, 5.0, settings.indicator_font_offset as f32, 1.0, 0.0, p, Message::SetIndicatorFontOffset), "Nudge the unit indicators (°C, %, MHz) larger or smaller.", p),
-                vl(signed(settings.indicator_font_offset)),
-            ].width(Length::FillPortion(1)).spacing(2).align_x(iced::Alignment::Center),
-        ].spacing(8),
-    ].spacing(4);
+            column![fl("Primary font"), font_picker(0, &settings.primary_font), font_preview("0123  82%", &settings.primary_font)].width(Length::FillPortion(1)).spacing(4),
+            column![fl("Secondary font"), font_picker(1, &settings.secondary_font), font_preview("Cpu  Memory", &settings.secondary_font)].width(Length::FillPortion(1)).spacing(4),
+            column![fl("Indicator font"), font_picker(2, &settings.indicator_font), font_preview("\u{00B0}C  %  MHz", &settings.indicator_font)].width(Length::FillPortion(1)).spacing(4),
+        ].spacing(6)
+    };
+    let font_sizes = row![
+        column![
+            fl("Primary"),
+            crate::style::with_tip(marked_slider(-5.0, 5.0, settings.primary_font_offset as f32, 1.0, 0.0, p, Message::SetPrimaryFontOffset), "Nudge the main value text (numbers) larger or smaller.", p),
+            vl(signed(settings.primary_font_offset)),
+        ].width(Length::FillPortion(1)).spacing(2).align_x(iced::Alignment::Center),
+        column![
+            fl("Secondary"),
+            crate::style::with_tip(marked_slider(-5.0, 5.0, settings.secondary_font_offset as f32, 1.0, 0.0, p, Message::SetSecondaryFontOffset), "Nudge the secondary text (names) larger or smaller.", p),
+            vl(signed(settings.secondary_font_offset)),
+        ].width(Length::FillPortion(1)).spacing(2).align_x(iced::Alignment::Center),
+        column![
+            fl("Indicators"),
+            crate::style::with_tip(marked_slider(-5.0, 5.0, settings.indicator_font_offset as f32, 1.0, 0.0, p, Message::SetIndicatorFontOffset), "Nudge the unit indicators (°C, %, MHz) larger or smaller.", p),
+            vl(signed(settings.indicator_font_offset)),
+        ].width(Length::FillPortion(1)).spacing(2).align_x(iced::Alignment::Center),
+    ].spacing(8);
+    let fonts = column![
+        sh("Fonts", "Pick the typeface for values, names, and unit indicators \u{2014} previewed live under each picker."),
+        Space::with_height(4),
+        container(column![font_toggles, Space::with_height(8), font_pickers])
+            .padding(card_pad).width(Length::Fill).style(panel_style),
+        Space::with_height(8),
+        sh("Font sizes", "Nudge each text role a little larger or smaller."),
+        Space::with_height(4),
+        container(font_sizes).padding(card_pad).width(Length::Fill).style(panel_style),
+    ];
 
     // ── Updates box ──
     let inline_btn = |lbl: &str, msg: Message| crate::style::inline_btn(lbl, msg, p);
@@ -1466,10 +1497,14 @@ pub fn view<'a>(
 
     // ── Behavior tab: how the widget acts on the desktop (layout + window behaviour) ──
     let behavior_tab: Element<'a, Message> = column![
-        sh("Layout", "Stack tiles vertically (tall) or horizontally (wide)."), layout_pills,
-        Space::with_height(6),
-        sh("Behavior", "Always-on-top, start-minimized, startup, snapping, click-through, lock/reset position, and refresh rate."), behavior,
-    ].spacing(4).into();
+        sh("Layout", "Stack tiles vertically (tall) or horizontally (wide)."),
+        Space::with_height(4),
+        container(layout_pills).padding(card_pad).width(Length::Fill).style(panel_style),
+        Space::with_height(8),
+        sh("Behavior", "Always-on-top, start-minimized, startup, snapping, click-through, lock/reset position, and refresh rate."),
+        Space::with_height(4),
+        container(behavior).padding(card_pad).width(Length::Fill).style(panel_style),
+    ].into();
 
     // ── Tools tab: a 2×2 grid of launcher cards (icon-tinted, with live status) ──
     let n_alerts = settings.warnings.iter().filter(|w| w.enabled).count();
